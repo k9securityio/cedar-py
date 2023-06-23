@@ -9,10 +9,10 @@ use cedar_policy::PrincipalConstraint::{Any, Eq, In};
 use cedar_policy_formatter::{policies_str_to_pretty, Config};
 use pyo3::exceptions::PyRuntimeError;
 
-/// Formats the sum of two numbers as string.
+/// Echo (return) the input string
 #[pyfunction]
-fn sum_as_string(a: usize, b: usize) -> PyResult<String> {
-    Ok((a + b).to_string())
+fn echo(s: String) -> PyResult<String> {
+    Ok(s)
 }
 
 // #[pyfunction]
@@ -84,7 +84,7 @@ fn read_from_file_or_stdin(filename: Option<impl AsRef<Path>>, context: &str) ->
 /// A Python module implemented in Rust.
 #[pymodule]
 fn cedarpolicy(_py: Python, m: &PyModule) -> PyResult<()> {
-    m.add_function(wrap_pyfunction!(sum_as_string, m)?)?;
+    m.add_function(wrap_pyfunction!(echo, m)?)?;
     m.add_function(wrap_pyfunction!(parse_test_policy, m)?)?;
     Ok(())
 }
