@@ -11,6 +11,7 @@ use pyo3::exceptions::PyRuntimeError;
 
 /// Echo (return) the input string
 #[pyfunction]
+#[pyo3(signature = (s))]
 fn echo(s: String) -> PyResult<String> {
     Ok(s)
 }
@@ -28,6 +29,7 @@ fn echo(s: String) -> PyResult<String> {
 // }
 
 #[pyfunction]
+#[pyo3(signature = ())]
 fn parse_test_policy() -> PyResult<String>{
     println!("Example: Parsing a Cedar Policy");
     // this policy has a type error, but parses.
