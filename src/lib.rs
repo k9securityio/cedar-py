@@ -39,11 +39,11 @@ fn parse_test_policy() -> PyResult<String>{
     )
     when { 10 > "hello" };
 "#;
-    let p = PolicySet::from_str(src);
-    match p {
-        Ok(pset) => {
+    let parse_result = PolicySet::from_str(src);
+    return match parse_result {
+        Ok(p_set) => {
             let pid = PolicyId::from_str("policy_id_00").unwrap();
-            let policy = PolicySet::policy(&pset, &pid);
+            let policy = PolicySet::policy(&p_set, &pid);
             if let Some(p) = policy {
                 println!("Policy:{}", p);
                 let pr = Policy::principal_constraint(p);
@@ -53,11 +53,11 @@ fn parse_test_policy() -> PyResult<String>{
                     Eq(euid) => println!("Principal Constraint: Principal=={}", euid),
                 }
             }
-            return Ok(String::from("Ok!"));
+            Ok(String::from("Ok!"))
         }
         Err(e) => {
             println!("{:?}", e);
-            return Err(PyRuntimeError::new_err("Could nor parse test policy :("));
+            Err(PyRuntimeError::new_err("Could nor parse test policy :("))
         }
     }
 }
