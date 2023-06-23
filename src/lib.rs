@@ -16,18 +16,6 @@ fn echo(s: String) -> PyResult<String> {
     Ok(s)
 }
 
-// #[pyfunction]
-// fn format_policies(file_name: String, line_width: usize, indent_width: isize) -> PyResult<()> {
-//     let policies_str = read_from_file_or_stdin(Some(file_name).as_ref(),
-//                                                "policy set")?;
-//     let config = Config {
-//         line_width,
-//         indent_width,
-//     };
-//     println!("{}", policies_str_to_pretty(&policies_str, &config)?);
-//     Ok(())
-// }
-
 #[pyfunction]
 #[pyo3(signature = ())]
 fn parse_test_policy() -> PyResult<String>{
@@ -63,6 +51,18 @@ fn parse_test_policy() -> PyResult<String>{
         }
     }
 }
+
+// #[pyfunction]
+// fn format_policies(file_name: String, line_width: usize, indent_width: isize) -> PyResult<()> {
+//     let policies_str = read_from_file_or_stdin(Some(file_name).as_ref(),
+//                                                "policy set")?;
+//     let config = Config {
+//         line_width,
+//         indent_width,
+//     };
+//     println!("{}", policies_str_to_pretty(&policies_str, &config)?);
+//     Ok(())
+// }
 
 // Read from a file (when `filename` is a `Some`) or stdin (when `filename` is `None`)
 fn read_from_file_or_stdin(filename: Option<impl AsRef<Path>>, context: &str) -> Result<String> {
