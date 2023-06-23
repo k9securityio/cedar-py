@@ -14,3 +14,12 @@ fresh-requirements:
 	python3 -m piptools compile  -o requirements.txt     pyproject.toml ;\
 	python3 -m piptools compile  --extra dev   -o requirements.dev.txt     pyproject.toml
 
+
+.PHONY: quick
+quick:
+	@echo Performing 'quick' build
+	set -e ;\
+	maturin develop ;\
+	pytest
+
+
