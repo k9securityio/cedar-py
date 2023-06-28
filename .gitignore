@@ -12,6 +12,7 @@ __pycache__/
 .Python
 .venv/
 .venv-dev/
+venv*
 env/
 bin/
 build/
