@@ -61,5 +61,14 @@ class AuthorizeTestCase(unittest.TestCase):
 
     def test_authorize_basic_perf(self):
         import timeit
-        timeit.timeit(lambda: self.test_authorize_basic_ALLOW(), number=100)
-        timeit.timeit(lambda: self.test_authorize_basic_DENY(), number=100)
+        
+        num_exec = 100
+
+        timer = timeit.timeit(lambda: self.test_authorize_basic_ALLOW(), number=num_exec)
+        print(f'ALLOW ({num_exec}): {timer}')
+        t_deadline_seconds = 0.100
+        self.assertLess(timer.real, t_deadline_seconds)
+
+        timer = timeit.timeit(lambda: self.test_authorize_basic_DENY(), number=num_exec)
+        print(f'DENY ({num_exec}): {timer}')
+        self.assertLess(timer.real, t_deadline_seconds)
