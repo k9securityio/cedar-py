@@ -1,15 +1,14 @@
-use std::path::Path;
 use std::str::FromStr;
-use pyo3::prelude::*;
+use std::time::Instant;
 
 use anyhow::{Context as _, Error, Result};
-use cedar_policy::{Decision, Policy, PolicyId, PolicySet, Response};
+use cedar_policy::*;
 use cedar_policy::PrincipalConstraint::{Any, Eq, In};
-use cedar_policy_cli::{AuthorizeArgs, CedarExitCode, RequestArgs};
-// use cedar_policy::*;
-use cedar_policy_formatter::{policies_str_to_pretty, Config};
+use cedar_policy_cli::{AuthorizeArgs, CedarExitCode};
+use cedar_policy_formatter::{Config, policies_str_to_pretty};
 use pyo3::exceptions::PyRuntimeError;
-use pyo3::types::PyDict;
+use pyo3::prelude::*;
+use pyo3::types::{PyDict, PyString};
 
 /// Echo (return) the input string
 #[pyfunction]
@@ -20,7 +19,7 @@ fn echo(s: String) -> PyResult<String> {
 
 #[pyfunction]
 #[pyo3(signature = ())]
-fn parse_test_policy() -> PyResult<String>{
+fn parse_test_policy() -> PyResult<String> {
     println!("Example: Parsing a Cedar Policy");
     // this policy has a type error, but parses.
     let src = r#"
@@ -51,7 +50,7 @@ fn parse_test_policy() -> PyResult<String>{
             println!("{:?}", e);
             Err(PyRuntimeError::new_err("Could nor parse test policy :("))
         }
-    }
+    };
 }
 
 // #[pyfunction]
@@ -66,26 +65,60 @@ fn parse_test_policy() -> PyResult<String>{
 //     Ok(())
 // }
 
-// Read from a file (when `filename` is a `Some`) or stdin (when `filename` is `None`)
-fn read_from_file_or_stdin(filename: Option<impl AsRef<Path>>, context: &str) -> Result<String> {
-    let mut src_str = String::new();
-    match filename.as_ref() {
-        Some(path) => {
-            src_str = std::fs::read_to_string(path).context(format!(
-                "failed to open {} file {}",
-                context,
-                path.as_ref().display()
-            ))?;
-        }
-        None => {
-            std::io::Read::read_to_string(&mut std::io::stdin(), &mut src_str)
-                .context(format!("failed to read {} from stdin", context))?;
-        }
-    };
-    Ok(src_str)
+pub struct RequestArgs {
+    /// Principal for the request, e.g., User::"alice"
+    pub principal: Option<String>,
+    /// Action for the request, e.g., Action::"view"
+    pub action: Option<String>,
+    /// Resource for the request, e.g., File::"myfile.txt"
+    pub resource: Option<String>,
+    /// A JSON object representing the context for the request.
+    /// Should be a (possibly empty) map from keys to values.
+    pub context_json: Option<String>,
 }
 
-/// Echo (return) the input string
+impl RequestArgs {
+    /// Turn this `RequestArgs` into the appropriate `Request` object
+    fn get_request(&self, schema: Option<&Schema>) -> Result<Request> {
+        let principal = self
+            .principal
+            .as_ref()
+            .map(|s| {
+                s.parse()
+                    .context(format!("failed to parse principal {s} as entity Uid"))
+            })
+            .transpose()?;
+        let action = self
+            .action
+            .as_ref()
+            .map(|s| {
+                s.parse()
+                    .context(format!("failed to parse action {s} as entity Uid"))
+            })
+            .transpose()?;
+        let resource = self
+            .resource
+            .as_ref()
+            .map(|s| {
+                s.parse()
+                    .context(format!("failed to parse resource {s} as entity Uid"))
+            })
+            .transpose()?;
+        let context: Context = match &self.context_json {
+            None => Context::empty(),
+            Some(jsonfile) => match std::fs::OpenOptions::new().read(true).open(jsonfile) {
+                Ok(f) => Context::from_json_file(
+                    f,
+                    schema.and_then(|s| Some((s, action.as_ref()?))),
+                )?,
+                Err(e) => Err(Error::from(e)
+                    .context(format!("error while loading context from {jsonfile}")))?,
+            },
+        };
+        Ok(Request::new(principal, action, resource, context))
+    }
+}
+
 #[pyfunction]
 #[pyo3(signature = (request, policies, entities))]
 fn is_authorized(request: &PyDict, policies: String, entities: String) -> PyResult<String> {
@@ -102,29 +135,34 @@ fn is_authorized(request: &PyDict, policies: String, entities: String) -> PyResu
     println!("entities: {}", entities);
 
     // invoke authorize
+    let principal: String = request.get_item(String::from("principal")).unwrap().downcast::<PyString>()?.to_string();
+    let action: String = request.get_item(String::from("action")).unwrap().downcast::<PyString>()?.to_string();
+    let resource: String = request.get_item(String::from("resource")).unwrap().downcast::<PyString>()?.to_string();
+    let request = RequestArgs {
+        principal: Some(principal),
+        action: Some(action),
+        resource: Some(resource),
+        context_json: None,
 
-    Ok(String::from("DENY"))
-}
-/*pub fn authorize(args: &AuthorizeArgs) -> CedarExitCode {
-    println!();
-    let ans = execute_request(
-        &args.request,
-        &args.policies_file,
-        args.template_linked_file.as_ref(),
-        &args.entities_file,
-        args.schema_file.as_ref(),
-        args.timing,
-    );
+    };
+
+    let ans = execute_authorization_request(&request,
+                                            policies,
+                                            entities,
+                                            true);
+    // TODO: unpack ans like https://github.com/cedar-policy/cedar/blob/main/cedar-policy-cli/src/lib.rs#L586
+    // Ok(String::from("DENY"))
+    let verbose = true;
     match ans {
         Ok(ans) => {
             let status = match ans.decision() {
                 Decision::Allow => {
                     println!("ALLOW");
-                    CedarExitCode::Success
+                    Ok(String::from("ALLOW"))
                 }
                 Decision::Deny => {
                     println!("DENY");
-                    CedarExitCode::AuthorizeDeny
+                    Ok(String::from("DENY"))
                 }
             };
             if ans.diagnostics().errors().peekable().peek().is_some() {
@@ -133,7 +171,7 @@ fn is_authorized(request: &PyDict, policies: String, entities: String) -> PyResu
                     println!("{}", err);
                 }
             }
-            if args.verbose {
+            if verbose {
                 println!();
                 if ans.diagnostics().reason().peekable().peek().is_none() {
                     println!("note: no policies applied to this request");
@@ -148,62 +186,79 @@ fn is_authorized(request: &PyDict, policies: String, entities: String) -> PyResu
             status
         }
         Err(errs) => {
-            for err in errs {
+            for err in &errs {
                 println!("{:#}", err);
             }
-            CedarExitCode::Failure
+            Err(to_pyerr(&errs))
         }
     }
 }
-*/
-/*/// This uses the Cedar API to call the authorization engine.
-fn execute_request(
+
+// fn to_pyerr<E: ToString>(err: E) -> PyErr {
+//     pyo3::exceptions::PyValueError::new_err(err.to_string())
+// }
+
+fn to_pyerr<E: ToString>(errs: &Vec<E>) -> PyErr {
+    let mut err_str = "Errors: ".to_string();
+    for err in errs.iter() {
+        err_str.push_str(" ");
+        err_str.push_str(&err.to_string());
+    }
+    pyo3::exceptions::PyValueError::new_err(err_str)
+}
+
+/// This uses the Cedar API to call the authorization engine.
+fn execute_authorization_request(
     request: &RequestArgs,
-    policies_filename: impl AsRef<Path> + std::marker::Copy,
-    links_filename: Option<impl AsRef<Path>>,
-    entities_filename: impl AsRef<Path>,
-    schema_filename: Option<impl AsRef<Path> + std::marker::Copy>,
+    policies_str: String,
+    // links_filename: Option<impl AsRef<Path>>,
+    entities_str: String,
+    // schema_filename: Option<impl AsRef<Path> + std::marker::Copy>,
     compute_duration: bool,
 ) -> Result<Response, Vec<Error>> {
-    let mut errs = vec![];
-    let policies = match read_policy_and_links(policies_filename.as_ref(), links_filename) {
+    let mut parse_errs:Vec<ParseErrors> = vec![];
+    let mut errs:Vec<Error> = vec![];
+
+    let policies = match PolicySet::from_str(&policies_str) {
         Ok(pset) => pset,
         Err(e) => {
-            errs.push(e);
+            parse_errs.push(e);
             PolicySet::new()
         }
     };
-    let schema = match schema_filename.map(read_schema_file) {
-        None => None,
-        Some(Ok(schema)) => Some(schema),
-        Some(Err(e)) => {
-            errs.push(e);
-            None
-        }
-    };
-    let entities = match load_entities(entities_filename, schema.as_ref()) {
+    // let schema = match schema_filename.map(read_schema_file) {
+    //     None => None,
+    //     Some(Ok(schema)) => Some(schema),
+    //     Some(Err(e)) => {
+    //         errs.push(e);
+    //         None
+    //     }
+    // };
+    let entities = match load_entities(entities_str, None) {
         Ok(entities) => entities,
         Err(e) => {
             errs.push(e);
             Entities::empty()
         }
     };
-    let entities = match load_actions_from_schema(entities, &schema) {
-        Ok(entities) => entities,
-        Err(e) => {
-            errs.push(e);
-            Entities::empty()
-        }
-    };
-    let request = match request.get_request(schema.as_ref()) {
+    // curious that this seems to set actions into entities
+    // let entities = match load_actions_from_schema(entities, &schema) {
+    //     Ok(entities) => entities,
+    //     Err(e) => {
+    //         errs.push(e);
+    //         Entities::empty()
+    //     }
+    // };
+
+    let request = match request.get_request(None) {
         Ok(q) => Some(q),
         Err(e) => {
-            errs.push(e.context("failed to parse request"));
+            errs.push(e.context("failed to parse schema from request"));
             None
         }
     };
-    if errs.is_empty() {
-        let request = request.expect("if errs is empty, we should have a request");
+    if parse_errs.is_empty() && errs.is_empty() {
+        let request = request.expect("if no errors, we should have a valid request");
         let authorizer = Authorizer::new();
         let auth_start = Instant::now();
         let ans = authorizer.is_authorized(&request, &policies, &entities);
@@ -219,7 +274,14 @@ fn execute_request(
         Err(errs)
     }
 }
-*/
+
+/// Load an `Entities` object from the given JSON string and optional schema.
+fn load_entities(entities_str: String, schema: Option<&Schema>) -> Result<Entities> {
+    return Entities::from_json_str(&entities_str, schema).context(format!(
+        "failed to parse entities from:\n{}", entities_str
+    ));
+}
+
 
 /// A Python module implemented in Rust.
 #[pymodule]
