@@ -58,3 +58,8 @@ class AuthorizeTestCase(unittest.TestCase):
 
         is_authorized: str = cedarpolicy.is_authorized(request, self.policies["bob"], self.entities)
         self.assertEqual("DENY", is_authorized)
+
+    def test_authorize_basic_perf(self):
+        import timeit
+        timeit.timeit(lambda: self.test_authorize_basic_ALLOW(), number=100)
+        timeit.timeit(lambda: self.test_authorize_basic_DENY(), number=100)
