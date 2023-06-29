@@ -1,3 +1,4 @@
+import json
 import unittest
 import cedarpolicy
 
@@ -18,24 +19,24 @@ class AuthorizeTestCase(unittest.TestCase):
                     """.strip()
 
         }
-        self.entities: str = """
-        [
-          {
-            "uid": {
-              "__expr": "User::\\"bob\\""
-            },
-            "attrs": {},
-            "parents": []
-          },
-          {
-            "uid": {
-              "__expr": "Action::\\"view\\""
-            },
-            "attrs": {},
-            "parents": []
-          }
-        ]        
-                """.strip()
+        self.entities: str = json.dumps(
+            [
+              {
+                "uid": {
+                  "__expr": "User::\"bob\""
+                },
+                "attrs": {},
+                "parents": []
+              },
+              {
+                "uid": {
+                  "__expr": "Action::\"view\""
+                },
+                "attrs": {},
+                "parents": []
+              }
+            ]
+        )
 
     def test_authorize_basic_ALLOW(self):
         request = {
