@@ -150,8 +150,6 @@ fn is_authorized(request: &PyDict, policies: String, entities: String) -> PyResu
                                             policies,
                                             entities,
                                             true);
-    // TODO: unpack ans like https://github.com/cedar-policy/cedar/blob/main/cedar-policy-cli/src/lib.rs#L586
-    // Ok(String::from("DENY"))
     let verbose = true;
     match ans {
         Ok(ans) => {
