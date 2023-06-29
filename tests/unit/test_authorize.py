@@ -42,6 +42,13 @@ class AuthorizeTestCase(unittest.TestCase):
             [
               {
                 "uid": {
+                  "__expr": "User::\"alice\""
+                },
+                "attrs": {},
+                "parents": []
+              },
+              {
+                "uid": {
                   "__expr": "User::\"bob\""
                 },
                 "attrs": {},
@@ -116,7 +123,7 @@ class AuthorizeTestCase(unittest.TestCase):
         print(f'DENY ({num_exec}): {timer}')
         self.assertLess(timer.real, t_deadline_seconds)
 
-    def test_authorize_edit_own_photo(self):
+    def test_authorized_to_edit_own_photo_ALLOW(self):
         request = {
             "principal": "User::\"bob\"",
             "action": "Action::\"edit\"",
@@ -126,3 +133,14 @@ class AuthorizeTestCase(unittest.TestCase):
 
         is_authorized: str = cedarpolicy.is_authorized(request, self.policies["bob"], self.entities)
         self.assertEqual("ALLOW", is_authorized)
+
+    def test_not_authorizeed_to_edit_other_users_photo(self):
+        request = {
+            "principal": "User::\"alice\"",
+            "action": "Action::\"edit\"",
+            "resource": "Photos::\"bobs-photo-1\"",
+            "context": {}
+        }
+
+        is_authorized: str = cedarpolicy.is_authorized(request, self.policies["bob"], self.entities)
+        self.assertEqual("DENY", is_authorized)
