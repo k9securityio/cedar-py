@@ -1,6 +1,11 @@
 import json
+import random
 import unittest
+from typing import Optional
+
 import cedarpolicy
+
+from unit import load_file_as_str
 
 
 class AuthorizeTestCase(unittest.TestCase):
@@ -8,21 +13,14 @@ class AuthorizeTestCase(unittest.TestCase):
     def setUp(self) -> None:
         super().setUp()
 
-        self.policies: dict[str, str] = {
-            "bob": """
-                permit(
-                    principal == User::"bob",
-                    action == Action::"view",
-                    resource
-                )
-                ;
+        common_policies = """
                 permit(
                     principal, 
                     action == Action::"edit", 
                     resource
                 )
                 when {
-                   resource.owner == principal
+                   resource.account == principal
                 };                
                 permit(
                     principal,
@@ -30,12 +28,32 @@ class AuthorizeTestCase(unittest.TestCase):
                     resource
                 )
                 when {
-                    resource.owner == principal
+                    context.authenticated == true
                     &&
-                    context.authentication.usedMFA == true
+                    resource has account && principal == resource.account.owner
                 }
                 ;
-                    """.strip()
+
+        """.strip()
+        self.policies: dict[str, str] = {
+            "common": common_policies,
+            "alice": f"""
+                permit(
+                    principal == User::"alice",
+                    action == Action::"view",
+                    resource
+                )
+                ;
+                {common_policies}""".strip(),
+            "bob": f"""
+                permit(
+                    principal == User::"bob",
+                    action == Action::"view",
+                    resource
+                )
+                ;
+                {common_policies}""".strip(),
+
 
         }
         self.entities: str = json.dumps(
@@ -56,10 +74,10 @@ class AuthorizeTestCase(unittest.TestCase):
               },
               {
                 "uid": {
-                  "__expr": "Photos::\"bobs-photo-1\""
+                  "__expr": "Photo::\"bobs-photo-1\""
                 },
                 "attrs": {
-                    "owner": {"__expr": "User::\"bob\""}
+                    "account": {"__expr": "User::\"bob\""}
                 },
                 "parents": []
               },
@@ -91,8 +109,8 @@ class AuthorizeTestCase(unittest.TestCase):
         request = {
             "principal": "User::\"bob\"",
             "action": "Action::\"view\"",
-            "resource": "Photos::\"1234-abcd\"",
-            "context": {}
+            "resource": "Photo::\"1234-abcd\"",
+            "context": json.dumps({})
         }
         
         is_authorized: str = cedarpolicy.is_authorized(request, self.policies["bob"], self.entities)
@@ -102,8 +120,8 @@ class AuthorizeTestCase(unittest.TestCase):
         request = {
             "principal": "User::\"bob\"",
             "action": "Action::\"delete\"",
-            "resource": "Photos::\"1234-abcd\"",
-            "context": {}
+            "resource": "Photo::\"1234-abcd\"",
+            "context": json.dumps({})
         }
 
         is_authorized: str = cedarpolicy.is_authorized(request, self.policies["bob"], self.entities)
@@ -123,12 +141,25 @@ class AuthorizeTestCase(unittest.TestCase):
         print(f'DENY ({num_exec}): {timer}')
         self.assertLess(timer.real, t_deadline_seconds)
 
+    def test_context_is_optional_in_authorize_request(self):
+        request = {
+            "principal": "User::\"bob\"",
+            "action": "Action::\"edit\"",
+            "resource": "Photo::\"bobs-photo-1\""
+        }
+
+        if random.choice([True, False]):
+            request["context"] = json.dumps({})
+
+        is_authorized: str = cedarpolicy.is_authorized(request, self.policies["bob"], self.entities)
+        self.assertEqual("ALLOW", is_authorized)
+
     def test_authorized_to_edit_own_photo_ALLOW(self):
         request = {
             "principal": "User::\"bob\"",
             "action": "Action::\"edit\"",
-            "resource": "Photos::\"bobs-photo-1\"",
-            "context": {}
+            "resource": "Photo::\"bobs-photo-1\"",
+            "context": json.dumps({})
         }
 
         is_authorized: str = cedarpolicy.is_authorized(request, self.policies["bob"], self.entities)
@@ -138,9 +169,35 @@ class AuthorizeTestCase(unittest.TestCase):
         request = {
             "principal": "User::\"alice\"",
             "action": "Action::\"edit\"",
-            "resource": "Photos::\"bobs-photo-1\"",
-            "context": {}
+            "resource": "Photo::\"bobs-photo-1\"",
+            "context": json.dumps({})
         }
 
         is_authorized: str = cedarpolicy.is_authorized(request, self.policies["bob"], self.entities)
         self.assertEqual("DENY", is_authorized)
+
+    def test_authorized_to_delete_own_photo_when_authenticated_in_context(self):
+        policies = self.policies["alice"]
+        entities = load_file_as_str("resources/sandbox_b/entities.json")
+        schema = load_file_as_str("resources/sandbox_b/schema.json")
+
+        request = {
+            "principal": "User::\"alice\"",
+            "action": "Action::\"delete\"",
+            "resource": "Photo::\"alice_w2.jpg\"",
+            "context": json.dumps({
+                "authenticated": False
+            })
+        }
+
+        is_authorized: str = cedarpolicy.is_authorized(request, policies, entities,
+                                                       schema=schema)
+        self.assertEqual("DENY", is_authorized)
+
+        request["context"] = json.dumps({
+            "authenticated": True
+        })
+
+        is_authorized: str = cedarpolicy.is_authorized(request, policies, entities,
+                                                       schema=schema)
+        self.assertEqual("ALLOW", is_authorized)

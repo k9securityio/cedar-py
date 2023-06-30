@@ -106,13 +106,12 @@ impl RequestArgs {
             .transpose()?;
         let context: Context = match &self.context_json {
             None => Context::empty(),
-            Some(jsonfile) => match std::fs::OpenOptions::new().read(true).open(jsonfile) {
-                Ok(f) => Context::from_json_file(
-                    f,
-                    schema.and_then(|s| Some((s, action.as_ref()?))),
-                )?,
-                Err(e) => Err(Error::from(e)
-                    .context(format!("error while loading context from {jsonfile}")))?,
+            Some(context_json_str) => {
+                println!("will load context from context_json_str: {}", context_json_str);
+                // Must provide action EUID because actions define their own schemas
+                Context::from_json_str(context_json_str,
+                                       schema.and_then(|s| Some((s, action.as_ref()?))))?
+                // Context::from_json_str(context_json_str, None)?
             },
         };
         Ok(Request::new(principal, action, resource, context))
@@ -120,35 +119,45 @@ impl RequestArgs {
 }
 
 #[pyfunction]
-#[pyo3(signature = (request, policies, entities))]
-fn is_authorized(request: &PyDict, policies: String, entities: String) -> PyResult<String> {
+#[pyo3(signature = (request, policies, entities, schema=None,))]
+fn is_authorized(request: &PyDict, policies: String, entities: String, schema: Option<String>) -> PyResult<String> {
     // CLI AuthorizeArgs: https://github.com/cedar-policy/cedar/blob/main/cedar-policy-cli/src/lib.rs#L183
-    // TODO: Convert entities to &PyList (list<dict> in python)
-
-    // validate & deconstruct request
     println!("request: {}", request);
-
-    // load policy set
     println!("policies: {}", policies);
-
-    // load policy set
     println!("entities: {}", entities);
+    println!("schema: {}", schema.clone().unwrap_or(String::from("<none>")));
 
-    // invoke authorize
+    // collect request arguments into a struct compatible with authorization request
     let principal: String = request.get_item(String::from("principal")).unwrap().downcast::<PyString>()?.to_string();
     let action: String = request.get_item(String::from("action")).unwrap().downcast::<PyString>()?.to_string();
     let resource: String = request.get_item(String::from("resource")).unwrap().downcast::<PyString>()?.to_string();
+
+    // TODO: accept context as a PyDict instead of PyString so it's more convenient in Python binding
+    // problems:
+    // 1. if context is None, then this unwraps a None value and panics
+    // 2. if context is an empty object '{}', then it will trigger schema validation, which will fail;
+    //    should only make Some(context_json) when there's something there
+    // problematic 'eager-unwrap' code:
+    // let context_json: String = request.get_item(String::from("context")).unwrap().downcast::<PyString>()?.to_string();
+    let context_option = request.get_item(String::from("context"));
+    let context_json_option: Option<String> = match context_option {
+        None => None,
+        // further match against PyString and PyDict
+        Some(context) => Some(context.downcast::<PyString>()?.to_string()),
+    };
+    println!("context_json_option: {}", context_json_option.clone().unwrap_or(String::from("<none>")));
+
     let request = RequestArgs {
         principal: Some(principal),
         action: Some(action),
         resource: Some(resource),
-        context_json: None,
-
+        context_json: context_json_option,
     };
 
     let ans = execute_authorization_request(&request,
                                             policies,
                                             entities,
+                                            schema,
                                             true);
     let verbose = true;
     match ans {
@@ -211,7 +220,7 @@ fn execute_authorization_request(
     policies_str: String,
     // links_filename: Option<impl AsRef<Path>>,
     entities_str: String,
-    // schema_filename: Option<impl AsRef<Path> + std::marker::Copy>,
+    schema_str: Option<String>,
     compute_duration: bool,
 ) -> Result<Response, Vec<Error>> {
     let mut parse_errs:Vec<ParseErrors> = vec![];
@@ -224,15 +233,23 @@ fn execute_authorization_request(
             PolicySet::new()
         }
     };
-    // let schema = match schema_filename.map(read_schema_file) {
-    //     None => None,
-    //     Some(Ok(schema)) => Some(schema),
-    //     Some(Err(e)) => {
-    //         errs.push(e);
-    //         None
-    //     }
-    // };
-    let entities = match load_entities(entities_str, None) {
+
+    let schema: Option<Schema> = match &schema_str {
+        None => None,
+        Some(schema_src) => {
+            println!("schema: {}", schema_src.as_str());
+            match Schema::from_str(&schema_src) {
+                Ok(schema) => Some(schema),
+                Err(e) => {
+                    // errs.push(e);
+                    println!("!!! error constructing schema: {}", e);
+                    None
+                }
+            }
+        }
+    };
+
+    let entities = match load_entities(entities_str, schema.as_ref()) {
         Ok(entities) => entities,
         Err(e) => {
             errs.push(e);
@@ -240,15 +257,15 @@ fn execute_authorization_request(
         }
     };
     // curious that this seems to set actions into entities
-    // let entities = match load_actions_from_schema(entities, &schema) {
-    //     Ok(entities) => entities,
-    //     Err(e) => {
-    //         errs.push(e);
-    //         Entities::empty()
-    //     }
-    // };
+    let entities = match load_actions_from_schema(entities, &schema) {
+        Ok(entities) => entities,
+        Err(e) => {
+            errs.push(e);
+            Entities::empty()
+        }
+    };
 
-    let request = match request.get_request(None) {
+    let request = match request.get_request(schema.as_ref()) {
         Ok(q) => Some(q),
         Err(e) => {
             errs.push(e.context("failed to parse schema from request"));
@@ -269,6 +286,8 @@ fn execute_authorization_request(
         }
         Ok(ans)
     } else {
+        println!("uh oh, found some errors while building request.\nparse_errs: {:#?}\nerrs: {:#?} ",
+                 parse_errs, errs);
         Err(errs)
     }
 }
@@ -278,6 +297,22 @@ fn load_entities(entities_str: String, schema: Option<&Schema>) -> Result<Entiti
     return Entities::from_json_str(&entities_str, schema).context(format!(
         "failed to parse entities from:\n{}", entities_str
     ));
+}
+
+fn load_actions_from_schema(entities: Entities, schema: &Option<Schema>) -> Result<Entities> {
+    match schema {
+        Some(schema) => match schema.action_entities() {
+            Ok(action_entities) => Entities::from_entities(
+                entities
+                    .iter()
+                    .cloned()
+                    .chain(action_entities.iter().cloned()),
+            )
+            .context("failed to merge action entities with entity file"),
+            Err(e) => Err(e).context("failed to construct action entities"),
+        },
+        None => Ok(entities),
+    }
 }
 
 
