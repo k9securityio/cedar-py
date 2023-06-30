@@ -107,11 +107,9 @@ impl RequestArgs {
         let context: Context = match &self.context_json {
             None => Context::empty(),
             Some(context_json_str) => {
-                println!("will load context from context_json_str: {}", context_json_str);
                 // Must provide action EUID because actions define their own schemas
                 Context::from_json_str(context_json_str,
                                        schema.and_then(|s| Some((s, action.as_ref()?))))?
-                // Context::from_json_str(context_json_str, None)?
             },
         };
         Ok(Request::new(principal, action, resource, context))
@@ -119,13 +117,16 @@ impl RequestArgs {
 }
 
 #[pyfunction]
-#[pyo3(signature = (request, policies, entities, schema=None,))]
-fn is_authorized(request: &PyDict, policies: String, entities: String, schema: Option<String>) -> PyResult<String> {
+#[pyo3(signature = (request, policies, entities, schema=None, verbose=false,))]
+fn is_authorized(request: &PyDict, policies: String, entities: String, schema: Option<String>, verbose: Option<bool>) -> PyResult<String> {
     // CLI AuthorizeArgs: https://github.com/cedar-policy/cedar/blob/main/cedar-policy-cli/src/lib.rs#L183
-    println!("request: {}", request);
-    println!("policies: {}", policies);
-    println!("entities: {}", entities);
-    println!("schema: {}", schema.clone().unwrap_or(String::from("<none>")));
+    let verbose = verbose.unwrap_or(false);
+    if verbose{
+        println!("request: {}", request);
+        println!("policies: {}", policies);
+        println!("entities: {}", entities);
+        println!("schema: {}", schema.clone().unwrap_or(String::from("<none>")));
+    }
 
     // collect request arguments into a struct compatible with authorization request
     let principal: String = request.get_item(String::from("principal")).unwrap().downcast::<PyString>()?.to_string();
@@ -145,7 +146,10 @@ fn is_authorized(request: &PyDict, policies: String, entities: String, schema: O
         // further match against PyString and PyDict
         Some(context) => Some(context.downcast::<PyString>()?.to_string()),
     };
-    println!("context_json_option: {}", context_json_option.clone().unwrap_or(String::from("<none>")));
+
+    if verbose{
+        println!("context_json_option: {}", context_json_option.clone().unwrap_or(String::from("<none>")));
+    }
 
     let request = RequestArgs {
         principal: Some(principal),
@@ -159,7 +163,6 @@ fn is_authorized(request: &PyDict, policies: String, entities: String, schema: O
                                             entities,
                                             schema,
                                             true);
-    let verbose = true;
     match ans {
         Ok(ans) => {
             let status = match ans.decision() {
@@ -286,7 +289,7 @@ fn execute_authorization_request(
         }
         Ok(ans)
     } else {
-        println!("uh oh, found some errors while building request.\nparse_errs: {:#?}\nerrs: {:#?} ",
+        println!("encountered errors while building request.\nparse_errs: {:#?}\nerrs: {:#?} ",
                  parse_errs, errs);
         Err(errs)
     }
