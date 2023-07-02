@@ -128,6 +128,7 @@ fn is_authorized(request: &PyDict, policies: String, entities: String, schema: O
             } else {
                 //present and has a value
                 // TODO: accept context as a PyDict instead of PyString so it's more convenient in Python binding
+                // the real work is adjusting context creation with e.g. Context::from_json_val
                 Some(context.downcast::<PyString>()?.to_string())
             }
         }
