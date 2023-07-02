@@ -148,11 +148,20 @@ class AuthorizeTestCase(unittest.TestCase):
             "resource": "Photo::\"bobs-photo-1\""
         }
 
-        if random.choice([True, False]):
-            request["context"] = json.dumps({})
-
         is_authorized: str = cedarpolicy.is_authorized(request, self.policies["bob"], self.entities)
-        self.assertEqual("ALLOW", is_authorized)
+        self.assertEqual("ALLOW", is_authorized,
+                         "expected omitted context to be allowed")
+
+        # noinspection PyTypedDict
+        request["context"] = None
+        is_authorized: str = cedarpolicy.is_authorized(request, self.policies["bob"], self.entities)
+        self.assertEqual("ALLOW", is_authorized,
+                         "expected context with value None to be allowed")
+
+        request["context"] = json.dumps({})
+        is_authorized: str = cedarpolicy.is_authorized(request, self.policies["bob"], self.entities)
+        self.assertEqual("ALLOW", is_authorized,
+                         "expected empty context to be allowed")
 
     def test_authorized_to_edit_own_photo_ALLOW(self):
         request = {

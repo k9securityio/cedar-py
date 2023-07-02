@@ -119,18 +119,18 @@ fn is_authorized(request: &PyDict, policies: String, entities: String, schema: O
     let action: String = request.get_item(String::from("action")).unwrap().downcast::<PyString>()?.to_string();
     let resource: String = request.get_item(String::from("resource")).unwrap().downcast::<PyString>()?.to_string();
 
-    // TODO: accept context as a PyDict instead of PyString so it's more convenient in Python binding
-    // problems:
-    // 1. if context is None, then this unwraps a None value and panics
-    // 2. if context is an empty object '{}', then it will trigger schema validation, which will fail;
-    //    should only make Some(context_json) when there's something there
-    // problematic 'eager-unwrap' code:
-    // let context_json: String = request.get_item(String::from("context")).unwrap().downcast::<PyString>()?.to_string();
     let context_option = request.get_item(String::from("context"));
     let context_json_option: Option<String> = match context_option {
-        None => None,
-        // further match against PyString and PyDict
-        Some(context) => Some(context.downcast::<PyString>()?.to_string()),
+        None => None, // context member not present
+        Some(context) => {
+            if context.is_none(){
+                None  // context member present, but value of None/null
+            } else {
+                //present and has a value
+                // TODO: accept context as a PyDict instead of PyString so it's more convenient in Python binding
+                Some(context.downcast::<PyString>()?.to_string())
+            }
+        }
     };
 
     if verbose{
