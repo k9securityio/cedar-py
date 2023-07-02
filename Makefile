@@ -23,3 +23,9 @@ quick:
 	pytest
 
 
+.PHONY: release
+release:
+	@echo Building a release
+	set -e ;\
+	maturin build ;\
+	pytest
