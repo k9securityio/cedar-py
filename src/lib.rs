@@ -4,8 +4,6 @@ use std::time::Instant;
 use anyhow::{Context as _, Error, Result};
 use cedar_policy::*;
 use cedar_policy::PrincipalConstraint::{Any, Eq, In};
-use cedar_policy_cli::{AuthorizeArgs, CedarExitCode};
-use cedar_policy_formatter::{Config, policies_str_to_pretty};
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyString};
@@ -52,18 +50,6 @@ fn parse_test_policy() -> PyResult<String> {
         }
     };
 }
-
-// #[pyfunction]
-// fn format_policies(file_name: String, line_width: usize, indent_width: isize) -> PyResult<()> {
-//     let policies_str = read_from_file_or_stdin(Some(file_name).as_ref(),
-//                                                "policy set")?;
-//     let config = Config {
-//         line_width,
-//         indent_width,
-//     };
-//     println!("{}", policies_str_to_pretty(&policies_str, &config)?);
-//     Ok(())
-// }
 
 pub struct RequestArgs {
     /// Principal for the request, e.g., User::"alice"
