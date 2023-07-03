@@ -3,8 +3,6 @@ use std::time::Instant;
 
 use anyhow::{Context as _, Error, Result};
 use cedar_policy::*;
-use cedar_policy::PrincipalConstraint::{Any, Eq, In};
-use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyString};
 
@@ -13,42 +11,6 @@ use pyo3::types::{PyDict, PyString};
 #[pyo3(signature = (s))]
 fn echo(s: String) -> PyResult<String> {
     Ok(s)
-}
-
-#[pyfunction]
-#[pyo3(signature = ())]
-fn parse_test_policy() -> PyResult<String> {
-    println!("Example: Parsing a Cedar Policy");
-    // this policy has a type error, but parses.
-    let src = r#"
-    permit(
-        principal == User::"bob",
-        action == Action::"view",
-        resource
-    )
-    when { 10 > "hello" };
-"#;
-    let parse_result = PolicySet::from_str(src);
-    return match parse_result {
-        Ok(p_set) => {
-            let pid = PolicyId::from_str("policy_id_00").unwrap();
-            let policy = PolicySet::policy(&p_set, &pid);
-            if let Some(p) = policy {
-                println!("Policy:{}", p);
-                let pr = Policy::principal_constraint(p);
-                match pr {
-                    Any => println!("No Principal"),
-                    In(euid) => println!("Principal Constraint: Principal in {}", euid),
-                    Eq(euid) => println!("Principal Constraint: Principal=={}", euid),
-                }
-            }
-            Ok(String::from("Ok!"))
-        }
-        Err(e) => {
-            println!("{:?}", e);
-            Err(PyRuntimeError::new_err("Could nor parse test policy :("))
-        }
-    };
 }
 
 pub struct RequestArgs {
@@ -289,7 +251,6 @@ fn load_actions_from_schema(entities: Entities, schema: &Option<Schema>) -> Resu
 #[pymodule]
 fn _cedarpolicy(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(echo, m)?)?;
-    m.add_function(wrap_pyfunction!(parse_test_policy, m)?)?;
     m.add_function(wrap_pyfunction!(is_authorized, m)?)?;
     Ok(())
 }

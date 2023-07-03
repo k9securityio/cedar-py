@@ -13,11 +13,6 @@ class ImportModuleTestCase(unittest.TestCase):
 
 class InvokeModuleTestFunctionTestCase(unittest.TestCase):
 
-    def test_invoke_parse_test_policy(self):
-        import cedarpolicy
-        result = cedarpolicy.parse_test_policy()
-        self.assertEqual('Ok!', result)
-
     def test_invoke_echo(self):
         import cedarpolicy
         expect = f'This is a test message: {random.randint(0, 10000)}'
