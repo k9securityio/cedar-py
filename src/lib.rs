@@ -104,7 +104,12 @@ impl RequestArgs {
 
 #[pyfunction]
 #[pyo3(signature = (request, policies, entities, schema=None, verbose=false,))]
-fn is_authorized(request: &PyDict, policies: String, entities: String, schema: Option<String>, verbose: Option<bool>) -> PyResult<String> {
+fn is_authorized(request: &PyDict,
+                 policies: String,
+                 entities: String,
+                 schema: Option<String>,
+                 verbose: Option<bool>)
+                 -> PyResult<String> {
     // CLI AuthorizeArgs: https://github.com/cedar-policy/cedar/blob/main/cedar-policy-cli/src/lib.rs#L183
     let verbose = verbose.unwrap_or(false);
     if verbose{
@@ -152,35 +157,13 @@ fn is_authorized(request: &PyDict, policies: String, entities: String, schema: O
                                             true);
     match ans {
         Ok(ans) => {
-            let status = match ans.decision() {
-                Decision::Allow => {
-                    println!("ALLOW");
-                    Ok(String::from("ALLOW"))
-                }
-                Decision::Deny => {
-                    println!("DENY");
-                    Ok(String::from("DENY"))
-                }
-            };
-            if ans.diagnostics().errors().peekable().peek().is_some() {
-                println!();
-                for err in ans.diagnostics().errors() {
-                    println!("{}", err);
-                }
+            let to_json_str_result = serde_json::to_string(&ans);
+            match to_json_str_result {
+                Ok(json_str) => { Ok(json_str) },
+                Err(err) => {
+                    Err(to_pyerr(&Vec::from([err])))
+                },
             }
-            if verbose {
-                println!();
-                if ans.diagnostics().reason().peekable().peek().is_none() {
-                    println!("note: no policies applied to this request");
-                } else {
-                    println!("note: this decision was due to the following policies:");
-                    for reason in ans.diagnostics().reason() {
-                        println!("  {}", reason);
-                    }
-                    println!();
-                }
-            }
-            status
         }
         Err(errs) => {
             for err in &errs {
@@ -190,10 +173,6 @@ fn is_authorized(request: &PyDict, policies: String, entities: String, schema: O
         }
     }
 }
-
-// fn to_pyerr<E: ToString>(err: E) -> PyErr {
-//     pyo3::exceptions::PyValueError::new_err(err.to_string())
-// }
 
 fn to_pyerr<E: ToString>(errs: &Vec<E>) -> PyErr {
     let mut err_str = "Errors: ".to_string();
@@ -308,7 +287,7 @@ fn load_actions_from_schema(entities: Entities, schema: &Option<Schema>) -> Resu
 
 /// A Python module implemented in Rust.
 #[pymodule]
-fn cedarpolicy(_py: Python, m: &PyModule) -> PyResult<()> {
+fn _cedarpolicy(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(echo, m)?)?;
     m.add_function(wrap_pyfunction!(parse_test_policy, m)?)?;
     m.add_function(wrap_pyfunction!(is_authorized, m)?)?;

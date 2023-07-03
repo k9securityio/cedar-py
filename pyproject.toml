@@ -20,6 +20,7 @@ dev = [
 ]
 
 [tool.maturin]
+module-name = "cedarpolicy._cedarpolicy"
 features = ["pyo3/extension-module"]
 
 [tool.pytest.ini_options]
