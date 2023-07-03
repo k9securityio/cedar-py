@@ -82,6 +82,8 @@ tests/unit/test_import_module.py::InvokeModuleTestFunctionTestCase::test_invoke_
 ## Using the library
 Releases of `cedarpolicy` will be available on PyPi soon.  For now, if you'd like to use the library, you can build a release locally and install it with `pip`.
 
+If you used `make quick` above, the `cedarpolicy` module will already be installed. You can also use `make release` to build a release locally.
+
 The release process will build a wheel and output it into `target/wheels/`
 
 You can install that file with pip, e.g.:
