@@ -181,7 +181,7 @@ class AuthorizeTestCase(unittest.TestCase):
 
         timer = timeit.timeit(lambda: self.test_authorize_basic_ALLOW(), number=num_exec)
         print(f'ALLOW ({num_exec}): {timer}')
-        t_deadline_seconds = 0.250
+        t_deadline_seconds = 0.500  # need ~290ms for aarch64 in GH Actions (because qemu?)
         self.assertLess(timer.real, t_deadline_seconds)
 
         timer = timeit.timeit(lambda: self.test_authorize_basic_DENY(), number=num_exec)
