@@ -1,3 +1,5 @@
+import json
+
 from cedarpolicy import _cedarpolicy
 
 
@@ -13,5 +15,6 @@ def is_authorized(request: dict,
                   policies: str,
                   entities: str,
                   schema: str = None,
-                  verbose: bool = False) -> str:
-    return _cedarpolicy.is_authorized(request, policies, entities, schema, verbose)
+                  verbose: bool = False) -> dict:
+    authz_response = _cedarpolicy.is_authorized(request, policies, entities, schema, verbose)
+    return json.loads(authz_response)
