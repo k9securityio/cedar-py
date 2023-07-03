@@ -1,5 +1,6 @@
 import json
 from copy import copy
+from typing import Union, List
 
 from cedarpolicy import _cedarpolicy
 
@@ -10,7 +11,7 @@ def echo(s: str) -> str:
 
 def is_authorized(request: dict,
                   policies: str,
-                  entities: str,
+                  entities: Union[str, List[dict]],
                   schema: str = None,
                   verbose: bool = False) -> dict:
     """Evaluate whether the request is authorized given the parameters.
@@ -18,7 +19,8 @@ def is_authorized(request: dict,
     :param request is a Cedar-style request object containing a principal, action, resource, and (optional) context;
     context may be a dict (preferred) or a string
     :param policies is a str containing all the policies in the Cedar PolicySet
-    :param entities a json-formatted string containing the list of entities to include in the evaluation
+    :param entities a list of entities or a json-formatted string containing the list of entities to
+    include in the evaluation
     :param schema a json-formatted string containing the Cedar schema, required when context is populated
     :param verbose a boolean determining whether to enable verbose logging output within the library
 
@@ -39,6 +41,11 @@ def is_authorized(request: dict,
             context_json_str = json.dumps(context)
             request = copy(request)
             request["context"] = context_json_str
+
+    if isinstance(entities, str):
+        pass
+    elif isinstance(entities, list):
+        entities = json.dumps(entities)
 
     authz_response = _cedarpolicy.is_authorized(request, policies, entities, schema, verbose)
     return json.loads(authz_response)

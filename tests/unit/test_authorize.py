@@ -1,6 +1,7 @@
 import json
 import random
 import unittest
+from typing import List
 
 import cedarpolicy
 
@@ -54,54 +55,59 @@ class AuthorizeTestCase(unittest.TestCase):
                 {common_policies}""".strip(),
 
         }
-        self.entities: str = json.dumps(
-            [
-                {
-                    "uid": {
-                        "__expr": "User::\"alice\""
-                    },
-                    "attrs": {},
-                    "parents": []
+        self.entities: List[dict] = [
+            {
+                "uid": {
+                    "__expr": "User::\"alice\""
                 },
-                {
-                    "uid": {
-                        "__expr": "User::\"bob\""
-                    },
-                    "attrs": {},
-                    "parents": []
+                "attrs": {},
+                "parents": []
+            },
+            {
+                "uid": {
+                    "__expr": "User::\"bob\""
                 },
-                {
-                    "uid": {
-                        "__expr": "Photo::\"bobs-photo-1\""
-                    },
-                    "attrs": {
-                        "account": {"__expr": "User::\"bob\""}
-                    },
-                    "parents": []
+                "attrs": {},
+                "parents": []
+            },
+            {
+                "uid": {
+                    "__expr": "Photo::\"bobs-photo-1\""
                 },
-                {
-                    "uid": {
-                        "__expr": "Action::\"view\""
-                    },
-                    "attrs": {},
-                    "parents": []
+                "attrs": {
+                    "account": {"__expr": "User::\"bob\""}
                 },
-                {
-                    "uid": {
-                        "__expr": "Action::\"edit\""
-                    },
-                    "attrs": {},
-                    "parents": []
+                "parents": []
+            },
+            {
+                "uid": {
+                    "__expr": "Action::\"view\""
                 },
-                {
-                    "uid": {
-                        "__expr": "Action::\"delete\""
-                    },
-                    "attrs": {},
-                    "parents": []
-                }
-            ]
-        )
+                "attrs": {},
+                "parents": []
+            },
+            {
+                "uid": {
+                    "__expr": "Action::\"edit\""
+                },
+                "attrs": {},
+                "parents": []
+            },
+            {
+                "uid": {
+                    "__expr": "Action::\"delete\""
+                },
+                "attrs": {},
+                "parents": []
+            }
+        ]
+
+        self.request_bob_view_own_photo = {
+            "principal": "User::\"bob\"",
+            "action": "Action::\"view\"",
+            "resource": "Photo::\"1234-abcd\"",
+            "context": {}
+        }
 
     def test_authorize_basic_ALLOW(self):
         request = {
@@ -206,6 +212,14 @@ class AuthorizeTestCase(unittest.TestCase):
             }
             actual_authz_resp: dict = cedarpolicy.is_authorized(request, self.policies["bob"], self.entities)
             self.assertEqual(expect_authz_resp, actual_authz_resp)
+
+    def test_entities_may_be_a_json_str_or_list(self):
+        for entities in [self.entities,
+                         json.dumps(self.entities)]:
+            actual_authz_resp: dict = cedarpolicy.is_authorized(self.request_bob_view_own_photo,
+                                                                self.policies["bob"],
+                                                                entities)
+            self.assertEqual("Allow", actual_authz_resp["decision"])
 
     def test_context_is_optional_in_authorize_request(self):
         request = {
