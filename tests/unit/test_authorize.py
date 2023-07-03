@@ -1,4 +1,5 @@
 import json
+import random
 import unittest
 
 import cedarpolicy
@@ -139,6 +140,39 @@ class AuthorizeTestCase(unittest.TestCase):
         }
         actual_authz_resp: dict = cedarpolicy.is_authorized(request, self.policies["bob"], self.entities)
         self.assertEqual(expect_authz_resp, actual_authz_resp)
+
+    # noinspection PyMethodMayBeStatic
+    def make_request(self):
+        """Make a valid Cedar request"""
+        username = random.choice(["alice", "bob", "does-not-exist"])
+        action = random.choice(["view", "edit", "delete", "does-not-exist"])
+        photo_resource = random.choice(["1234-abcd", "prototype_v0.jpg", "does-not-exist"])
+        context = random.choice([None,
+                                 {},
+                                 '{}',
+                                 {'key': 'value'},
+                                 {'authenticated': True},
+                                 ])
+        request = {
+            "principal": f"User::\"{username}\"",
+            "action": f"Action::\"{action}\"",
+            "resource": f"Photo::\"{photo_resource}\"",
+            "context": context
+        }
+        return request
+
+    def test_authorize_basic_shape_of_response(self):
+        for _ in range(1, 30):
+
+            actual_authz_resp: dict = cedarpolicy.is_authorized(self.make_request(),
+                                                                self.policies["bob"],
+                                                                self.entities)
+            self.assertIn('decision', actual_authz_resp)
+            self.assertIn('diagnostics', actual_authz_resp)
+
+            diagnostics = actual_authz_resp['diagnostics']
+            self.assertIn('reason', diagnostics)
+            self.assertIn('errors', diagnostics)
 
     def test_authorize_basic_perf(self):
         import timeit
