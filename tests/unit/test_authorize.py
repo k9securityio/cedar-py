@@ -1,7 +1,5 @@
 import json
-import random
 import unittest
-from typing import Optional
 
 import cedarpolicy
 
@@ -54,54 +52,53 @@ class AuthorizeTestCase(unittest.TestCase):
                 ;
                 {common_policies}""".strip(),
 
-
         }
         self.entities: str = json.dumps(
             [
-              {
-                "uid": {
-                  "__expr": "User::\"alice\""
+                {
+                    "uid": {
+                        "__expr": "User::\"alice\""
+                    },
+                    "attrs": {},
+                    "parents": []
                 },
-                "attrs": {},
-                "parents": []
-              },
-              {
-                "uid": {
-                  "__expr": "User::\"bob\""
+                {
+                    "uid": {
+                        "__expr": "User::\"bob\""
+                    },
+                    "attrs": {},
+                    "parents": []
                 },
-                "attrs": {},
-                "parents": []
-              },
-              {
-                "uid": {
-                  "__expr": "Photo::\"bobs-photo-1\""
+                {
+                    "uid": {
+                        "__expr": "Photo::\"bobs-photo-1\""
+                    },
+                    "attrs": {
+                        "account": {"__expr": "User::\"bob\""}
+                    },
+                    "parents": []
                 },
-                "attrs": {
-                    "account": {"__expr": "User::\"bob\""}
+                {
+                    "uid": {
+                        "__expr": "Action::\"view\""
+                    },
+                    "attrs": {},
+                    "parents": []
                 },
-                "parents": []
-              },
-              {
-                "uid": {
-                  "__expr": "Action::\"view\""
+                {
+                    "uid": {
+                        "__expr": "Action::\"edit\""
+                    },
+                    "attrs": {},
+                    "parents": []
                 },
-                "attrs": {},
-                "parents": []
-              },
-              {
-                "uid": {
-                  "__expr": "Action::\"edit\""
-                },
-                "attrs": {},
-                "parents": []
-              },
-              {
-                "uid": {
-                  "__expr": "Action::\"delete\""
-                },
-                "attrs": {},
-                "parents": []
-              }
+                {
+                    "uid": {
+                        "__expr": "Action::\"delete\""
+                    },
+                    "attrs": {},
+                    "parents": []
+                }
             ]
         )
 
@@ -112,9 +109,16 @@ class AuthorizeTestCase(unittest.TestCase):
             "resource": "Photo::\"1234-abcd\"",
             "context": json.dumps({})
         }
-        
-        is_authorized: str = cedarpolicy.is_authorized(request, self.policies["bob"], self.entities)
-        self.assertEqual("ALLOW", is_authorized)
+
+        expect_authz_resp = {
+            "decision": "Allow",
+            "diagnostics": {
+                "reason": ["policy0"],
+                "errors": []
+            }
+        }
+        actual_authz_resp_str: str = cedarpolicy.is_authorized(request, self.policies["bob"], self.entities)
+        self.assertEqual(expect_authz_resp, json.loads(actual_authz_resp_str))
 
     def test_authorize_basic_DENY(self):
         request = {
@@ -124,12 +128,21 @@ class AuthorizeTestCase(unittest.TestCase):
             "context": json.dumps({})
         }
 
-        is_authorized: str = cedarpolicy.is_authorized(request, self.policies["bob"], self.entities)
-        self.assertEqual("DENY", is_authorized)
+        expect_authz_resp = {
+            'decision': 'Deny',
+            'diagnostics': {
+                'errors': ['while evaluating policy policy2, encountered the '
+                           'following error: record does not have the '
+                           'required attribute: authenticated'],
+                'reason': []
+            }
+        }
+        actual_authz_resp_str: str = cedarpolicy.is_authorized(request, self.policies["bob"], self.entities)
+        self.assertEqual(expect_authz_resp, json.loads(actual_authz_resp_str))
 
     def test_authorize_basic_perf(self):
         import timeit
-        
+
         num_exec = 100
 
         timer = timeit.timeit(lambda: self.test_authorize_basic_ALLOW(), number=num_exec)
@@ -148,19 +161,21 @@ class AuthorizeTestCase(unittest.TestCase):
             "resource": "Photo::\"bobs-photo-1\""
         }
 
-        is_authorized: str = cedarpolicy.is_authorized(request, self.policies["bob"], self.entities)
-        self.assertEqual("ALLOW", is_authorized,
+        expect_authz_resp: dict = {"decision": "Allow", "diagnostics": {"reason": ["policy1"], "errors": []}}
+
+        actual_authz_resp_str: str = cedarpolicy.is_authorized(request, self.policies["bob"], self.entities)
+        self.assertEqual(expect_authz_resp, json.loads(actual_authz_resp_str),
                          "expected omitted context to be allowed")
 
         # noinspection PyTypedDict
         request["context"] = None
-        is_authorized: str = cedarpolicy.is_authorized(request, self.policies["bob"], self.entities)
-        self.assertEqual("ALLOW", is_authorized,
+        actual_authz_resp_str: str = cedarpolicy.is_authorized(request, self.policies["bob"], self.entities)
+        self.assertEqual(expect_authz_resp, json.loads(actual_authz_resp_str),
                          "expected context with value None to be allowed")
 
         request["context"] = json.dumps({})
-        is_authorized: str = cedarpolicy.is_authorized(request, self.policies["bob"], self.entities)
-        self.assertEqual("ALLOW", is_authorized,
+        actual_authz_resp_str: str = cedarpolicy.is_authorized(request, self.policies["bob"], self.entities)
+        self.assertEqual(expect_authz_resp, json.loads(actual_authz_resp_str),
                          "expected empty context to be allowed")
 
     def test_authorized_to_edit_own_photo_ALLOW(self):
@@ -171,10 +186,11 @@ class AuthorizeTestCase(unittest.TestCase):
             "context": json.dumps({})
         }
 
-        is_authorized: str = cedarpolicy.is_authorized(request, self.policies["bob"], self.entities)
-        self.assertEqual("ALLOW", is_authorized)
+        expect_authz_resp: dict = {"decision": "Allow", "diagnostics": {"reason": ["policy1"], "errors": []}}
+        actual_authz_resp_str: str = cedarpolicy.is_authorized(request, self.policies["bob"], self.entities)
+        self.assertEqual(expect_authz_resp, json.loads(actual_authz_resp_str))
 
-    def test_not_authorizeed_to_edit_other_users_photo(self):
+    def test_not_authorized_to_edit_other_users_photo(self):
         request = {
             "principal": "User::\"alice\"",
             "action": "Action::\"edit\"",
@@ -182,8 +198,9 @@ class AuthorizeTestCase(unittest.TestCase):
             "context": json.dumps({})
         }
 
-        is_authorized: str = cedarpolicy.is_authorized(request, self.policies["bob"], self.entities)
-        self.assertEqual("DENY", is_authorized)
+        expect_authz_resp: dict = {"decision": "Deny", "diagnostics": {"reason": [], "errors": []}}
+        actual_authz_resp_str: str = cedarpolicy.is_authorized(request, self.policies["bob"], self.entities)
+        self.assertEqual(expect_authz_resp, json.loads(actual_authz_resp_str))
 
     def test_authorized_to_delete_own_photo_when_authenticated_in_context(self):
         policies = self.policies["alice"]
@@ -199,14 +216,16 @@ class AuthorizeTestCase(unittest.TestCase):
             })
         }
 
-        is_authorized: str = cedarpolicy.is_authorized(request, policies, entities,
-                                                       schema=schema)
-        self.assertEqual("DENY", is_authorized)
+        expect_authz_resp = {"decision": "Deny", "diagnostics": {"reason": [], "errors": []}}
+        actual_authz_resp_str: str = cedarpolicy.is_authorized(request, policies, entities,
+                                                               schema=schema)
+        self.assertEqual(expect_authz_resp, json.loads(actual_authz_resp_str))
 
         request["context"] = json.dumps({
             "authenticated": True
         })
 
-        is_authorized: str = cedarpolicy.is_authorized(request, policies, entities,
-                                                       schema=schema)
-        self.assertEqual("ALLOW", is_authorized)
+        expect_authz_resp = {"decision": "Allow", "diagnostics": {"reason": ["policy2"], "errors": []}}
+        actual_authz_resp_str: str = cedarpolicy.is_authorized(request, policies, entities,
+                                                               schema=schema)
+        self.assertEqual(expect_authz_resp, json.loads(actual_authz_resp_str))
