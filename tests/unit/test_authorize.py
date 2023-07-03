@@ -107,7 +107,7 @@ class AuthorizeTestCase(unittest.TestCase):
             "principal": "User::\"bob\"",
             "action": "Action::\"view\"",
             "resource": "Photo::\"1234-abcd\"",
-            "context": json.dumps({})
+            "context": {}
         }
 
         expect_authz_resp = {
@@ -125,7 +125,7 @@ class AuthorizeTestCase(unittest.TestCase):
             "principal": "User::\"bob\"",
             "action": "Action::\"delete\"",
             "resource": "Photo::\"1234-abcd\"",
-            "context": json.dumps({})
+            "context": {}
         }
 
         expect_authz_resp = {
@@ -154,6 +154,25 @@ class AuthorizeTestCase(unittest.TestCase):
         print(f'DENY ({num_exec}): {timer}')
         self.assertLess(timer.real, t_deadline_seconds)
 
+    def test_context_may_be_a_json_str_or_dict(self):
+        for expect_context in [{}, {"key": "value"},
+                               '{}', '{"key":"value"}']:
+            request = {
+                "principal": "User::\"bob\"",
+                "action": "Action::\"view\"",
+                "resource": "Photo::\"1234-abcd\"",
+                "context": expect_context
+            }
+            expect_authz_resp = {
+                "decision": "Allow",
+                "diagnostics": {
+                    "reason": ["policy0"],
+                    "errors": []
+                }
+            }
+            actual_authz_resp: dict = cedarpolicy.is_authorized(request, self.policies["bob"], self.entities)
+            self.assertEqual(expect_authz_resp, actual_authz_resp)
+
     def test_context_is_optional_in_authorize_request(self):
         request = {
             "principal": "User::\"bob\"",
@@ -173,7 +192,7 @@ class AuthorizeTestCase(unittest.TestCase):
         self.assertEqual(expect_authz_resp, actual_authz_resp,
                          "expected context with value None to be allowed")
 
-        request["context"] = json.dumps({})
+        request["context"] = {}
         actual_authz_resp: dict = cedarpolicy.is_authorized(request, self.policies["bob"], self.entities)
         self.assertEqual(expect_authz_resp, actual_authz_resp,
                          "expected empty context to be allowed")
@@ -183,7 +202,7 @@ class AuthorizeTestCase(unittest.TestCase):
             "principal": "User::\"bob\"",
             "action": "Action::\"edit\"",
             "resource": "Photo::\"bobs-photo-1\"",
-            "context": json.dumps({})
+            "context": {}
         }
 
         expect_authz_resp: dict = {"decision": "Allow", "diagnostics": {"reason": ["policy1"], "errors": []}}
@@ -195,7 +214,7 @@ class AuthorizeTestCase(unittest.TestCase):
             "principal": "User::\"alice\"",
             "action": "Action::\"edit\"",
             "resource": "Photo::\"bobs-photo-1\"",
-            "context": json.dumps({})
+            "context": {}
         }
 
         expect_authz_resp: dict = {"decision": "Deny", "diagnostics": {"reason": [], "errors": []}}
