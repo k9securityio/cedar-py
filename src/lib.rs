@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::str::FromStr;
 use std::time::Instant;
 
@@ -5,6 +6,7 @@ use anyhow::{Context as _, Error, Result};
 use cedar_policy::*;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyString};
+use serde::{Deserialize, Serialize};
 
 /// Echo (return) the input string
 #[pyfunction]
@@ -115,8 +117,7 @@ fn is_authorized(request: &PyDict,
     let ans = execute_authorization_request(&request,
                                             policies,
                                             entities,
-                                            schema,
-                                            true);
+                                            schema);
     match ans {
         Ok(ans) => {
             let to_json_str_result = serde_json::to_string(&ans);
@@ -145,15 +146,38 @@ fn to_pyerr<E: ToString>(errs: &Vec<E>) -> PyErr {
     pyo3::exceptions::PyValueError::new_err(err_str)
 }
 
+/// Authorization response returned from the `Authorizer`
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+struct AuthzResponse {
+    /// Authorization decision
+    decision: Decision,
+
+    /// Diagnostics providing more information on how this decision was reached
+    diagnostics: Diagnostics,
+
+    /// Metrics providing timing information on the authorization decision
+    metrics: HashMap<String, u128>,
+}
+
+impl AuthzResponse {
+    /// Create a new `AuthzResponse`
+    pub fn new(response: Response, metrics: HashMap<String, u128>) -> Self {
+        Self {
+            decision: response.decision(),
+            diagnostics: response.diagnostics().clone(),
+            metrics,
+        }
+    }
+}
+
 /// This uses the Cedar API to call the authorization engine.
 fn execute_authorization_request(
     request: &RequestArgs,
     policies_str: String,
     // links_filename: Option<impl AsRef<Path>>,
     entities_str: String,
-    schema_str: Option<String>,
-    compute_duration: bool,
-) -> Result<Response, Vec<Error>> {
+    schema_str: Option<String>
+) -> Result<AuthzResponse, Vec<Error>> {
     let mut parse_errs:Vec<ParseErrors> = vec![];
     let mut errs:Vec<Error> = vec![];
 
@@ -209,13 +233,11 @@ fn execute_authorization_request(
         let auth_start = Instant::now();
         let ans = authorizer.is_authorized(&request, &policies, &entities);
         let auth_dur = auth_start.elapsed();
-        if compute_duration {
-            println!(
-                "Authorization Time (micro seconds) : {}",
-                auth_dur.as_micros()
-            );
-        }
-        Ok(ans)
+        let metrics = HashMap::from([
+            (String::from("authz_duration_micros"), auth_dur.as_micros())
+        ]);
+        let authz_response = AuthzResponse::new(ans, metrics);
+        Ok(authz_response)
     } else {
         println!("encountered errors while building request.\nparse_errs: {:#?}\nerrs: {:#?} ",
                  parse_errs, errs);

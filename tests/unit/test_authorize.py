@@ -123,9 +123,10 @@ class AuthorizeTestCase(unittest.TestCase):
                 "reason": ["policy0"],
                 "errors": []
             }
+            # omit metrics
         }
         actual_authz_resp: dict = cedarpolicy.is_authorized(request, self.policies["bob"], self.entities)
-        self.assertEqual(expect_authz_resp, actual_authz_resp)
+        self.assert_authz_responses_equal(expect_authz_resp, actual_authz_resp)
 
     def test_authorize_basic_DENY(self):
         request = {
@@ -145,7 +146,19 @@ class AuthorizeTestCase(unittest.TestCase):
             }
         }
         actual_authz_resp: dict = cedarpolicy.is_authorized(request, self.policies["bob"], self.entities)
-        self.assertEqual(expect_authz_resp, actual_authz_resp)
+        self.assert_authz_responses_equal(expect_authz_resp, actual_authz_resp)
+
+    def assert_authz_responses_equal(self, expect_authz_resp: dict, actual_authz_resp: dict,
+                                     msg: str = None):
+        self.assertEqual(expect_authz_resp["decision"], actual_authz_resp["decision"],
+                         msg=msg)
+        self.assertEqual(expect_authz_resp["diagnostics"], actual_authz_resp["diagnostics"],
+                         msg=msg)
+
+        if 'metrics' in expect_authz_resp:
+            # only assert equality of metrics if caller has included them.
+            # in general, we can't check metrics because they rely on runtime / execution information
+            self.assertEqual(expect_authz_resp['metrics'], actual_authz_resp['metrics'])
 
     # noinspection PyMethodMayBeStatic
     def make_request(self):
@@ -180,6 +193,9 @@ class AuthorizeTestCase(unittest.TestCase):
             self.assertIn('reason', diagnostics)
             self.assertIn('errors', diagnostics)
 
+            self.assertIn('metrics', actual_authz_resp)
+            self.assertIn('authz_duration_micros', actual_authz_resp['metrics'])
+
     def test_authorize_basic_perf(self):
         import timeit
 
@@ -211,7 +227,7 @@ class AuthorizeTestCase(unittest.TestCase):
                 }
             }
             actual_authz_resp: dict = cedarpolicy.is_authorized(request, self.policies["bob"], self.entities)
-            self.assertEqual(expect_authz_resp, actual_authz_resp)
+            self.assert_authz_responses_equal(expect_authz_resp, actual_authz_resp)
 
     def test_entities_may_be_a_json_str_or_list(self):
         for entities in [self.entities,
@@ -254,19 +270,20 @@ class AuthorizeTestCase(unittest.TestCase):
         expect_authz_resp: dict = {"decision": "Allow", "diagnostics": {"reason": ["policy1"], "errors": []}}
 
         actual_authz_resp: dict = cedarpolicy.is_authorized(request, self.policies["bob"], self.entities)
-        self.assertEqual(expect_authz_resp, actual_authz_resp,
-                         "expected omitted context to be allowed")
+        self.assert_authz_responses_equal(expect_authz_resp, actual_authz_resp,
+                                          "expected omitted context to be allowed")
 
         # noinspection PyTypedDict
         request["context"] = None
+        print(f'\n\n!!!actual_authz_resp: {actual_authz_resp}')
         actual_authz_resp: dict = cedarpolicy.is_authorized(request, self.policies["bob"], self.entities)
-        self.assertEqual(expect_authz_resp, actual_authz_resp,
-                         "expected context with value None to be allowed")
+        self.assert_authz_responses_equal(expect_authz_resp, actual_authz_resp,
+                                          "expected context with value None to be allowed")
 
         request["context"] = {}
         actual_authz_resp: dict = cedarpolicy.is_authorized(request, self.policies["bob"], self.entities)
-        self.assertEqual(expect_authz_resp, actual_authz_resp,
-                         "expected empty context to be allowed")
+        self.assert_authz_responses_equal(expect_authz_resp, actual_authz_resp,
+                                          "expected empty context to be allowed")
 
     def test_authorized_to_edit_own_photo_ALLOW(self):
         request = {
@@ -278,7 +295,7 @@ class AuthorizeTestCase(unittest.TestCase):
 
         expect_authz_resp: dict = {"decision": "Allow", "diagnostics": {"reason": ["policy1"], "errors": []}}
         actual_authz_resp: dict = cedarpolicy.is_authorized(request, self.policies["bob"], self.entities)
-        self.assertEqual(expect_authz_resp, actual_authz_resp)
+        self.assert_authz_responses_equal(expect_authz_resp, actual_authz_resp)
 
     def test_not_authorized_to_edit_other_users_photo(self):
         request = {
@@ -290,7 +307,7 @@ class AuthorizeTestCase(unittest.TestCase):
 
         expect_authz_resp: dict = {"decision": "Deny", "diagnostics": {"reason": [], "errors": []}}
         actual_authz_resp: dict = cedarpolicy.is_authorized(request, self.policies["bob"], self.entities)
-        self.assertEqual(expect_authz_resp, actual_authz_resp)
+        self.assert_authz_responses_equal(expect_authz_resp, actual_authz_resp)
 
     def test_authorized_to_delete_own_photo_when_authenticated_in_context(self):
         policies = self.policies["alice"]
@@ -309,7 +326,7 @@ class AuthorizeTestCase(unittest.TestCase):
         expect_authz_resp = {"decision": "Deny", "diagnostics": {"reason": [], "errors": []}}
         actual_authz_resp: dict = cedarpolicy.is_authorized(request, policies, entities,
                                                             schema=schema)
-        self.assertEqual(expect_authz_resp, actual_authz_resp)
+        self.assert_authz_responses_equal(expect_authz_resp, actual_authz_resp)
 
         request["context"] = json.dumps({
             "authenticated": True
@@ -318,4 +335,4 @@ class AuthorizeTestCase(unittest.TestCase):
         expect_authz_resp = {"decision": "Allow", "diagnostics": {"reason": ["policy2"], "errors": []}}
         actual_authz_resp: dict = cedarpolicy.is_authorized(request, policies, entities,
                                                             schema=schema)
-        self.assertEqual(expect_authz_resp, actual_authz_resp)
+        self.assert_authz_responses_equal(expect_authz_resp, actual_authz_resp)
