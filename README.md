@@ -122,7 +122,7 @@ authz_resp: dict = cedarpolicy.is_authorized(request, policies, entities)
 #    }
 
 # so you can assert on the decision like:
-assert "ALLOW" == authz_resp['decision']
+assert "Allow" == authz_resp['decision']
 ```
 
 ###
