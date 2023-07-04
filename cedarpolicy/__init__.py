@@ -30,6 +30,9 @@ def is_authorized(request: dict,
         "diagnostics": {
             "reason": ["policy0"], # the policy that determined the decision
             "errors": []           # any errors
+        },
+        "metrics": {
+            "authz_duration_micros": 42
         }
     }
 
