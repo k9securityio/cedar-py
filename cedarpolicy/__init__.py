@@ -12,7 +12,7 @@ def echo(s: str) -> str:
 def is_authorized(request: dict,
                   policies: str,
                   entities: Union[str, List[dict]],
-                  schema: str = None,
+                  schema: Union[str, dict, None] = None,
                   verbose: bool = False) -> dict:
     """Evaluate whether the request is authorized given the parameters.
 
@@ -21,8 +21,8 @@ def is_authorized(request: dict,
     :param policies is a str containing all the policies in the Cedar PolicySet
     :param entities a list of entities or a json-formatted string containing the list of entities to
     include in the evaluation
-    :param schema a json-formatted string containing the Cedar schema, required when context is populated
-    :param verbose a boolean determining whether to enable verbose logging output within the library
+    :param schema (optional) dictionary or json-formatted string containing the Cedar schema
+    :param verbose (optional) boolean determining whether to enable verbose logging output within the library
 
     :returns a dictionary containing the decision and diagnostic details, e.g.:
     {
@@ -46,6 +46,12 @@ def is_authorized(request: dict,
         pass
     elif isinstance(entities, list):
         entities = json.dumps(entities)
+
+    if schema is not None:
+        if isinstance(schema, str):
+            pass
+        elif isinstance(schema, dict):
+            schema = json.dumps(schema)
 
     authz_response = _cedarpolicy.is_authorized(request, policies, entities, schema, verbose)
     return json.loads(authz_response)

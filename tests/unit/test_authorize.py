@@ -221,6 +221,29 @@ class AuthorizeTestCase(unittest.TestCase):
                                                                 entities)
             self.assertEqual("Allow", actual_authz_resp["decision"])
 
+    def test_schema_may_be_none_or_json_str_or_dict(self):
+        policies = self.policies["alice"]
+        entities = load_file_as_str("resources/sandbox_b/entities.json")
+        schema_src = load_file_as_str("resources/sandbox_b/schema.json")
+        for schema in [
+            None,
+            schema_src,
+            json.loads(schema_src)
+        ]:
+            request = {
+                "principal": "User::\"alice\"",
+                "action": "Action::\"delete\"",
+                "resource": "Photo::\"alice_w2.jpg\"",
+                "context": json.dumps({
+                    "authenticated": False
+                })
+            }
+
+            actual_authz_resp: dict = cedarpolicy.is_authorized(request, policies, entities,
+                                                                schema=schema)
+            self.assertEqual("Deny", actual_authz_resp["decision"])
+            self.assertEqual([], actual_authz_resp["diagnostics"]["errors"])
+
     def test_context_is_optional_in_authorize_request(self):
         request = {
             "principal": "User::\"bob\"",
