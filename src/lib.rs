@@ -117,7 +117,8 @@ fn is_authorized(request: &PyDict,
     let ans = execute_authorization_request(&request,
                                             policies,
                                             entities,
-                                            schema);
+                                            schema,
+                                            verbose);
     match ans {
         Ok(ans) => {
             let to_json_str_result = serde_json::to_string(&ans);
@@ -176,7 +177,8 @@ fn execute_authorization_request(
     policies_str: String,
     // links_filename: Option<impl AsRef<Path>>,
     entities_str: String,
-    schema_str: Option<String>
+    schema_str: Option<String>,
+    verbose: bool
 ) -> Result<AuthzResponse, Vec<Error>> {
     let mut parse_errs:Vec<ParseErrors> = vec![];
     let mut errs:Vec<Error> = vec![];
@@ -192,12 +194,17 @@ fn execute_authorization_request(
     let schema: Option<Schema> = match &schema_str {
         None => None,
         Some(schema_src) => {
-            println!("schema: {}", schema_src.as_str());
+            if verbose {
+                println!("schema: {}", schema_src.as_str());
+            }
             match Schema::from_str(&schema_src) {
                 Ok(schema) => Some(schema),
                 Err(e) => {
+                    // TODO: record this error
                     // errs.push(e);
-                    println!("!!! error constructing schema: {}", e);
+                    if verbose {
+                        println!("!!! error constructing schema: {}", e);
+                    }
                     None
                 }
             }
@@ -239,8 +246,10 @@ fn execute_authorization_request(
         let authz_response = AuthzResponse::new(ans, metrics);
         Ok(authz_response)
     } else {
-        println!("encountered errors while building request.\nparse_errs: {:#?}\nerrs: {:#?} ",
-                 parse_errs, errs);
+        if verbose {
+            println!("encountered errors while building request.\nparse_errs: {:#?}\nerrs: {:#?} ",
+                     parse_errs, errs);
+        }
         Err(errs)
     }
 }
