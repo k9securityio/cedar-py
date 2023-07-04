@@ -109,6 +109,38 @@ class AuthorizeTestCase(unittest.TestCase):
             "context": {}
         }
 
+    # noinspection PyMethodMayBeStatic
+    def make_request(self):
+        """Make a valid Cedar request"""
+        username = random.choice(["alice", "bob", "does-not-exist"])
+        action = random.choice(["view", "edit", "delete", "does-not-exist"])
+        photo_resource = random.choice(["1234-abcd", "prototype_v0.jpg", "does-not-exist"])
+        context = random.choice([None,
+                                 {},
+                                 '{}',
+                                 {'key': 'value'},
+                                 {'authenticated': True},
+                                 ])
+        request = {
+            "principal": f"User::\"{username}\"",
+            "action": f"Action::\"{action}\"",
+            "resource": f"Photo::\"{photo_resource}\"",
+            "context": context
+        }
+        return request
+
+    def assert_authz_responses_equal(self, expect_authz_resp: dict, actual_authz_resp: dict,
+                                     msg: str = None):
+        self.assertEqual(expect_authz_resp["decision"], actual_authz_resp["decision"],
+                         msg=msg)
+        self.assertEqual(expect_authz_resp["diagnostics"], actual_authz_resp["diagnostics"],
+                         msg=msg)
+
+        if 'metrics' in expect_authz_resp:
+            # only assert equality of metrics if caller has included them.
+            # in general, we can't check metrics because they rely on runtime / execution information
+            self.assertEqual(expect_authz_resp['metrics'], actual_authz_resp['metrics'])
+
     def test_authorize_basic_ALLOW(self):
         request = {
             "principal": "User::\"bob\"",
@@ -147,38 +179,6 @@ class AuthorizeTestCase(unittest.TestCase):
         }
         actual_authz_resp: dict = cedarpolicy.is_authorized(request, self.policies["bob"], self.entities)
         self.assert_authz_responses_equal(expect_authz_resp, actual_authz_resp)
-
-    def assert_authz_responses_equal(self, expect_authz_resp: dict, actual_authz_resp: dict,
-                                     msg: str = None):
-        self.assertEqual(expect_authz_resp["decision"], actual_authz_resp["decision"],
-                         msg=msg)
-        self.assertEqual(expect_authz_resp["diagnostics"], actual_authz_resp["diagnostics"],
-                         msg=msg)
-
-        if 'metrics' in expect_authz_resp:
-            # only assert equality of metrics if caller has included them.
-            # in general, we can't check metrics because they rely on runtime / execution information
-            self.assertEqual(expect_authz_resp['metrics'], actual_authz_resp['metrics'])
-
-    # noinspection PyMethodMayBeStatic
-    def make_request(self):
-        """Make a valid Cedar request"""
-        username = random.choice(["alice", "bob", "does-not-exist"])
-        action = random.choice(["view", "edit", "delete", "does-not-exist"])
-        photo_resource = random.choice(["1234-abcd", "prototype_v0.jpg", "does-not-exist"])
-        context = random.choice([None,
-                                 {},
-                                 '{}',
-                                 {'key': 'value'},
-                                 {'authenticated': True},
-                                 ])
-        request = {
-            "principal": f"User::\"{username}\"",
-            "action": f"Action::\"{action}\"",
-            "resource": f"Photo::\"{photo_resource}\"",
-            "context": context
-        }
-        return request
 
     def test_authorize_basic_shape_of_response(self):
         for _ in range(1, 30):
