@@ -232,4 +232,8 @@ class CedarIntegrationTestCase(unittest.TestCase):
         authz_resp: dict = cedarpolicy.is_authorized(request=request, policies=policies, entities=entities,
                                                      schema=schema)
 
-        self.assertEqual(query['decision'], authz_resp['decision'])
+        description = query['desc']
+        self.assertEqual(query['decision'], authz_resp['decision'],
+                         msg=f'unexpected decision for query desc: {description}')
+        self.assertEqual(query['errors'], authz_resp['diagnostics']['errors'],
+                         msg=f'unexpected errors for query desc: {description}')
