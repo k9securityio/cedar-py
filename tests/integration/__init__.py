@@ -1,6 +1,7 @@
 import json
 import os
 import pprint
+from typing import Union
 
 
 def pretty_format(o: object) -> str:
@@ -8,7 +9,7 @@ def pretty_format(o: object) -> str:
     return pprint.pformat(object=o, indent=2, width=120)
 
 
-def load_file_as_json(relative_file_path: str) -> object:
+def load_file_as_json(relative_file_path: str) -> Union[object, list, dict]:
     path = construct_path_relative_to_current_module(relative_file_path)
 
     try:
