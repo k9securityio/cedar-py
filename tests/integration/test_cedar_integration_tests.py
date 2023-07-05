@@ -235,5 +235,9 @@ class CedarIntegrationTestCase(unittest.TestCase):
         description = query['desc']
         self.assertEqual(query['decision'], authz_resp['decision'],
                          msg=f'unexpected decision for query desc: {description}')
+        # 'reason' spelling is correct here, but a debatable choice as it's a list
+        # 'reason' matches the (Rust) Decision enum but Java API has exposed as reasons (plural)
+        self.assertEqual(query['reasons'], authz_resp['diagnostics']['reason'],
+                         msg=f'unexpected errors for query desc: {description}')
         self.assertEqual(query['errors'], authz_resp['diagnostics']['errors'],
                          msg=f'unexpected errors for query desc: {description}')
