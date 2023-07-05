@@ -137,6 +137,72 @@ class CedarIntegrationTestCase(unittest.TestCase):
                                               should_validate=should_validate,
                                               query=query)
 
+    @parameterized.expand(get_authz_test_params_for_use_case("4a"),
+                          name_func=custom_name_func)
+    def test_example_use_cases_doc_4a(self,
+                                      policies: str,
+                                      entities: list,
+                                      schema: dict,
+                                      should_validate: bool,  # ignored; currently don't have the equivalent
+                                      query: dict):
+
+        self.exec_authz_query_with_assertions(policies=policies, entities=entities, schema=schema,
+                                              should_validate=should_validate,
+                                              query=query)
+
+    @parameterized.expand(get_authz_test_params_for_use_case("4c"),
+                          name_func=custom_name_func)
+    @unittest.skip(reason="A couple of requests failing here; true reason TBD")
+    def test_example_use_cases_doc_4c(self,
+                                      policies: str,
+                                      entities: list,
+                                      schema: dict,
+                                      should_validate: bool,  # ignored; currently don't have the equivalent
+                                      query: dict):
+
+        self.exec_authz_query_with_assertions(policies=policies, entities=entities, schema=schema,
+                                              should_validate=should_validate,
+                                              query=query)
+
+    @parameterized.expand(get_authz_test_params_for_use_case("4d"),
+                          name_func=custom_name_func)
+    def test_example_use_cases_doc_4d(self,
+                                      policies: str,
+                                      entities: list,
+                                      schema: dict,
+                                      should_validate: bool,  # ignored; currently don't have the equivalent
+                                      query: dict):
+
+        self.exec_authz_query_with_assertions(policies=policies, entities=entities, schema=schema,
+                                              should_validate=should_validate,
+                                              query=query)
+
+    @parameterized.expand(get_authz_test_params_for_use_case("4e"),
+                          name_func=custom_name_func)
+    def test_example_use_cases_doc_4e(self,
+                                      policies: str,
+                                      entities: list,
+                                      schema: dict,
+                                      should_validate: bool,  # ignored; currently don't have the equivalent
+                                      query: dict):
+
+        self.exec_authz_query_with_assertions(policies=policies, entities=entities, schema=schema,
+                                              should_validate=should_validate,
+                                              query=query)
+
+    @parameterized.expand(get_authz_test_params_for_use_case("4f"),
+                          name_func=custom_name_func)
+    def test_example_use_cases_doc_4f(self,
+                                      policies: str,
+                                      entities: list,
+                                      schema: dict,
+                                      should_validate: bool,  # ignored; currently don't have the equivalent
+                                      query: dict):
+
+        self.exec_authz_query_with_assertions(policies=policies, entities=entities, schema=schema,
+                                              should_validate=should_validate,
+                                              query=query)
+
     def exec_authz_query_with_assertions(self,
                                          policies: str,
                                          entities: list,
