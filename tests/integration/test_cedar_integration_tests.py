@@ -1,10 +1,11 @@
 from parameterized import parameterized
-import random
 import unittest
 from typing import List
 
 import cedarpolicy
-from integration import load_file_as_json, load_file_as_str, pretty_format
+
+from integration import load_file_as_json, load_file_as_str
+from shared import pretty_format
 
 
 def custom_name_func(testcase_func, param_num, param):
