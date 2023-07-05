@@ -22,6 +22,12 @@ quick:
 	maturin develop ;\
 	pytest
 
+.PHONY: integration-tests
+integration-tests:
+	@echo Running integration tests
+	@echo Running official Cedar integration test cases
+	set -e ;\
+	pytest tests/integration/test_cedar_integration_tests.py
 
 .PHONY: release
 release:
