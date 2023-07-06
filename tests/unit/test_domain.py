@@ -30,9 +30,9 @@ class AuthzResultTestCase(unittest.TestCase):
 
     def test_decision_property_when_Allow(self):
         authz_result = AuthzResult(self.allow_authz_resp)
-        # print(f'authz_result ({type(authz_result)}): {authz_result}')
         self.assertEqual(Decision.Allow, authz_result.decision)
-        self.assertEqual(Decision.Allow, authz_result['decision'])
+        self.assertEqual(Decision.Allow, authz_result['decision'],
+                         msg="decision should be available via subscript")
         self.assertTrue(authz_result.allowed)
 
     def test_decision_property_when_Deny(self):
@@ -77,6 +77,18 @@ class AuthzResultTestCase(unittest.TestCase):
                                  authz_result.metrics)
             else:
                 self.assertEqual({}, authz_result.metrics)
+
+    def test__getitem__makes_properties_subscriptable(self):
+        for authz_resp in [
+            self.allow_authz_resp,
+            self.deny_authz_resp,
+        ]:
+            authz_result = AuthzResult(authz_resp)
+            
+            self.assertEqual(authz_result.decision, authz_result['decision'])
+            self.assertEqual(authz_result.allowed, authz_result['allowed'])
+            self.assertEqual(authz_result.diagnostics, authz_result['diagnostics'])
+            self.assertEqual(authz_result.metrics, authz_result['metrics'])
 
 
 class DiagnosticsTestCase(unittest.TestCase):

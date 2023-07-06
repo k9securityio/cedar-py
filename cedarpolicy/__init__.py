@@ -87,6 +87,7 @@ class AuthzResult:
     def __init__(self, authz_resp: dict) -> None:
         super().__init__()
         self._authz_resp = authz_resp
+        self._diagnostics = Diagnostics(self._authz_resp.get('diagnostics', {}))
 
     @property
     def decision(self) -> Decision:
@@ -98,7 +99,7 @@ class AuthzResult:
 
     @property
     def diagnostics(self) -> Diagnostics:
-        return Diagnostics(self._authz_resp['diagnostics'])
+        return self._diagnostics
 
     @property
     def metrics(self) -> dict:
