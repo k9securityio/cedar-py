@@ -1,6 +1,7 @@
 import json
 from copy import copy
-from typing import Union, List
+from enum import Enum
+from typing import Union, List, Any
 
 from cedarpolicy import _cedarpolicy
 
@@ -58,3 +59,24 @@ def is_authorized(request: dict,
 
     authz_response = _cedarpolicy.is_authorized(request, policies, entities, schema, verbose)
     return json.loads(authz_response)
+
+
+class Decision(Enum):
+    Allow = 'Allow'
+    Deny = 'Deny'
+    NoDecision = 'NoDecision'
+
+
+class AuthzResult:
+    def __init__(self, authz_resp: dict) -> None:
+        super().__init__()
+        self._authz_resp = authz_resp
+
+    @property
+    def decision(self) -> Decision:
+        return Decision[self._authz_resp['decision']]
+
+    @property
+    def allowed(self) -> bool:
+        return Decision.Allow == self.decision
+
