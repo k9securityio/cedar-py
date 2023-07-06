@@ -1,4 +1,5 @@
 # Cedar Python
+![CI (main)](https://github.com/k9securityio/cedar-py/actions/workflows/CI.yml/badge.svg?branch=main)
 
 This repository contains `cedarpolicy`, a Python package that allows using the (Rust) [Cedar Policy](https://github.com/cedar-policy/cedar/tree/main) library from Python more convenient.
 
