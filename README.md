@@ -108,7 +108,7 @@ pip install /path/to/cedar-py/target/wheels/cedarpolicy-0.1.0-cp39-cp39-macosx_1
 Then you can use the library from your Python project just like the [tests](tests/unit) demonstrate:
 
 ```python
-import cedarpolicy
+from cedarpolicy import is_authorized, AuthzResult, Decision
 
 policies: str = "//a string containing cedar policies"
 entities: list = [ # a list of Cedar entities; can also be a json-formatted string of Cedar entities
@@ -122,7 +122,7 @@ request = {
     "context": {}
 }
 
-authz_resp: dict = cedarpolicy.is_authorized(request, policies, entities)
+authz_result: AuthzResult = is_authorized(request, policies, entities)
 # The response dict will look like:
 #     {
 #        "decision": "Allow",       # Allow or Deny
@@ -136,7 +136,7 @@ authz_resp: dict = cedarpolicy.is_authorized(request, policies, entities)
 #    }
 
 # so you can assert on the decision like:
-assert "Allow" == authz_resp['decision']
+assert Decision.Allow == authz_result.decision
 ```
 
 ## Contributing
