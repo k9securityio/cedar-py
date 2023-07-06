@@ -13,21 +13,21 @@ exceptiongroup==1.1.2
 iniconfig==2.0.0
     # via pytest
 maturin==1.1.0
-    # via cedarpolicy (pyproject.toml)
+    # via cedarpy (pyproject.toml)
 packaging==23.1
     # via
     #   build
     #   pytest
 parameterized==0.9.0
-    # via cedarpolicy (pyproject.toml)
+    # via cedarpy (pyproject.toml)
 pip-tools==6.13.0
-    # via cedarpolicy (pyproject.toml)
+    # via cedarpy (pyproject.toml)
 pluggy==1.2.0
     # via pytest
 pyproject-hooks==1.0.0
     # via build
 pytest==7.4.0
-    # via cedarpolicy (pyproject.toml)
+    # via cedarpy (pyproject.toml)
 tomli==2.0.1
     # via
     #   build

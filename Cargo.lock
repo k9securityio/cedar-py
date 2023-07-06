@@ -244,7 +244,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "cedarpolicy"
+name = "cedarpy"
 version = "0.1.0"
 dependencies = [
  "anyhow",

@@ -60,10 +60,10 @@ Ignoring maturin: markers 'extra == "dev"' don't match your environment
 Ignoring pip-tools: markers 'extra == "dev"' don't match your environment
 Ignoring pytest: markers 'extra == "dev"' don't match your environment
 💻 Using `MACOSX_DEPLOYMENT_TARGET=11.0` for aarch64-apple-darwin by default
-   Compiling cedarpolicy v0.1.0 (/path/to/cedar-py)
+   Compiling cedarpy v0.1.0 (/path/to/cedar-py)
     Finished dev [unoptimized + debuginfo] target(s) in 3.06s
-📦 Built wheel for CPython 3.9 to /var/folders/k2/tnw8n1c54tv8nt4557pfx3440000gp/T/.tmpO6aj6c/cedarpolicy-0.1.0-cp39-cp39-macosx_11_0_arm64.whl
-🛠 Installed cedarpolicy-0.1.0
+📦 Built wheel for CPython 3.9 to /var/folders/k2/tnw8n1c54tv8nt4557pfx3440000gp/T/.tmpO6aj6c/cedarpy-0.1.0-cp39-cp39-macosx_11_0_arm64.whl
+🛠 Installed cedarpy-0.1.0
 ================================================================================================ test session starts ================================================================================================
 platform darwin -- Python 3.9.12, pytest-7.4.0, pluggy-1.2.0
 rootdir: /path/to/cedar-py
@@ -103,17 +103,17 @@ The release process will build a wheel and output it into `target/wheels/`
 
 You can install that file with pip, e.g.:
 ```shell
-pip install /path/to/cedar-py/target/wheels/cedarpolicy-0.1.0-cp39-cp39-macosx_11_0_arm64.whl
+pip install /path/to/cedar-py/target/wheels/cedarpy-0.1.0-cp39-cp39-macosx_11_0_arm64.whl
 ```
 
 Then you can use the library from your Python project just like the [tests](tests/unit) demonstrate:
 
 ```python
-from cedarpolicy import is_authorized, AuthzResult, Decision
+from cedarpy import is_authorized, AuthzResult, Decision
 
 policies: str = "//a string containing cedar policies"
-entities: list = [ # a list of Cedar entities; can also be a json-formatted string of Cedar entities
-    { "uid": { "__expr": "User::\"alice\"" }, "attrs": {}, "parents": [] }
+entities: list = [  # a list of Cedar entities; can also be a json-formatted string of Cedar entities
+    {"uid": {"__expr": "User::\"alice\""}, "attrs": {}, "parents": []}
     # ...
 ]
 request = {
@@ -126,7 +126,7 @@ request = {
 authz_result: AuthzResult = is_authorized(request, policies, entities)
 
 # so you can assert on the decision like:
-assert Decision.Allow == authz_result.decision 
+assert Decision.Allow == authz_result.decision
 
 # or use the 'allowed' convenience method 
 assert authz_result.allowed

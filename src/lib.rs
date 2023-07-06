@@ -280,7 +280,7 @@ fn load_actions_from_schema(entities: Entities, schema: &Option<Schema>) -> Resu
 
 /// A Python module implemented in Rust.
 #[pymodule]
-fn _cedarpolicy(_py: Python, m: &PyModule) -> PyResult<()> {
+fn _internal(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(echo, m)?)?;
     m.add_function(wrap_pyfunction!(is_authorized, m)?)?;
     Ok(())

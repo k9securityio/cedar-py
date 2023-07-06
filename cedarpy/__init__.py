@@ -3,11 +3,11 @@ from copy import copy
 from enum import Enum
 from typing import Union, List, Any
 
-from cedarpolicy import _cedarpolicy
+from cedarpy import _internal
 
 
 def echo(s: str) -> str:
-    return _cedarpolicy.echo(s)
+    return _internal.echo(s)
 
 
 class Decision(Enum):
@@ -95,5 +95,5 @@ def is_authorized(request: dict,
         elif isinstance(schema, dict):
             schema = json.dumps(schema)
 
-    authz_response = _cedarpolicy.is_authorized(request, policies, entities, schema, verbose)
+    authz_response = _internal.is_authorized(request, policies, entities, schema, verbose)
     return AuthzResult(json.loads(authz_response))

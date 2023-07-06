@@ -1,6 +1,6 @@
 import unittest
 
-from cedarpolicy import AuthzResult, Decision, Diagnostics
+from cedarpy import AuthzResult, Decision, Diagnostics
 
 
 class AuthzResultTestCase(unittest.TestCase):

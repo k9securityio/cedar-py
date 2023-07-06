@@ -3,7 +3,7 @@ requires = ["maturin>=1.1,<2.0"]
 build-backend = "maturin"
 
 [project]
-name = "cedarpolicy"
+name = "cedarpy"
 requires-python = ">=3.9"
 classifiers = [
     "Programming Language :: Rust",
@@ -20,7 +20,7 @@ dev = [
 ]
 
 [tool.maturin]
-module-name = "cedarpolicy._cedarpolicy"
+module-name = "cedarpy._internal"
 features = ["pyo3/extension-module"]
 
 [tool.pytest.ini_options]

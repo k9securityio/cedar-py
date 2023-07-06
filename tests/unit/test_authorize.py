@@ -3,7 +3,7 @@ import random
 import unittest
 from typing import List, Union
 
-from cedarpolicy import is_authorized, AuthzResult, Decision
+from cedarpy import is_authorized, AuthzResult, Decision
 
 from unit import load_file_as_str
 

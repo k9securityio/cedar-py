@@ -2,7 +2,7 @@ from parameterized import parameterized
 import unittest
 from typing import List
 
-import cedarpolicy
+import cedarpy
 
 from shared import pretty_format, load_file_as_json, load_file_as_str
 
@@ -64,8 +64,8 @@ class BaseDataDrivenCedarIntegrationTestCase(unittest.TestCase):
             'resource': query['resource'],
             'context': query.get('context', {}),
         }
-        authz_resp: dict = cedarpolicy.is_authorized(request=request, policies=policies, entities=entities,
-                                                     schema=schema)
+        authz_resp: dict = cedarpy.is_authorized(request=request, policies=policies, entities=entities,
+                                                 schema=schema)
 
         description = query['desc']
         self.assertEqual(query['decision'], authz_resp['decision'],
