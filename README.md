@@ -1,7 +1,7 @@
 # Cedar Python
 ![CI (main)](https://github.com/k9securityio/cedar-py/actions/workflows/CI.yml/badge.svg?branch=main)
 
-This repository contains `cedarpolicy`, a Python package that allows using the (Rust) [Cedar Policy](https://github.com/cedar-policy/cedar/tree/main) library from Python more convenient.
+This repository contains `cedarpy`, a Python package that allows using the (Rust) [Cedar Policy](https://github.com/cedar-policy/cedar/tree/main) library from Python more convenient.
 
 This project is built on the [PyO3](https://docs.rs/pyo3/latest/pyo3/index.html) and [maturin](https://www.maturin.rs/index.html) projects.  These projects are designed to enable Python to use Rust code and vice versa.
 
@@ -95,9 +95,9 @@ make integration-tests
 `cedar-py` currently passes 46 of the 50 'example_use_cases_doc' tests.  We will support executing more tests shortly. See [test_cedar_integration_tests.py](tests/integration/test_cedar_integration_tests.py) for details.
 
 ## Using the library
-Releases of `cedarpolicy` will be available on PyPi soon.  For now, if you'd like to use the library, you can build a release locally and install it with `pip`.
+Releases of `cedarpy` will be available on PyPi soon.  For now, if you'd like to use the library, you can build a release locally and install it with `pip`.
 
-If you used `make quick` above, the `cedarpolicy` module will already be installed. You can also use `make release` to build a release locally.
+If you used `make quick` above, the `cedarpy` module will already be installed. You can also use `make release` to build a release locally.
 
 The release process will build a wheel and output it into `target/wheels/`
 

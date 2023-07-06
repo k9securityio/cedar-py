@@ -3,7 +3,7 @@ import unittest
 
 
 class ImportModuleTestCase(unittest.TestCase):
-    def test_cedarpolicy_module_imports(self):
+    def test_cedarpy_module_imports(self):
 
         # noinspection PyUnresolvedReferences
         import cedarpy
