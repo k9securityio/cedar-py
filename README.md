@@ -79,6 +79,20 @@ tests/unit/test_import_module.py::InvokeModuleTestFunctionTestCase::test_invoke_
 ================================================================================================ 10 passed in 0.51s =================================================================================================
 ```
 
+### Integration tests
+This project supports validating correctness with official Cedar integration tests. To run those tests you'll need to retrieve the `cedar-integration-tests` data with:
+
+```shell
+make submodules
+```
+
+Then you can run:
+```shell
+make integration-tests
+```
+
+`cedar-py` currently passes 46 of the 50 'example_use_cases_doc' tests.  We will support executing more tests shortly. See [test_cedar_integration_tests.py](tests/integration/test_cedar_integration_tests.py) for details.
+
 ## Using the library
 Releases of `cedarpolicy` will be available on PyPi soon.  For now, if you'd like to use the library, you can build a release locally and install it with `pip`.
 
@@ -124,8 +138,6 @@ authz_resp: dict = cedarpolicy.is_authorized(request, policies, entities)
 # so you can assert on the decision like:
 assert "Allow" == authz_resp['decision']
 ```
-
-###
 
 ## Contributing
 
