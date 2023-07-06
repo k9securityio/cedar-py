@@ -136,7 +136,14 @@ authz_result: AuthzResult = is_authorized(request, policies, entities)
 #    }
 
 # so you can assert on the decision like:
-assert Decision.Allow == authz_result.decision
+assert Decision.Allow == authz_result.decision 
+
+# or use the 'allowed' convenience method 
+assert authz_result.allowed
+
+# or even via AuthzResult's attribute subscripting support 
+assert authz_result['allowed']
+
 ```
 
 ## Contributing
