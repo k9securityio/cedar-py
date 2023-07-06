@@ -354,3 +354,30 @@ class CedarMultiIntegrationTestCase(BaseDataDrivenCedarIntegrationTestCase):
                                               should_validate=should_validate,
                                               query=query)
 
+
+class CedarDecimalIntegrationTestCase(BaseDataDrivenCedarIntegrationTestCase):
+
+    @parameterized.expand(get_authz_test_params_for_test_suite("decimal", "1"),
+                          name_func=custom_name_func)
+    def test_decimal_1(self,
+                       policies: str,
+                       entities: list,
+                       schema: dict,
+                       should_validate: bool,  # ignored; currently don't have the equivalent
+                       query: dict):
+        self.exec_authz_query_with_assertions(policies=policies, entities=entities, schema=schema,
+                                              should_validate=should_validate,
+                                              query=query)
+
+    @parameterized.expand(get_authz_test_params_for_test_suite("decimal", "2"),
+                          name_func=custom_name_func)
+    def test_decimal_2(self,
+                       policies: str,
+                       entities: list,
+                       schema: dict,
+                       should_validate: bool,  # ignored; currently don't have the equivalent
+                       query: dict):
+        self.exec_authz_query_with_assertions(policies=policies, entities=entities, schema=schema,
+                                              should_validate=should_validate,
+                                              query=query)
+
