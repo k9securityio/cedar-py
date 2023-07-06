@@ -44,7 +44,36 @@ def get_authz_test_params_for_use_case(use_case_id: str) -> list:
     return testing_params
 
 
-class CedarExampleUseCasesIntegrationTestCase(unittest.TestCase):
+class BaseDataDrivenCedarIntegrationTestCase(unittest.TestCase):
+
+    def exec_authz_query_with_assertions(self,
+                                         policies: str,
+                                         entities: list,
+                                         schema: dict,
+                                         should_validate: bool,  # ignored; currently don't have the equivalent
+                                         query: dict) -> None:
+        print(f"executing authz query:\n{pretty_format(query)}")
+        request = {
+            'principal': query['principal'],
+            'action': query['action'],
+            'resource': query['resource'],
+            'context': query.get('context', {}),
+        }
+        authz_resp: dict = cedarpolicy.is_authorized(request=request, policies=policies, entities=entities,
+                                                     schema=schema)
+
+        description = query['desc']
+        self.assertEqual(query['decision'], authz_resp['decision'],
+                         msg=f'unexpected decision for query desc: {description}')
+        # 'reason' spelling is correct here, but a debatable choice as it's a list
+        # 'reason' matches the (Rust) Decision enum but Java API has exposed as reasons (plural)
+        self.assertEqual(query['reasons'], authz_resp['diagnostics']['reason'],
+                         msg=f'unexpected errors for query desc: {description}')
+        self.assertEqual(query['errors'], authz_resp['diagnostics']['errors'],
+                         msg=f'unexpected errors for query desc: {description}')
+
+
+class CedarExampleUseCasesIntegrationTestCase(BaseDataDrivenCedarIntegrationTestCase):
 
     @parameterized.expand(get_authz_test_params_for_use_case("1a"),
                           name_func=custom_name_func)
@@ -216,28 +245,3 @@ class CedarExampleUseCasesIntegrationTestCase(unittest.TestCase):
                                               should_validate=should_validate,
                                               query=query)
 
-    def exec_authz_query_with_assertions(self,
-                                         policies: str,
-                                         entities: list,
-                                         schema: dict,
-                                         should_validate: bool,  # ignored; currently don't have the equivalent
-                                         query: dict) -> None:
-        print(f"executing authz query:\n{pretty_format(query)}")
-        request = {
-            'principal': query['principal'],
-            'action': query['action'],
-            'resource': query['resource'],
-            'context': query.get('context', {}),
-        }
-        authz_resp: dict = cedarpolicy.is_authorized(request=request, policies=policies, entities=entities,
-                                                     schema=schema)
-
-        description = query['desc']
-        self.assertEqual(query['decision'], authz_resp['decision'],
-                         msg=f'unexpected decision for query desc: {description}')
-        # 'reason' spelling is correct here, but a debatable choice as it's a list
-        # 'reason' matches the (Rust) Decision enum but Java API has exposed as reasons (plural)
-        self.assertEqual(query['reasons'], authz_resp['diagnostics']['reason'],
-                         msg=f'unexpected errors for query desc: {description}')
-        self.assertEqual(query['errors'], authz_resp['diagnostics']['errors'],
-                         msg=f'unexpected errors for query desc: {description}')
