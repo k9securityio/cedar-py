@@ -4,8 +4,7 @@ from typing import List
 
 import cedarpolicy
 
-from integration import load_file_as_json, load_file_as_str
-from shared import pretty_format
+from shared import pretty_format, load_file_as_json, load_file_as_str
 
 
 def custom_name_func(testcase_func, param_num, param):
@@ -45,7 +44,7 @@ def get_authz_test_params_for_use_case(use_case_id: str) -> list:
     return testing_params
 
 
-class CedarIntegrationTestCase(unittest.TestCase):
+class CedarExampleUseCasesIntegrationTestCase(unittest.TestCase):
 
     @parameterized.expand(get_authz_test_params_for_use_case("1a"),
                           name_func=custom_name_func)
