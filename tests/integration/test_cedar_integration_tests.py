@@ -64,17 +64,17 @@ class BaseDataDrivenCedarIntegrationTestCase(unittest.TestCase):
             'resource': query['resource'],
             'context': query.get('context', {}),
         }
-        authz_resp: dict = cedarpy.is_authorized(request=request, policies=policies, entities=entities,
-                                                 schema=schema)
+        authz_result: cedarpy.AuthzResult = cedarpy.is_authorized(request=request, policies=policies, entities=entities,
+                                                                schema=schema)
 
         description = query['desc']
-        self.assertEqual(query['decision'], authz_resp['decision'],
+        self.assertEqual(query['decision'], authz_result.decision.value,
                          msg=f'unexpected decision for query desc: {description}')
         # 'reason' spelling is correct here, but a debatable choice as it's a list
         # 'reason' matches the (Rust) Decision enum but Java API has exposed as reasons (plural)
-        self.assertEqual(query['reasons'], authz_resp['diagnostics']['reason'],
+        self.assertEqual(query['reasons'], authz_result.diagnostics.reasons,
                          msg=f'unexpected errors for query desc: {description}')
-        self.assertEqual(query['errors'], authz_resp['diagnostics']['errors'],
+        self.assertEqual(query['errors'], authz_result.diagnostics.errors,
                          msg=f'unexpected errors for query desc: {description}')
 
 
