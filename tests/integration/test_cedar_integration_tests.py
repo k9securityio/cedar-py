@@ -16,11 +16,16 @@ def custom_name_func(testcase_func, param_num, param):
     )
 
 
-def get_authz_test_params_for_use_case(use_case_id: str) -> list:
+def get_authz_test_params_for_test_suite(test_kind: str, test_suite: str) -> list:
+    """Get authorization test params for a cedar-integration-tests test suite
+    :param test_kind is one of the kinds of tests organized by directory in the cedar-integration-tests/tests
+    directory, e.g. example_use_cases_doc
+    :param test_suite is the test suite's 'id', which is the name of the file without the `.json`, e.g. '1a'
+    """
     # Load the test data
     cedar_int_tests_base = "resources/cedar-integration-tests"
-    test_def: dict = load_file_as_json(f"{cedar_int_tests_base}/tests/example_use_cases_doc/{use_case_id}.json")
-    print(f'loading tests defined for use case: {use_case_id}')
+    test_def: dict = load_file_as_json(f"{cedar_int_tests_base}/tests/{test_kind}/{test_suite}.json")
+    print(f'loading tests defined for use case: {test_suite}')
 
     policies_file_name: str = test_def['policies']
     entities_file_name: str = test_def['entities']
@@ -40,7 +45,7 @@ def get_authz_test_params_for_use_case(use_case_id: str) -> list:
                                should_validate,
                                query))
 
-    print(f'selected {len(testing_params)} test cases for {use_case_id}:\n{pretty_format(testing_params)}')
+    print(f'selected {len(testing_params)} test cases for {test_suite}:\n{pretty_format(testing_params)}')
     return testing_params
 
 
@@ -75,7 +80,7 @@ class BaseDataDrivenCedarIntegrationTestCase(unittest.TestCase):
 
 class CedarExampleUseCasesIntegrationTestCase(BaseDataDrivenCedarIntegrationTestCase):
 
-    @parameterized.expand(get_authz_test_params_for_use_case("1a"),
+    @parameterized.expand(get_authz_test_params_for_test_suite("example_use_cases_doc", "1a"),
                           name_func=custom_name_func)
     def test_example_use_cases_doc_1a(self,
                                       policies: str,
@@ -88,7 +93,7 @@ class CedarExampleUseCasesIntegrationTestCase(BaseDataDrivenCedarIntegrationTest
                                               should_validate=should_validate,
                                               query=query)
 
-    @parameterized.expand(get_authz_test_params_for_use_case("2a"),
+    @parameterized.expand(get_authz_test_params_for_test_suite("example_use_cases_doc", "2a"),
                           name_func=custom_name_func)
     def test_example_use_cases_doc_2a(self,
                                       policies: str,
@@ -101,7 +106,7 @@ class CedarExampleUseCasesIntegrationTestCase(BaseDataDrivenCedarIntegrationTest
                                               should_validate=should_validate,
                                               query=query)
 
-    @parameterized.expand(get_authz_test_params_for_use_case("2b"),
+    @parameterized.expand(get_authz_test_params_for_test_suite("example_use_cases_doc", "2b"),
                           name_func=custom_name_func)
     def test_example_use_cases_doc_2b(self,
                                       policies: str,
@@ -114,7 +119,7 @@ class CedarExampleUseCasesIntegrationTestCase(BaseDataDrivenCedarIntegrationTest
                                               should_validate=should_validate,
                                               query=query)
 
-    @parameterized.expand(get_authz_test_params_for_use_case("2c"),
+    @parameterized.expand(get_authz_test_params_for_test_suite("example_use_cases_doc", "2c"),
                           name_func=custom_name_func)
     def test_example_use_cases_doc_2c(self,
                                       policies: str,
@@ -127,7 +132,7 @@ class CedarExampleUseCasesIntegrationTestCase(BaseDataDrivenCedarIntegrationTest
                                               should_validate=should_validate,
                                               query=query)
 
-    @parameterized.expand(get_authz_test_params_for_use_case("3a"),
+    @parameterized.expand(get_authz_test_params_for_test_suite("example_use_cases_doc", "3a"),
                           name_func=custom_name_func)
     def test_example_use_cases_doc_3a(self,
                                       policies: str,
@@ -140,7 +145,7 @@ class CedarExampleUseCasesIntegrationTestCase(BaseDataDrivenCedarIntegrationTest
                                               should_validate=should_validate,
                                               query=query)
 
-    @parameterized.expand(get_authz_test_params_for_use_case("3b"),
+    @parameterized.expand(get_authz_test_params_for_test_suite("example_use_cases_doc", "3b"),
                           name_func=custom_name_func)
     def test_example_use_cases_doc_3b(self,
                                       policies: str,
@@ -153,7 +158,7 @@ class CedarExampleUseCasesIntegrationTestCase(BaseDataDrivenCedarIntegrationTest
                                               should_validate=should_validate,
                                               query=query)
 
-    @parameterized.expand(get_authz_test_params_for_use_case("3c"),
+    @parameterized.expand(get_authz_test_params_for_test_suite("example_use_cases_doc", "3c"),
                           name_func=custom_name_func)
     def test_example_use_cases_doc_3c(self,
                                       policies: str,
@@ -166,7 +171,7 @@ class CedarExampleUseCasesIntegrationTestCase(BaseDataDrivenCedarIntegrationTest
                                               should_validate=should_validate,
                                               query=query)
 
-    @parameterized.expand(get_authz_test_params_for_use_case("4a"),
+    @parameterized.expand(get_authz_test_params_for_test_suite("example_use_cases_doc", "4a"),
                           name_func=custom_name_func)
     def test_example_use_cases_doc_4a(self,
                                       policies: str,
@@ -179,7 +184,7 @@ class CedarExampleUseCasesIntegrationTestCase(BaseDataDrivenCedarIntegrationTest
                                               should_validate=should_validate,
                                               query=query)
 
-    @parameterized.expand(get_authz_test_params_for_use_case("4c"),
+    @parameterized.expand(get_authz_test_params_for_test_suite("example_use_cases_doc", "4c"),
                           name_func=custom_name_func)
     @unittest.skip(reason="A couple of requests failing here; true reason TBD")
     def test_example_use_cases_doc_4c(self,
@@ -193,7 +198,7 @@ class CedarExampleUseCasesIntegrationTestCase(BaseDataDrivenCedarIntegrationTest
                                               should_validate=should_validate,
                                               query=query)
 
-    @parameterized.expand(get_authz_test_params_for_use_case("4d"),
+    @parameterized.expand(get_authz_test_params_for_test_suite("example_use_cases_doc", "4d"),
                           name_func=custom_name_func)
     def test_example_use_cases_doc_4d(self,
                                       policies: str,
@@ -206,7 +211,7 @@ class CedarExampleUseCasesIntegrationTestCase(BaseDataDrivenCedarIntegrationTest
                                               should_validate=should_validate,
                                               query=query)
 
-    @parameterized.expand(get_authz_test_params_for_use_case("4e"),
+    @parameterized.expand(get_authz_test_params_for_test_suite("example_use_cases_doc", "4e"),
                           name_func=custom_name_func)
     def test_example_use_cases_doc_4e(self,
                                       policies: str,
@@ -219,7 +224,7 @@ class CedarExampleUseCasesIntegrationTestCase(BaseDataDrivenCedarIntegrationTest
                                               should_validate=should_validate,
                                               query=query)
 
-    @parameterized.expand(get_authz_test_params_for_use_case("4f"),
+    @parameterized.expand(get_authz_test_params_for_test_suite("example_use_cases_doc", "4f"),
                           name_func=custom_name_func)
     def test_example_use_cases_doc_4f(self,
                                       policies: str,
@@ -232,7 +237,7 @@ class CedarExampleUseCasesIntegrationTestCase(BaseDataDrivenCedarIntegrationTest
                                               should_validate=should_validate,
                                               query=query)
 
-    @parameterized.expand(get_authz_test_params_for_use_case("5b"),
+    @parameterized.expand(get_authz_test_params_for_test_suite("example_use_cases_doc", "5b"),
                           name_func=custom_name_func)
     def test_example_use_cases_doc_5b(self,
                                       policies: str,
