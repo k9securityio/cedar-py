@@ -80,3 +80,5 @@ class AuthzResult:
     def allowed(self) -> bool:
         return Decision.Allow == self.decision
 
+    def __getitem__(self, __name: str) -> Any:
+        return getattr(self, __name)

@@ -32,12 +32,12 @@ class AuthzResultTestCase(unittest.TestCase):
         authz_result = AuthzResult(self.allow_authz_resp)
         # print(f'authz_result ({type(authz_result)}): {authz_result}')
         self.assertEqual(Decision.Allow, authz_result.decision)
-        # self.assertEqual(Decision.Allow, authz_result['decision'])
+        self.assertEqual(Decision.Allow, authz_result['decision'])
         self.assertTrue(authz_result.allowed)
 
     def test_decision_property_when_Deny(self):
         authz_result = AuthzResult(self.deny_authz_resp)
         self.assertEqual(authz_result.decision, Decision.Deny)
-        # self.assertEqual(Decision.Deny, authz_result['decision'])
+        self.assertEqual(Decision.Deny, authz_result['decision'])
         self.assertFalse(authz_result.allowed)
 
