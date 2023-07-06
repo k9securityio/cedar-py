@@ -67,6 +67,22 @@ class Decision(Enum):
     NoDecision = 'NoDecision'
 
 
+class Diagnostics:
+
+    def __init__(self, diagnostics: dict) -> None:
+        super().__init__()
+        self._diagnostics: dict = diagnostics
+
+    @property
+    def errors(self) -> List[str]:
+        return self._diagnostics.get('errors', list())
+
+    @property
+    def reasons(self) -> List[str]:
+        # (intentionally) map 'reason' key in diagnostics dict to 'reasons' property (plural)
+        return self._diagnostics.get('reason', list())
+    
+
 class AuthzResult:
     def __init__(self, authz_resp: dict) -> None:
         super().__init__()
@@ -79,6 +95,10 @@ class AuthzResult:
     @property
     def allowed(self) -> bool:
         return Decision.Allow == self.decision
+
+    @property
+    def diagnostics(self) -> Diagnostics:
+        return Diagnostics(self._authz_resp['diagnostics'])
 
     def __getitem__(self, __name: str) -> Any:
         return getattr(self, __name)
