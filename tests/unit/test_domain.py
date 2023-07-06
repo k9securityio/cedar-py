@@ -57,6 +57,27 @@ class AuthzResultTestCase(unittest.TestCase):
                              f"expected 'reason' key (singular) to be mapped to reasons property (plural)"
                              f"; authz_resp: {authz_resp}")
 
+    def test_metrics_are_available(self):
+        missing_metrics = {}
+        empty_metrics = {
+            "metrics": {}  # empty metrics
+        }
+        for authz_resp in [
+            self.allow_authz_resp,
+            self.deny_authz_resp,
+            empty_metrics,
+            missing_metrics,
+        ]:
+            authz_result = AuthzResult(authz_resp)
+            self.assertIsNotNone(authz_result.metrics,
+                                 msg=f"metrics were none for {authz_resp}")
+
+            if 'metrics' in authz_resp:
+                self.assertEqual(authz_resp['metrics'],
+                                 authz_result.metrics)
+            else:
+                self.assertEqual({}, authz_result.metrics)
+
 
 class DiagnosticsTestCase(unittest.TestCase):
 

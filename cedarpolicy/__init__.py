@@ -100,5 +100,9 @@ class AuthzResult:
     def diagnostics(self) -> Diagnostics:
         return Diagnostics(self._authz_resp['diagnostics'])
 
+    @property
+    def metrics(self) -> dict:
+        return self._authz_resp.get('metrics', {})
+
     def __getitem__(self, __name: str) -> Any:
         return getattr(self, __name)
