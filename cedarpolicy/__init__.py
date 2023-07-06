@@ -73,17 +73,7 @@ def is_authorized(request: dict,
     :param schema (optional) dictionary or json-formatted string containing the Cedar schema
     :param verbose (optional) boolean determining whether to enable verbose logging output within the library
 
-    :returns a dictionary containing the decision and diagnostic details, e.g.:
-    {
-        "decision": "Allow|Deny",
-        "diagnostics": {
-            "reason": ["policy0"], # the policy that determined the decision
-            "errors": []           # any errors
-        },
-        "metrics": {
-            "authz_duration_micros": 42
-        }
-    }
+    :returns an AuthzResult
 
     """
     if "context" in request:

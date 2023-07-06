@@ -124,17 +124,6 @@ request = {
 }
 
 authz_result: AuthzResult = is_authorized(request, policies, entities)
-# The response dict will look like:
-#     {
-#        "decision": "Allow",       # Allow or Deny
-#        "diagnostics": {
-#            "reason": ["policy0"], # the policy that determined the decision
-#            "errors": []           # any errors
-#        },
-#        "metrics": {
-#            "authz_duration_micros": 42
-#        }
-#    }
 
 # so you can assert on the decision like:
 assert Decision.Allow == authz_result.decision 
