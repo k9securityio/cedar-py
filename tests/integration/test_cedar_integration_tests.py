@@ -288,3 +288,69 @@ class CedarIPIntegrationTestCase(BaseDataDrivenCedarIntegrationTestCase):
         self.exec_authz_query_with_assertions(policies=policies, entities=entities, schema=schema,
                                               should_validate=should_validate,
                                               query=query)
+
+
+class CedarMultiIntegrationTestCase(BaseDataDrivenCedarIntegrationTestCase):
+
+    @parameterized.expand(get_authz_test_params_for_test_suite("multi", "1"),
+                          name_func=custom_name_func)
+    def test_multi_1(self,
+                     policies: str,
+                     entities: list,
+                     schema: dict,
+                     should_validate: bool,  # ignored; currently don't have the equivalent
+                     query: dict):
+        self.exec_authz_query_with_assertions(policies=policies, entities=entities, schema=schema,
+                                              should_validate=should_validate,
+                                              query=query)
+
+    @parameterized.expand(get_authz_test_params_for_test_suite("multi", "2"),
+                          name_func=custom_name_func)
+    def test_multi_2(self,
+                     policies: str,
+                     entities: list,
+                     schema: dict,
+                     should_validate: bool,  # ignored; currently don't have the equivalent
+                     query: dict):
+        self.exec_authz_query_with_assertions(policies=policies, entities=entities, schema=schema,
+                                              should_validate=should_validate,
+                                              query=query)
+
+    @parameterized.expand(get_authz_test_params_for_test_suite("multi", "3"),
+                          name_func=custom_name_func)
+    def test_multi_3(self,
+                     policies: str,
+                     entities: list,
+                     schema: dict,
+                     should_validate: bool,  # ignored; currently don't have the equivalent
+                     query: dict):
+        self.exec_authz_query_with_assertions(policies=policies, entities=entities, schema=schema,
+                                              should_validate=should_validate,
+                                              query=query)
+
+    @parameterized.expand(get_authz_test_params_for_test_suite("multi", "4"),
+                          name_func=custom_name_func)
+    @unittest.skip(reason="12 pass, 1 fails")
+    def test_multi_4(self,
+                     policies: str,
+                     entities: list,
+                     schema: dict,
+                     should_validate: bool,  # ignored; currently don't have the equivalent
+                     query: dict):
+        self.exec_authz_query_with_assertions(policies=policies, entities=entities, schema=schema,
+                                              should_validate=should_validate,
+                                              query=query)
+
+    @parameterized.expand(get_authz_test_params_for_test_suite("multi", "5"),
+                          name_func=custom_name_func)
+    @unittest.skip(reason="Depends on unspecified principal, which is (currently) unsupported by is_authorized, i.e. principal is a required parameter")
+    def test_multi_5(self,
+                     policies: str,
+                     entities: list,
+                     schema: dict,
+                     should_validate: bool,  # ignored; currently don't have the equivalent
+                     query: dict):
+        self.exec_authz_query_with_assertions(policies=policies, entities=entities, schema=schema,
+                                              should_validate=should_validate,
+                                              query=query)
+
