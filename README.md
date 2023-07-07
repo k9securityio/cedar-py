@@ -1,22 +1,103 @@
 # Cedar Python
 ![CI (main)](https://github.com/k9securityio/cedar-py/actions/workflows/CI.yml/badge.svg?branch=main)
 
-This repository contains `cedarpy`, a Python package that allows using the (Rust) [Cedar Policy](https://github.com/cedar-policy/cedar/tree/main) library from Python more convenient.
+`cedarpy` helps you use the (Rust) [Cedar Policy](https://github.com/cedar-policy/cedar/tree/main) library from Python. You can use `cedarpy` to:
+* check whether a request is authorized by the [Cedar Policy](https://www.cedarpolicy.com) engine
+* format policies
 
-This project is built on the [PyO3](https://docs.rs/pyo3/latest/pyo3/index.html) and [maturin](https://www.maturin.rs/index.html) projects.  These projects are designed to enable Python to use Rust code and vice versa.
+`cedarpy` packages are availble for the following platforms:
+<table>
+<thead><tr><th>Operating System</th><th>Processor Architectures</th></tr></thead>
+<tbody>
+    <tr><td>Linux</td><td>x86_64, aarch64</td></tr>
+    <tr><td>Mac</td><td>x86_64, aarch64</td></tr>
+    <tr><td>Windows</td><td>x86_64</td></tr>
+</tbody>
+</table>
 
 Note: This project is _not_ officially supported by AWS or the Cedar Policy team.
 
-## Getting started
+## Using the library
+Releases of [`cedarpy`](https://pypi.org/project/cedarpy/) are available on PyPi.  You can install the latest release with:
+```shell
+pip install cedarpy
+```
+
+(See the Developing section for how to use artifacts you've built locally.)
+
+### Authorizing access with Cedar policies in Python
+Now you can use the library to authorize access with Cedar from your Python project using the `is_authorized` function.  Here's an example of basic use:
+
+```python
+from cedarpy import is_authorized, AuthzResult, Decision
+
+policies: str = "//a string containing cedar policies"
+entities: list = [  # a list of Cedar entities; can also be a json-formatted string of Cedar entities
+    {"uid": {"__expr": "User::\"alice\""}, "attrs": {}, "parents": []}
+    # ...
+]
+request = {
+    "principal": "User::\"bob\"",
+    "action": "Action::\"view\"",
+    "resource": "Photo::\"1234-abcd\"",
+    "context": {}
+}
+
+authz_result: AuthzResult = is_authorized(request, policies, entities)
+
+# so you can assert on the decision like:
+assert Decision.Allow == authz_result.decision
+
+# or use the 'allowed' convenience method 
+assert authz_result.allowed
+
+# or even via AuthzResult's attribute subscripting support 
+assert authz_result['allowed']
+
+```
+The [`AuthzResult`](cedarpy/__init__.py) class also provides diagnostics and metrics for the access evaluation request. 
+
+See the [unit tests](tests/unit) for more examples of use and expected behavior.
+
+### Formatting Cedar policies
+
+You can use `format_policies` to pretty-print Cedar policies according to
+convention.
+
+```python
+from cedarpy import format_policies
+
+policies: str = """
+    permit(
+        principal,
+        action == Action::"edit",
+        resource
+    )
+    when {
+        resource.owner == principal
+    };
+"""
+
+print(format_policies(policies))
+# permit (
+#   principal,
+#   action == Action::"edit",
+#   resource
+# )
+# when { resource.owner == principal };
+```
+
+## Developing
+
 
 You'll need a few things to get started:
 
 * Python +3.9
 * Rust and `cargo`
 
-The most common development commands are in the `Makefile`
+This project is built on the [PyO3](https://docs.rs/pyo3/latest/pyo3/index.html) and [maturin](https://www.maturin.rs/index.html) projects.  These projects are designed to enable Python to use Rust code and vice versa.
 
-Note: This project is developed on an M1 Mac with Python 3.9.
+The most common development commands are in the `Makefile`
 
 ### Create virtual env
 
@@ -92,81 +173,29 @@ Then you can run:
 make integration-tests
 ```
 
-`cedar-py` currently passes 46 of the 50 'example_use_cases_doc' tests.  We will support executing more tests shortly. See [test_cedar_integration_tests.py](tests/integration/test_cedar_integration_tests.py) for details.
+`cedar-py` currently passes 69 of the 82 tests defined in the `example_use_cases_doc`, `multi`, `ip`, and `decimal` suites. (The pass rate is actually higher, but we skip some tests that pass due to the way test suites are loaded.)  See [test_cedar_integration_tests.py](tests/integration/test_cedar_integration_tests.py) for details.
 
-## Using the library
-Releases of `cedarpy` will be available on PyPi soon.  For now, if you'd like to use the library, you can build a release locally and install it with `pip`.
+### Using locally-built artifacts
 
-If you used `make quick` above, the `cedarpy` module will already be installed. You can also use `make release` to build a release locally.
+If you used `make quick` above, then a development build of the `cedarpy` module will already be installed in the virtual environment. 
+
+If you want to use your local `cedarpy` changes in another Python environment, you'll need to build a release with:
+
+```shell
+make release
+```
 
 The release process will build a wheel and output it into `target/wheels/`
 
-You can install that file with pip, e.g.:
+Now you can install that file with pip, e.g.:
 ```shell
-pip install /path/to/cedar-py/target/wheels/cedarpy-0.1.0-cp39-cp39-macosx_11_0_arm64.whl
+pip install --force-reinstall /path/to/cedar-py/target/wheels/ccedarpy-*.whl
 ```
 
-Then you can use the library from your Python project just like the [tests](tests/unit) demonstrate:
-
-```python
-from cedarpy import is_authorized, AuthzResult, Decision
-
-policies: str = "//a string containing cedar policies"
-entities: list = [  # a list of Cedar entities; can also be a json-formatted string of Cedar entities
-    {"uid": {"__expr": "User::\"alice\""}, "attrs": {}, "parents": []}
-    # ...
-]
-request = {
-    "principal": "User::\"bob\"",
-    "action": "Action::\"view\"",
-    "resource": "Photo::\"1234-abcd\"",
-    "context": {}
-}
-
-authz_result: AuthzResult = is_authorized(request, policies, entities)
-
-# so you can assert on the decision like:
-assert Decision.Allow == authz_result.decision
-
-# or use the 'allowed' convenience method 
-assert authz_result.allowed
-
-# or even via AuthzResult's attribute subscripting support 
-assert authz_result['allowed']
-
-```
-
-### Formatting Cedar policies
-
-You can use `format_policies` to pretty-print Cedar policies according to
-convention.
-
-```python
-from cedarpy import format_policies
-
-policies: str = """
-    permit(
-        principal,
-        action == Action::"edit",
-        resource
-    )
-    when {
-        resource.owner == principal
-    };
-"""
-
-print(format_policies(policies))
-# permit (
-#   principal,
-#   action == Action::"edit",
-#   resource
-# )
-# when { resource.owner == principal };
-```
 
 ## Contributing
 
-This project is very early stage. This project uses GitHub [issues](https://github.com/k9securityio/cedar-py/issues). Contributions are welcome.
+This project is in its early stages and contributions are welcome. Please check the project's GitHub [issues](https://github.com/k9securityio/cedar-py/issues) for work we've already identified.
 
 Some ways to contribute are:
 * Use the project and report experience and issues
@@ -174,4 +203,4 @@ Some ways to contribute are:
 * Enhance the library with additional functionality you need
 * Add test cases, particularly those from [`cedar-integration-tests`](https://github.com/k9securityio/cedar-py/issues/3)
 
-You can reach peopel interested in this project in the `cedar-py` channel of the Cedar Policy Slack workspace.
+You can reach people interested in this project in the `#cedar-py` channel of the [Cedar Policy Slack workspace](https://communityinviter.com/apps/cedar-policy/cedar-policy-language).
