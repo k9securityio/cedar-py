@@ -1,5 +1,6 @@
 # Cedar Python
 ![CI (main)](https://github.com/k9securityio/cedar-py/actions/workflows/CI.yml/badge.svg?branch=main)
+&nbsp;[![PyPI version](https://badge.fury.io/py/cedarpy.svg)](https://badge.fury.io/py/cedarpy)
 
 `cedarpy` helps you use the (Rust) [Cedar Policy](https://github.com/cedar-policy/cedar/tree/main) library from Python. You can use `cedarpy` to:
 * check whether a request is authorized by the [Cedar Policy](https://www.cedarpolicy.com) engine
