@@ -97,3 +97,17 @@ def is_authorized(request: dict,
 
     authz_response = _internal.is_authorized(request, policies, entities, schema, verbose)
     return AuthzResult(json.loads(authz_response))
+
+def format_policies(policies: str,
+                    line_width: int = 80,
+                    indent_width: int = 2) -> str:
+    """Format the provided policies according to the Cedar conventions.
+
+    :param policies is a str containing the policies to be formatted
+    :param line_width (optional) is the desired maximum line length
+    :param indent_width (optional) is the desired indentation width
+
+    :returns the formatted policy
+    :raises ValueError: if the input policies cannot be parsed
+    """
+    return _internal.format_policies(policies, line_width, indent_width)

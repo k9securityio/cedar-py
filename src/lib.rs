@@ -4,6 +4,7 @@ use std::time::Instant;
 
 use anyhow::{Context as _, Error, Result};
 use cedar_policy::*;
+use cedar_policy_formatter::{Config, policies_str_to_pretty};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyString};
 use serde::{Deserialize, Serialize};
@@ -13,6 +14,21 @@ use serde::{Deserialize, Serialize};
 #[pyo3(signature = (s))]
 fn echo(s: String) -> PyResult<String> {
     Ok(s)
+}
+
+// Pretty-print the input policy according to the input parameters.
+#[pyfunction]
+#[pyo3(signature = (s, line_width, indent_width))]
+fn format_policies(s: String, line_width: usize, indent_width: isize) -> PyResult<String> {
+    let config = Config {
+        line_width,
+        indent_width,
+    };
+
+    match policies_str_to_pretty(&s, &config) {
+        Ok(s) => Ok(s),
+        Err(e) => Err(pyo3::exceptions::PyValueError::new_err(e.to_string())),
+    }
 }
 
 pub struct RequestArgs {
@@ -283,5 +299,6 @@ fn load_actions_from_schema(entities: Entities, schema: &Option<Schema>) -> Resu
 fn _internal(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(echo, m)?)?;
     m.add_function(wrap_pyfunction!(is_authorized, m)?)?;
+    m.add_function(wrap_pyfunction!(format_policies, m)?)?;
     Ok(())
 }

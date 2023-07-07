@@ -136,6 +136,34 @@ assert authz_result['allowed']
 
 ```
 
+### Formatting Cedar policies
+
+You can use `format_policies` to pretty-print Cedar policies according to
+convention.
+
+```python
+from cedarpy import format_policies
+
+policies: str = """
+    permit(
+        principal,
+        action == Action::"edit",
+        resource
+    )
+    when {
+        resource.owner == principal
+    };
+"""
+
+print(format_policies(policies))
+# permit (
+#   principal,
+#   action == Action::"edit",
+#   resource
+# )
+# when { resource.owner == principal };
+```
+
 ## Contributing
 
 This project is very early stage. This project uses GitHub [issues](https://github.com/k9securityio/cedar-py/issues). Contributions are welcome.
