@@ -234,7 +234,8 @@ fn execute_authorization_request(
             Entities::empty()
         }
     };
-    // curious that this seems to set actions into entities
+    // load actions from the schema and append into entities
+    // we could/may integrate this into the load_entities match
     let entities = match load_actions_from_schema(entities, &schema) {
         Ok(entities) => entities,
         Err(e) => {
