@@ -205,6 +205,8 @@ class AuthorizeTestCase(unittest.TestCase):
             self.assertIsNotNone(diagnostics.reasons)
 
             self.assertIsNotNone('metrics', actual_authz_result)
+
+            metrics = actual_authz_result['metrics']
             for metric_name in [
                 'total_duration_micros',
                 'parse_policies_duration_micros',
@@ -212,7 +214,9 @@ class AuthorizeTestCase(unittest.TestCase):
                 'load_entities_duration_micros',
                 'authz_duration_micros',
             ]:
-                self.assertIn(metric_name, actual_authz_result['metrics'])
+                self.assertIn(metric_name, metrics)
+                if 'duration' in metric_name:
+                    self.assertGreaterEqual(metrics[metric_name], 0)
 
     def test_authorize_basic_perf(self):
         import timeit
