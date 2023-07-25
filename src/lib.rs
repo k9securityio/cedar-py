@@ -198,7 +198,9 @@ fn execute_authorization_request(
 ) -> Result<AuthzResponse, Vec<Error>> {
     let mut parse_errs:Vec<ParseErrors> = vec![];
     let mut errs:Vec<Error> = vec![];
+    let t_total = Instant::now();
 
+    let t_parse_policies = Instant::now();
     let policies = match PolicySet::from_str(&policies_str) {
         Ok(pset) => pset,
         Err(e) => {
@@ -206,7 +208,9 @@ fn execute_authorization_request(
             PolicySet::new()
         }
     };
+    let t_parse_policies_duration = t_parse_policies.elapsed();
 
+    let t_start_schema = Instant::now();
     let schema: Option<Schema> = match &schema_str {
         None => None,
         Some(schema_src) => {
@@ -226,7 +230,9 @@ fn execute_authorization_request(
             }
         }
     };
+    let t_parse_schema_duration = t_start_schema.elapsed();
 
+    let t_load_entities = Instant::now();
     let entities = match load_entities(entities_str, schema.as_ref()) {
         Ok(entities) => entities,
         Err(e) => {
@@ -243,7 +249,8 @@ fn execute_authorization_request(
             Entities::empty()
         }
     };
-
+    let t_load_entities_duration = t_load_entities.elapsed();
+    
     let request = match request.get_request(schema.as_ref()) {
         Ok(q) => Some(q),
         Err(e) => {
@@ -254,11 +261,14 @@ fn execute_authorization_request(
     if parse_errs.is_empty() && errs.is_empty() {
         let request = request.expect("if no errors, we should have a valid request");
         let authorizer = Authorizer::new();
-        let auth_start = Instant::now();
+        let t_authz = Instant::now();
         let ans = authorizer.is_authorized(&request, &policies, &entities);
-        let auth_dur = auth_start.elapsed();
         let metrics = HashMap::from([
-            (String::from("authz_duration_micros"), auth_dur.as_micros())
+            (String::from("total_duration_micros"), t_total.elapsed().as_micros()),
+            (String::from("parse_policies_duration_micros"), t_parse_policies_duration.as_micros()),
+            (String::from("parse_schema_duration_micros"), t_parse_schema_duration.as_micros()),
+            (String::from("load_entities_duration_micros"), t_load_entities_duration.as_micros()),
+            (String::from("authz_duration_micros"), t_authz.elapsed().as_micros()),
         ]);
         let authz_response = AuthzResponse::new(ans, metrics);
         Ok(authz_response)
