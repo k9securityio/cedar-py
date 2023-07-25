@@ -205,7 +205,14 @@ class AuthorizeTestCase(unittest.TestCase):
             self.assertIsNotNone(diagnostics.reasons)
 
             self.assertIsNotNone('metrics', actual_authz_result)
-            self.assertIn('authz_duration_micros', actual_authz_result['metrics'])
+            for metric_name in [
+                'total_duration_micros',
+                'parse_policies_duration_micros',
+                'parse_schema_duration_micros',
+                'load_entities_duration_micros',
+                'authz_duration_micros',
+            ]:
+                self.assertIn(metric_name, actual_authz_result['metrics'])
 
     def test_authorize_basic_perf(self):
         import timeit
