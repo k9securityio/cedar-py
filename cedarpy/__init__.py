@@ -98,6 +98,7 @@ def is_authorized(request: dict,
     authz_response = _internal.is_authorized(request, policies, entities, schema, verbose)
     return AuthzResult(json.loads(authz_response))
 
+
 def format_policies(policies: str,
                     line_width: int = 80,
                     indent_width: int = 2) -> str:
