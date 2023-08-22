@@ -99,6 +99,56 @@ def is_authorized(request: dict,
     return AuthzResult(json.loads(authz_response))
 
 
+def is_batch_authorized(requests: List[dict],
+                        policies: str,
+                        entities: Union[str, List[dict]],
+                        schema: Union[str, dict, None] = None,
+                        verbose: bool = False) -> List[AuthzResult]:
+    """Evaluate whether the batch of requests are authorized given the parameters.
+
+    :param requests is list of Cedar-style request objects containing a principal, action, resource, and (optional) context;
+    context may be a dict (preferred) or a string
+    :param policies is a str containing all the policies in the Cedar PolicySet
+    :param entities a list of entities or a json-formatted string containing the list of entities to
+    include in the evaluation
+    :param schema (optional) dictionary or json-formatted string containing the Cedar schema
+    :param verbose (optional) boolean determining whether to enable verbose logging output within the library
+
+    :returns a list of AuthzResults, in same order as the requests
+
+    """
+    requests_local = []
+    for request in requests:
+        if "context" in request:
+            context = request["context"]
+            if isinstance(context, dict):
+                # ok user provided context as a dictionary, lets flatten it for them
+                context_json_str = json.dumps(context)
+                request = copy(request)
+                request["context"] = context_json_str
+        requests_local.append(request)
+
+    if isinstance(entities, str):
+        pass
+    elif isinstance(entities, list):
+        entities = json.dumps(entities)
+
+    if schema is not None:
+        if isinstance(schema, str):
+            pass
+        elif isinstance(schema, dict):
+            schema = json.dumps(schema)
+
+    batch_authz_response_str: str = _internal.is_batch_authorized(requests_local, policies, entities, schema, verbose)
+    batch_authz_response_objs: List[dict] = json.loads(batch_authz_response_str)
+
+    batch_authz_responses: List[AuthzResult] = []
+    for o in batch_authz_response_objs:
+        batch_authz_responses.append(AuthzResult(o))
+
+    return batch_authz_responses
+
+
 def format_policies(policies: str,
                     line_width: int = 80,
                     indent_width: int = 2) -> str:

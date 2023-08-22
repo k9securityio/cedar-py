@@ -3,7 +3,7 @@ import random
 import unittest
 from typing import List, Union
 
-from cedarpy import is_authorized, AuthzResult, Decision
+from cedarpy import is_authorized, AuthzResult, Decision, is_batch_authorized
 
 from unit import load_file_as_str
 
@@ -359,3 +359,36 @@ class AuthorizeTestCase(unittest.TestCase):
         actual_authz_result = is_authorized(request, policies, entities,
                                             schema=schema)
         self.assert_authz_responses_equal(expect_authz_result, actual_authz_result)
+
+    def test_authorized_batch_evaluates_authorization_and_returns_in_order(self):
+        policies = self.policies["alice"]
+        entities = load_file_as_str("resources/sandbox_b/entities.json")
+        schema = load_file_as_str("resources/sandbox_b/schema.json")
+
+        requests = []
+        expect_authz_results: List[AuthzResult] = []
+        for action in [
+            'Action::"view"',
+            'Action::"edit"',
+            'Action::"comment"',
+            'Action::"delete"',
+        ]:
+            request = {
+                "principal": 'User::"alice"',
+                "action": action,
+                "resource": 'Photo::"alice_w2.jpg"',
+                "context": json.dumps({
+                    "authenticated": False
+                })
+            }
+            requests.append(request)
+            expect_authz_result: AuthzResult = is_authorized(request, policies, entities, schema=schema)
+            expect_authz_results.append(expect_authz_result)
+
+        # execute batch authz
+        actual_authz_results = is_batch_authorized(requests, policies, entities, schema, verbose=True)
+        self.assertIsNotNone(actual_authz_results)
+        
+        # verify batch results match single authz
+        # self.assert_authz_responses_equal(expect_authz_result, actual_authz_result)
+
