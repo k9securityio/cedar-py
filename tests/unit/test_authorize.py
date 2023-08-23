@@ -376,12 +376,14 @@ class AuthorizeTestCase(unittest.TestCase):
         expect_authz_results: List[AuthzResult] = []
 
         t_single_start = utc_now()
-        for action in [
+        actions = [
             'Action::"view"',
             'Action::"edit"',
             'Action::"comment"',
             'Action::"delete"',
-        ]:
+        ]
+        random.shuffle(actions)
+        for action in actions:
             request = {
                 "principal": 'User::"alice"',
                 "action": action,
