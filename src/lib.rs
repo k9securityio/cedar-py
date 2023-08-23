@@ -83,80 +83,19 @@ impl RequestArgs {
 }
 
 #[pyfunction]
-#[pyo3(signature = (request, policies, entities, schema=None, verbose=false,))]
-fn is_authorized(request: &PyDict,
+#[pyo3(signature = (request, policies, entities, schema = None, verbose = false,))]
+fn is_authorized(request: HashMap<String, String>,
                  policies: String,
                  entities: String,
                  schema: Option<String>,
                  verbose: Option<bool>)
-                 -> PyResult<String> {
-    // CLI AuthorizeArgs: https://github.com/cedar-policy/cedar/blob/main/cedar-policy-cli/src/lib.rs#L183
-    let verbose = verbose.unwrap_or(false);
-    if verbose{
-        println!("request: {}", request);
-        println!("policies: {}", policies);
-        println!("entities: {}", entities);
-        println!("schema: {}", schema.clone().unwrap_or(String::from("<none>")));
-    }
-
-    // collect request arguments into a struct compatible with authorization request
-    let principal: String = request.get_item(String::from("principal")).unwrap().downcast::<PyString>()?.to_string();
-    let action: String = request.get_item(String::from("action")).unwrap().downcast::<PyString>()?.to_string();
-    let resource: String = request.get_item(String::from("resource")).unwrap().downcast::<PyString>()?.to_string();
-
-    let context_option = request.get_item(String::from("context"));
-    let context_json_option: Option<String> = match context_option {
-        None => None, // context member not present
-        Some(context) => {
-            if context.is_none(){
-                None  // context member present, but value of None/null
-            } else {
-                //present and has a value
-                // TODO: accept context as a PyDict instead of PyString so it's more convenient in Python binding
-                // the real work is adjusting context creation with e.g. Context::from_json_val
-                Some(context.downcast::<PyString>()?.to_string())
-            }
-        }
-    };
-
-    if verbose{
-        println!("context_json_option: {}", context_json_option.clone().unwrap_or(String::from("<none>")));
-    }
-
-    let request = RequestArgs {
-        principal: Some(principal),
-        action: Some(action),
-        resource: Some(resource),
-        context_json: context_json_option,
-    };
-
-    let ans = execute_authorization_request(&request,
-                                            policies,
-                                            entities,
-                                            schema,
-                                            verbose);
-    match ans {
-        Ok(ans) => {
-            let to_json_str_result = serde_json::to_string(&ans);
-            match to_json_str_result {
-                Ok(json_str) => { Ok(json_str) },
-                Err(err) => {
-                    Err(to_pyerr(&Vec::from([err])))
-                },
-            }
-        }
-        Err(errs) => {
-            for err in &errs {
-                println!("{:#}", err);
-            }
-            Err(to_pyerr(&errs))
-        }
-    }
+                 -> String {
+    is_batch_authorized(vec![request], policies, entities, schema, verbose)[0].clone()
 }
 
 #[pyfunction]
 #[pyo3(signature = (requests, policies, entities, schema = None, verbose = false,))]
-fn is_batch_authorized(requests: Vec<HashMap<String, String>>, //a: Vec<HashMap<String, i32>>
+fn is_batch_authorized(requests: Vec<HashMap<String, String>>,
                        policies: String,
                        entities: String,
                        schema: Option<String>,
@@ -170,10 +109,24 @@ fn is_batch_authorized(requests: Vec<HashMap<String, String>>, //a: Vec<HashMap<
         println!("entities: {}", entities);
         println!("schema: {}", schema.clone().unwrap_or(String::from("<none>")));
     }
+    let mut parse_errs: Vec<ParseErrors> = vec![];
+    let mut errs: Vec<Error> = vec![];
+    let t_total = Instant::now();
+
 
     // probably need to deconstruct execute_authorization_request so that we can reuse the
     // expensive parts (policies, entities, schema):
     // parse policies
+    let t_parse_policies = Instant::now();
+    let policy_set = match PolicySet::from_str(&policies) {
+        Ok(pset) => pset,
+        Err(e) => {
+            parse_errs.push(e);
+            PolicySet::new()
+        }
+    };
+    let t_parse_policies_duration = t_parse_policies.elapsed();
+
     // parse schema
     // load entities
     // build a list of RequestArgs

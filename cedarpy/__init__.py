@@ -83,6 +83,9 @@ def is_authorized(request: dict,
             context_json_str = json.dumps(context)
             request = copy(request)
             request["context"] = context_json_str
+        elif context is None:
+            request = copy(request)
+            del request["context"]
 
     if isinstance(entities, str):
         pass
@@ -126,6 +129,10 @@ def is_batch_authorized(requests: List[dict],
                 context_json_str = json.dumps(context)
                 request = copy(request)
                 request["context"] = context_json_str
+            elif context is None:
+                request = copy(request)
+                del request["context"]
+
         requests_local.append(request)
 
     if isinstance(entities, str):
