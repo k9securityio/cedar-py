@@ -201,18 +201,17 @@ fn is_batch_authorized(requests: Vec<HashMap<String, String>>, //a: Vec<HashMap<
                 match to_json_str_result {
                     Ok(json_str) => { json_str }
                     Err(err) => {
-                        err.to_string()
+                        println!("{:#}", err);
                         //Err(to_pyerr(&Vec::from([err])))
+                        r#"{"errors": ["{}"]}"#.to_string()
                     }
                 }
             }
             Err(errs) => {
-                let err_string: String = String::from("Errors: ");
                 for err in &errs {
                     println!("{:#}", err);
                 }
-                err_string
-                // Err(to_pyerr(&errs))
+                r#"{"errors": ["{}"]}"#.to_string()
             }
         };
 
