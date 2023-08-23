@@ -139,12 +139,20 @@ def is_batch_authorized(requests: List[dict],
         elif isinstance(schema, dict):
             schema = json.dumps(schema)
 
-    batch_authz_response_str: str = _internal.is_batch_authorized(requests_local, policies, entities, schema, verbose)
-    batch_authz_response_objs: List[dict] = json.loads(batch_authz_response_str)
+    batch_authz_response_strs: List[str] = _internal.is_batch_authorized(requests_local, policies, entities, schema, verbose)
+    print(f'batch_authz_response_strs: {batch_authz_response_strs}')
+    batch_authz_response_objs: List[dict] = []
 
+    for item in batch_authz_response_strs:
+        try:
+            batch_authz_response_objs.append(json.loads(item))
+        except Exception as e:
+            pass
+        
     batch_authz_responses: List[AuthzResult] = []
-    for o in batch_authz_response_objs:
-        batch_authz_responses.append(AuthzResult(o))
+    for response_obj in batch_authz_response_objs:
+        print(f'response_obj: {response_obj}')
+        batch_authz_responses.append(AuthzResult(response_obj))
 
     return batch_authz_responses
 

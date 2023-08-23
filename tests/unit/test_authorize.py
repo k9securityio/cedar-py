@@ -132,8 +132,11 @@ class AuthorizeTestCase(unittest.TestCase):
     def assert_authz_responses_equal(self,
                                      expect_authz_result: Union[AuthzResult, dict],
                                      actual_authz_result: AuthzResult,
+                                     ignore_metric_values=False,
                                      msg: str = None):
-        """Assert an AuthzResult matches an expected spec"""
+        """Assert an AuthzResult matches an expected spec
+        :param ignore_metric_values:
+        """
 
         if isinstance(expect_authz_result, dict):
             expect_authz_result = AuthzResult(expect_authz_result)
@@ -151,7 +154,10 @@ class AuthorizeTestCase(unittest.TestCase):
         if expect_authz_result.metrics:
             # only assert equality of metrics if caller has included them.
             # in general, we can't check metrics because they rely on runtime / execution information
-            self.assertEqual(expect_authz_result['metrics'], actual_authz_result['metrics'])
+            if ignore_metric_values:
+                self.assertIsNotNone(actual_authz_result.metrics)
+            else:
+                self.assertEqual(expect_authz_result['metrics'], actual_authz_result['metrics'])
 
     def test_authorize_basic_ALLOW(self):
         request = {
@@ -294,18 +300,18 @@ class AuthorizeTestCase(unittest.TestCase):
 
         actual_authz_result: AuthzResult = is_authorized(request, self.policies["bob"], self.entities)
         self.assert_authz_responses_equal(expect_authz_result, actual_authz_result,
-                                          "expected omitted context to be allowed")
+                                          msg="expected omitted context to be allowed")
 
         # noinspection PyTypedDict
         request["context"] = None
         actual_authz_result = is_authorized(request, self.policies["bob"], self.entities)
         self.assert_authz_responses_equal(expect_authz_result, actual_authz_result,
-                                          "expected context with value None to be allowed")
+                                          msg="expected context with value None to be allowed")
 
         request["context"] = {}
         actual_authz_result = is_authorized(request, self.policies["bob"], self.entities)
         self.assert_authz_responses_equal(expect_authz_result, actual_authz_result,
-                                          "expected empty context to be allowed")
+                                          msg="expected empty context to be allowed")
 
     def test_authorized_to_edit_own_photo_ALLOW(self):
         request = {
@@ -388,7 +394,10 @@ class AuthorizeTestCase(unittest.TestCase):
         # execute batch authz
         actual_authz_results = is_batch_authorized(requests, policies, entities, schema, verbose=True)
         self.assertIsNotNone(actual_authz_results)
+        self.assertEqual(len(expect_authz_results), len(actual_authz_results))
         
         # verify batch results match single authz
-        # self.assert_authz_responses_equal(expect_authz_result, actual_authz_result)
+        for expect_authz_result, actual_authz_result in zip(expect_authz_results, actual_authz_results):
+            self.assert_authz_responses_equal(expect_authz_result, actual_authz_result,
+                                              ignore_metric_values=True)
 

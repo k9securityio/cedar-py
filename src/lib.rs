@@ -6,7 +6,7 @@ use anyhow::{Context as _, Error, Result};
 use cedar_policy::*;
 use cedar_policy_formatter::{Config, policies_str_to_pretty};
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyString};
+use pyo3::types::{IntoPyDict, PyDict, PyList, PyString};
 use serde::{Deserialize, Serialize};
 
 /// Echo (return) the input string
@@ -151,6 +151,96 @@ fn is_authorized(request: &PyDict,
             }
             Err(to_pyerr(&errs))
         }
+    }
+}
+
+#[pyfunction]
+#[pyo3(signature = (requests, policies, entities, schema = None, verbose = false,))]
+fn is_batch_authorized(requests: Vec<HashMap<String, String>>, //a: Vec<HashMap<String, i32>>
+                       policies: String,
+                       entities: String,
+                       schema: Option<String>,
+                       verbose: Option<bool>)
+                       -> Vec<String> {
+    // CLI AuthorizeArgs: https://github.com/cedar-policy/cedar/blob/main/cedar-policy-cli/src/lib.rs#L183
+    let verbose = verbose.unwrap_or(false);
+    if verbose {
+        //println!("requests: {}", requests);
+        println!("policies: {}", policies);
+        println!("entities: {}", entities);
+        println!("schema: {}", schema.clone().unwrap_or(String::from("<none>")));
+    }
+
+    // probably need to deconstruct execute_authorization_request so that we can reuse the
+    // expensive parts (policies, entities, schema):
+    // parse policies
+    // parse schema
+    // load entities
+    // build a list of RequestArgs
+    // evaluate access one at a time (future work: eval in parallel)
+
+
+    // build a vector of RequestArgs with e.g. requests.iter().map()
+    let mut request_args_vec: Vec<RequestArgs> = Vec::new();
+    requests.iter().for_each(|request: &HashMap<String, String>| {
+        request_args_vec.push(to_request_args(request));
+    });
+
+    let mut responses_vec: Vec<String> = Vec::new();
+
+    for request_args in request_args_vec.iter() {
+        // println!("> {}", request_args);
+        let ans = execute_authorization_request(&request_args,
+                                                policies.clone(),
+                                                entities.clone(),
+                                                schema.clone(),
+                                                verbose);
+        let response_string: String = match ans {
+            Ok(ans) => {
+                let to_json_str_result = serde_json::to_string(&ans);
+                match to_json_str_result {
+                    Ok(json_str) => { json_str }
+                    Err(err) => {
+                        err.to_string()
+                        //Err(to_pyerr(&Vec::from([err])))
+                    }
+                }
+            }
+            Err(errs) => {
+                let err_string: String = String::from("Errors: ");
+                for err in &errs {
+                    println!("{:#}", err);
+                }
+                err_string
+                // Err(to_pyerr(&errs))
+            }
+        };
+
+        responses_vec.push(response_string);
+    }
+
+
+
+    return responses_vec;
+}
+
+fn to_request_args(request: &HashMap<String, String>) -> RequestArgs {
+    // collect request arguments into a struct compatible with authorization request
+    let principal: String = request.get(String::from("principal").as_str()).unwrap().to_string();
+    let action: String = request.get(String::from("action").as_str()).unwrap().to_string();
+    let resource: String = request.get(String::from("resource").as_str()).unwrap().to_string();
+
+    let context_option = request.get(String::from("context").as_str());
+    let context_json_option: Option<String> = match context_option {
+        None => None, // context member not present
+        Some(context) => Some(context.to_string())
+    };
+
+    RequestArgs {
+        principal: Some(principal),
+        action: Some(action),
+        resource: Some(resource),
+        context_json: context_json_option,
     }
 }
 
@@ -310,6 +400,7 @@ fn load_actions_from_schema(entities: Entities, schema: &Option<Schema>) -> Resu
 fn _internal(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(echo, m)?)?;
     m.add_function(wrap_pyfunction!(is_authorized, m)?)?;
+    m.add_function(wrap_pyfunction!(is_batch_authorized, m)?)?;
     m.add_function(wrap_pyfunction!(format_policies, m)?)?;
     Ok(())
 }
