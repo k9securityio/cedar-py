@@ -144,12 +144,15 @@ fn is_batch_authorized(requests: Vec<HashMap<String, String>>,
     for request_args in request_args_vec.iter() {
         // println!("> {}", request_args);
         let ans = execute_authorization_request(&request_args,
-                                                policies.clone(),
+                                                &policy_set,
                                                 entities.clone(),
                                                 schema.clone(),
                                                 verbose);
         let response_string: String = match ans {
-            Ok(ans) => {
+            Ok(mut ans) => {
+                ans.metrics.insert(String::from("parse_policies_duration_micros"),
+                                   t_parse_policies_duration.as_micros());
+
                 let to_json_str_result = serde_json::to_string(&ans);
                 match to_json_str_result {
                     Ok(json_str) => { json_str }
@@ -232,7 +235,7 @@ impl AuthzResponse {
 /// This uses the Cedar API to call the authorization engine.
 fn execute_authorization_request(
     request: &RequestArgs,
-    policies_str: String,
+    policy_set: &PolicySet,
     // links_filename: Option<impl AsRef<Path>>,
     entities_str: String,
     schema_str: Option<String>,
@@ -241,16 +244,6 @@ fn execute_authorization_request(
     let mut parse_errs:Vec<ParseErrors> = vec![];
     let mut errs:Vec<Error> = vec![];
     let t_total = Instant::now();
-
-    let t_parse_policies = Instant::now();
-    let policies = match PolicySet::from_str(&policies_str) {
-        Ok(pset) => pset,
-        Err(e) => {
-            parse_errs.push(e);
-            PolicySet::new()
-        }
-    };
-    let t_parse_policies_duration = t_parse_policies.elapsed();
 
     let t_start_schema = Instant::now();
     let schema: Option<Schema> = match &schema_str {
@@ -304,10 +297,9 @@ fn execute_authorization_request(
         let request = request.expect("if no errors, we should have a valid request");
         let authorizer = Authorizer::new();
         let t_authz = Instant::now();
-        let ans = authorizer.is_authorized(&request, &policies, &entities);
+        let ans = authorizer.is_authorized(&request, &policy_set, &entities);
         let metrics = HashMap::from([
             (String::from("total_duration_micros"), t_total.elapsed().as_micros()),
-            (String::from("parse_policies_duration_micros"), t_parse_policies_duration.as_micros()),
             (String::from("parse_schema_duration_micros"), t_parse_schema_duration.as_micros()),
             (String::from("load_entities_duration_micros"), t_load_entities_duration.as_micros()),
             (String::from("authz_duration_micros"), t_authz.elapsed().as_micros()),
