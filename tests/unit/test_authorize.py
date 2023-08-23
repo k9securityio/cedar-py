@@ -1,11 +1,12 @@
 import json
 import random
 import unittest
+from datetime import timedelta
 from typing import List, Union
 
 from cedarpy import is_authorized, AuthzResult, Decision, is_batch_authorized
 
-from unit import load_file_as_str
+from unit import load_file_as_str, utc_now
 
 
 class AuthorizeTestCase(unittest.TestCase):
@@ -373,6 +374,8 @@ class AuthorizeTestCase(unittest.TestCase):
 
         requests = []
         expect_authz_results: List[AuthzResult] = []
+
+        t_single_start = utc_now()
         for action in [
             'Action::"view"',
             'Action::"edit"',
@@ -391,13 +394,23 @@ class AuthorizeTestCase(unittest.TestCase):
             expect_authz_result: AuthzResult = is_authorized(request, policies, entities, schema=schema)
             expect_authz_results.append(expect_authz_result)
 
-        # execute batch authz
+        t_single_elapsed: timedelta = utc_now() - t_single_start
+
+        t_batch_start = utc_now()
         actual_authz_results = is_batch_authorized(requests, policies, entities, schema, verbose=True)
         self.assertIsNotNone(actual_authz_results)
         self.assertEqual(len(expect_authz_results), len(actual_authz_results))
+
+        t_batch_elapsed: timedelta = utc_now() - t_batch_start
+
+        print(f't_single_elapsed: {t_single_elapsed.total_seconds()}')
+        print(f't_batch_elapsed: {t_batch_elapsed.total_seconds()}')
+
+        self.assertLessEqual(t_batch_elapsed, t_single_elapsed)
         
         # verify batch results match single authz
         for expect_authz_result, actual_authz_result in zip(expect_authz_results, actual_authz_results):
+            print(f'actual_authz_result.metrics: {actual_authz_result. metrics}')
             self.assert_authz_responses_equal(expect_authz_result, actual_authz_result,
                                               ignore_metric_values=True)
 
