@@ -7,6 +7,7 @@ use cedar_policy::*;
 use cedar_policy_formatter::{Config, policies_str_to_pretty};
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 
 /// Echo (return) the input string
 #[pyfunction]
@@ -163,7 +164,7 @@ fn is_authorized_batch(requests: Vec<HashMap<String, String>>,
                     Ok(json_str) => { json_str }
                     Err(err) => {
                         println!("{:#}", err);
-                        r#"{"errors": ["{}"]}"#.to_string()
+                        make_authz_result_for_errors(&vec![Error::from(err)])
                     }
                 }
             }
@@ -171,7 +172,7 @@ fn is_authorized_batch(requests: Vec<HashMap<String, String>>,
                 for err in &errs {
                     println!("{:#}", err);
                 }
-                r#"{"errors": ["{}"]}"#.to_string()
+                make_authz_result_for_errors(&errs)
             }
         };
 
@@ -179,6 +180,22 @@ fn is_authorized_batch(requests: Vec<HashMap<String, String>>,
     }
 
     return responses_vec;
+}
+
+fn make_authz_result_for_errors(errs: &Vec<Error>) -> String {
+    let json_obj = json!(
+        {
+            "decision": "NoDecision",
+            "diagnostics": {
+                "errors": stringify_errors(&errs)
+            }
+        });
+
+    return json_obj.to_string();
+}
+
+fn stringify_errors(errs: &Vec<Error>) -> Vec<String> {
+    errs.iter().map(|e| e.to_string()).collect()
 }
 
 fn to_request_args(request: &HashMap<String, String>) -> RequestArgs {

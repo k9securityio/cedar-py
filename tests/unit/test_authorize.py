@@ -409,6 +409,25 @@ class AuthorizeTestCase(unittest.TestCase):
             self.assert_authz_responses_equal(expect_authz_result, actual_authz_result,
                                               ignore_metric_values=True)
 
+    def test_is_authorized_with_a_request_that_errors(self):
+        policies = self.policies["alice"]
+        entities = load_file_as_str("resources/sandbox_b/entities.json")
+        schema = load_file_as_str("resources/sandbox_b/schema.json")
+
+        request = {
+            "principal": 'User::"alice"',
+            "action": 'Action::"addPhoto"',
+            "resource": 'Photo::"alice_w2.jpg"',
+            "context": json.dumps({
+                "authenticated": False
+            })
+        }
+
+        authz_result: AuthzResult = is_authorized(request, policies, entities, schema=schema)
+        self.assertEqual(Decision.NoDecision, authz_result.decision)
+        self.assertEqual(["failed to parse schema from request"],
+                         authz_result.diagnostics.errors)
+
     def test_authorized_batch_perf(self):
         policies = self.policies["alice"]
         entities = load_file_as_str("resources/sandbox_b/entities.json")
@@ -425,7 +444,7 @@ class AuthorizeTestCase(unittest.TestCase):
             'Action::"delete"',
             'Action::"listAlbums"',
             'Action::"listPhotos"',
-            # 'Action::"addPhoto"',
+            'Action::"addPhoto"',
         ]
         
         for action in actions:
