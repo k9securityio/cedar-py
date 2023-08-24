@@ -111,8 +111,6 @@ fn is_batch_authorized(requests: Vec<HashMap<String, String>>,
     }
     let mut parse_errs: Vec<ParseErrors> = vec![];
     let mut errs: Vec<Error> = vec![];
-    let t_total = Instant::now();
-
 
     // probably need to deconstruct execute_authorization_request so that we can reuse the
     // expensive parts (policies, entities, schema):
@@ -138,10 +136,6 @@ fn is_batch_authorized(requests: Vec<HashMap<String, String>>,
     let t_load_entities_duration = t_load_entities.elapsed();
 
     // build a list of RequestArgs
-    // evaluate access one at a time (future work: eval in parallel)
-
-
-    // build a vector of RequestArgs with e.g. requests.iter().map()
     let mut request_args_vec: Vec<RequestArgs> = Vec::new();
     requests.iter().for_each(|request: &HashMap<String, String>| {
         request_args_vec.push(to_request_args(request));
@@ -149,8 +143,8 @@ fn is_batch_authorized(requests: Vec<HashMap<String, String>>,
 
     let mut responses_vec: Vec<String> = Vec::new();
 
+    // evaluate access one at a time (future work: eval in parallel)
     for request_args in request_args_vec.iter() {
-        // println!("> {}", request_args);
         let ans = execute_authorization_request(&request_args,
                                                 &policy_set,
                                                 &entities,
@@ -185,8 +179,6 @@ fn is_batch_authorized(requests: Vec<HashMap<String, String>>,
 
         responses_vec.push(response_string);
     }
-
-
 
     return responses_vec;
 }
@@ -255,6 +247,7 @@ fn execute_authorization_request(
     let mut errs: Vec<Error> = vec![];
     let t_total = Instant::now();
 
+    // may want to create request in calling method; then we could get relocate errs
     let request = match request.get_request(schema.as_ref()) {
         Ok(q) => Some(q),
         Err(e) => {
