@@ -4,7 +4,7 @@ import unittest
 from datetime import timedelta
 from typing import List, Union
 
-from cedarpy import is_authorized, AuthzResult, Decision, is_batch_authorized
+from cedarpy import is_authorized, AuthzResult, Decision, is_authorized_batch
 
 from unit import load_file_as_str, utc_now
 
@@ -399,7 +399,7 @@ class AuthorizeTestCase(unittest.TestCase):
         t_single_elapsed: timedelta = utc_now() - t_single_start
 
         t_batch_start = utc_now()
-        actual_authz_results = is_batch_authorized(requests, policies, entities, schema, verbose=True)
+        actual_authz_results = is_authorized_batch(requests, policies, entities, schema, verbose=True)
         self.assertIsNotNone(actual_authz_results)
         self.assertEqual(len(expect_authz_results), len(actual_authz_results))
 

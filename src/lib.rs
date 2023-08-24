@@ -89,12 +89,12 @@ fn is_authorized(request: HashMap<String, String>,
                  schema: Option<String>,
                  verbose: Option<bool>)
                  -> String {
-    is_batch_authorized(vec![request], policies, entities, schema, verbose)[0].clone()
+    is_authorized_batch(vec![request], policies, entities, schema, verbose)[0].clone()
 }
 
 #[pyfunction]
 #[pyo3(signature = (requests, policies, entities, schema = None, verbose = false,))]
-fn is_batch_authorized(requests: Vec<HashMap<String, String>>,
+fn is_authorized_batch(requests: Vec<HashMap<String, String>>,
                        policies: String,
                        entities: String,
                        schema: Option<String>,
@@ -336,7 +336,7 @@ fn load_actions_from_schema(entities: Entities, schema: &Option<Schema>) -> Resu
 fn _internal(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(echo, m)?)?;
     m.add_function(wrap_pyfunction!(is_authorized, m)?)?;
-    m.add_function(wrap_pyfunction!(is_batch_authorized, m)?)?;
+    m.add_function(wrap_pyfunction!(is_authorized_batch, m)?)?;
     m.add_function(wrap_pyfunction!(format_policies, m)?)?;
     Ok(())
 }

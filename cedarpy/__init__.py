@@ -102,12 +102,13 @@ def is_authorized(request: dict,
     return AuthzResult(json.loads(authz_response))
 
 
-def is_batch_authorized(requests: List[dict],
+def is_authorized_batch(requests: List[dict],
                         policies: str,
                         entities: Union[str, List[dict]],
                         schema: Union[str, dict, None] = None,
                         verbose: bool = False) -> List[AuthzResult]:
-    """Evaluate whether the batch of requests are authorized given the parameters.
+    """Evaluate whether a batch of requests are authorized given the other parameters.  Each request is evaluated
+    independently and results in an AuthzResult per request.
 
     :param requests is list of Cedar-style request objects containing a principal, action, resource, and (optional) context;
     context may be a dict (preferred) or a string
@@ -146,7 +147,7 @@ def is_batch_authorized(requests: List[dict],
         elif isinstance(schema, dict):
             schema = json.dumps(schema)
 
-    batch_authz_response_strs: List[str] = _internal.is_batch_authorized(requests_local, policies, entities, schema, verbose)
+    batch_authz_response_strs: List[str] = _internal.is_authorized_batch(requests_local, policies, entities, schema, verbose)
     print(f'batch_authz_response_strs: {batch_authz_response_strs}')
     batch_authz_response_objs: List[dict] = []
 
