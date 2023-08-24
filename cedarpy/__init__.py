@@ -76,30 +76,11 @@ def is_authorized(request: dict,
     :returns an AuthzResult
 
     """
-    if "context" in request:
-        context = request["context"]
-        if isinstance(context, dict):
-            # ok user provided context as a dictionary, lets flatten it for them
-            context_json_str = json.dumps(context)
-            request = copy(request)
-            request["context"] = context_json_str
-        elif context is None:
-            request = copy(request)
-            del request["context"]
-
-    if isinstance(entities, str):
-        pass
-    elif isinstance(entities, list):
-        entities = json.dumps(entities)
-
-    if schema is not None:
-        if isinstance(schema, str):
-            pass
-        elif isinstance(schema, dict):
-            schema = json.dumps(schema)
-
-    authz_response = _internal.is_authorized(request, policies, entities, schema, verbose)
-    return AuthzResult(json.loads(authz_response))
+    return is_authorized_batch(requests=[request],
+                               policies=policies,
+                               entities=entities,
+                               schema=schema,
+                               verbose=verbose)[0]
 
 
 def is_authorized_batch(requests: List[dict],
