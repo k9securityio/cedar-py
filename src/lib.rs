@@ -109,7 +109,6 @@ fn is_authorized_batch(requests: Vec<HashMap<String, String>>,
         println!("entities: {}", entities);
         println!("schema: {}", schema.clone().unwrap_or(String::from("<none>")));
     }
-    let mut parse_errs: Vec<ParseErrors> = vec![];
     let mut errs: Vec<Error> = vec![];
 
     // probably need to deconstruct execute_authorization_request so that we can reuse the
@@ -118,8 +117,11 @@ fn is_authorized_batch(requests: Vec<HashMap<String, String>>,
     let t_parse_policies = Instant::now();
     let policy_set = match PolicySet::from_str(&policies) {
         Ok(pset) => pset,
-        Err(e) => {
-            parse_errs.push(e);
+        Err(parse_errors) => {
+            let err_message = format!("policy parse errors:\n{:#}",
+                                      parse_errors.errors_as_strings().join(""));
+            println!("{:#}", err_message);
+            errs.push(Error::msg(err_message));
             PolicySet::new()
         }
     };
@@ -145,38 +147,42 @@ fn is_authorized_batch(requests: Vec<HashMap<String, String>>,
 
     // evaluate access one at a time (future work: eval in parallel)
     for request_args in request_args_vec.iter() {
-        let ans = execute_authorization_request(&request_args,
-                                                &policy_set,
-                                                &entities,
-                                                &schema,
-                                                verbose);
-        let response_string: String = match ans {
-            Ok(mut ans) => {
-                ans.metrics.insert(String::from("parse_policies_duration_micros"),
-                                   t_parse_policies_duration.as_micros());
-                ans.metrics.insert(String::from("parse_schema_duration_micros"),
-                                   t_parse_schema_duration.as_micros());
-                ans.metrics.insert(String::from("load_entities_duration_micros"),
-                                   t_load_entities_duration.as_micros());
+        if errs.is_empty() {
+            let ans = execute_authorization_request(&request_args,
+                                                    &policy_set,
+                                                    &entities,
+                                                    &schema,
+                                                    verbose);
+            let response_string: String = match ans {
+                Ok(mut ans) => {
+                    ans.metrics.insert(String::from("parse_policies_duration_micros"),
+                                       t_parse_policies_duration.as_micros());
+                    ans.metrics.insert(String::from("parse_schema_duration_micros"),
+                                       t_parse_schema_duration.as_micros());
+                    ans.metrics.insert(String::from("load_entities_duration_micros"),
+                                       t_load_entities_duration.as_micros());
 
-                let to_json_str_result = serde_json::to_string(&ans);
-                match to_json_str_result {
-                    Ok(json_str) => { json_str }
-                    Err(err) => {
-                        println!("{:#}", err);
-                        make_authz_result_for_errors(&vec![Error::from(err)])
+                    let to_json_str_result = serde_json::to_string(&ans);
+                    match to_json_str_result {
+                        Ok(json_str) => { json_str }
+                        Err(err) => {
+                            println!("{:#}", err);
+                            make_authz_result_for_errors(&vec![Error::from(err)])
+                        }
                     }
                 }
-            }
-            Err(errs) => {
-                for err in &errs {
-                    println!("{:#}", err);
+                Err(errs) => {
+                    for err in &errs {
+                        println!("{:#}", err);
+                    }
+                    make_authz_result_for_errors(&errs)
                 }
-                make_authz_result_for_errors(&errs)
-            }
-        };
+            };
+            responses_vec.push(response_string);
+        } else {
+            responses_vec.push(make_authz_result_for_errors(&errs))
+        }
 
-        responses_vec.push(response_string);
     }
 
     return responses_vec;

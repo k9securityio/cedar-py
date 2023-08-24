@@ -427,6 +427,24 @@ class AuthorizeTestCase(unittest.TestCase):
         self.assertEqual(Decision.NoDecision, authz_result.decision)
         self.assertEqual(["failed to parse schema from request"],
                          authz_result.diagnostics.errors)
+    def test_is_authorized_with_policies_that_errors(self):
+        policies = "this is not a real policy"
+        entities = load_file_as_str("resources/sandbox_b/entities.json")
+        schema = load_file_as_str("resources/sandbox_b/schema.json")
+
+        request = {
+            "principal": 'User::"alice"',
+            "action": 'Action::"view"',
+            "resource": 'Photo::"alice_w2.jpg"',
+            "context": json.dumps({
+                "authenticated": False
+            })
+        }
+
+        authz_result: AuthzResult = is_authorized(request, policies, entities, schema=schema)
+        self.assertEqual(Decision.NoDecision, authz_result.decision)
+        self.assertEqual(1, len(authz_result.diagnostics.errors))
+        self.assertIn('policy parse errors:\nUnrecognized token', authz_result.diagnostics.errors[0])
 
     def test_authorized_batch_perf(self):
         policies = self.policies["alice"]
