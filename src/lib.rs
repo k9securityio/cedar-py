@@ -128,6 +128,10 @@ fn is_batch_authorized(requests: Vec<HashMap<String, String>>,
     let t_parse_policies_duration = t_parse_policies.elapsed();
 
     // parse schema
+    let t_start_schema = Instant::now();
+    let schema = make_schema(&schema, verbose);
+    let t_parse_schema_duration = t_start_schema.elapsed();
+
     // load entities
     // build a list of RequestArgs
     // evaluate access one at a time (future work: eval in parallel)
@@ -146,12 +150,14 @@ fn is_batch_authorized(requests: Vec<HashMap<String, String>>,
         let ans = execute_authorization_request(&request_args,
                                                 &policy_set,
                                                 entities.clone(),
-                                                schema.clone(),
+                                                &schema,
                                                 verbose);
         let response_string: String = match ans {
             Ok(mut ans) => {
                 ans.metrics.insert(String::from("parse_policies_duration_micros"),
                                    t_parse_policies_duration.as_micros());
+                ans.metrics.insert(String::from("parse_schema_duration_micros"),
+                                   t_parse_schema_duration.as_micros());
 
                 let to_json_str_result = serde_json::to_string(&ans);
                 match to_json_str_result {
@@ -236,36 +242,13 @@ impl AuthzResponse {
 fn execute_authorization_request(
     request: &RequestArgs,
     policy_set: &PolicySet,
-    // links_filename: Option<impl AsRef<Path>>,
     entities_str: String,
-    schema_str: Option<String>,
+    schema: &Option<Schema>,
     verbose: bool
 ) -> Result<AuthzResponse, Vec<Error>> {
     let mut parse_errs:Vec<ParseErrors> = vec![];
     let mut errs:Vec<Error> = vec![];
     let t_total = Instant::now();
-
-    let t_start_schema = Instant::now();
-    let schema: Option<Schema> = match &schema_str {
-        None => None,
-        Some(schema_src) => {
-            if verbose {
-                println!("schema: {}", schema_src.as_str());
-            }
-            match Schema::from_str(&schema_src) {
-                Ok(schema) => Some(schema),
-                Err(e) => {
-                    // TODO: record this error
-                    // errs.push(e);
-                    if verbose {
-                        println!("!!! error constructing schema: {}", e);
-                    }
-                    None
-                }
-            }
-        }
-    };
-    let t_parse_schema_duration = t_start_schema.elapsed();
 
     let t_load_entities = Instant::now();
     let entities = match load_entities(entities_str, schema.as_ref()) {
@@ -300,7 +283,6 @@ fn execute_authorization_request(
         let ans = authorizer.is_authorized(&request, &policy_set, &entities);
         let metrics = HashMap::from([
             (String::from("total_duration_micros"), t_total.elapsed().as_micros()),
-            (String::from("parse_schema_duration_micros"), t_parse_schema_duration.as_micros()),
             (String::from("load_entities_duration_micros"), t_load_entities_duration.as_micros()),
             (String::from("authz_duration_micros"), t_authz.elapsed().as_micros()),
         ]);
@@ -313,6 +295,29 @@ fn execute_authorization_request(
         }
         Err(errs)
     }
+}
+
+fn make_schema(schema_str: &Option<String>, verbose: bool) -> Option<Schema> {
+    let schema: Option<Schema> = match &schema_str {
+        None => None,
+        Some(schema_src) => {
+            if verbose {
+                println!("schema: {}", schema_src.as_str());
+            }
+            match Schema::from_str(&schema_src) {
+                Ok(schema) => Some(schema),
+                Err(e) => {
+                    // TODO: record this error
+                    // errs.push(e);
+                    if verbose {
+                        println!("!!! error constructing schema: {}", e);
+                    }
+                    None
+                }
+            }
+        }
+    };
+    schema
 }
 
 /// Load an `Entities` object from the given JSON string and optional schema.
