@@ -131,7 +131,7 @@ fn is_batch_authorized(requests: Vec<HashMap<String, String>>,
 
     // load entities
     let t_load_entities = Instant::now();
-    let entities = make_entities(entities, &&schema, &mut errs);
+    let entities = make_entities(entities, &schema, &mut errs);
     let t_load_entities_duration = t_load_entities.elapsed();
 
     // build a list of RequestArgs
@@ -264,7 +264,7 @@ fn execute_authorization_request(
     }
 }
 
-fn make_entities(entities_str: String, schema: &&Option<Schema>, errs: &mut Vec<Error>) -> Entities {
+fn make_entities(entities_str: String, schema: &Option<Schema>, errs: &mut Vec<Error>) -> Entities {
     let entities = match load_entities(entities_str, schema.as_ref()) {
         Ok(entities) => entities,
         Err(e) => {
@@ -274,7 +274,7 @@ fn make_entities(entities_str: String, schema: &&Option<Schema>, errs: &mut Vec<
     };
     // load actions from the schema and append into entities
     // we could/may integrate this into the load_entities match
-    let entities = match load_actions_from_schema(entities, &schema) {
+    let entities = match load_actions_from_schema(entities, schema) {
         Ok(entities) => entities,
         Err(e) => {
             errs.push(e);
@@ -323,7 +323,7 @@ fn load_actions_from_schema(entities: Entities, schema: &Option<Schema>) -> Resu
                     .cloned()
                     .chain(action_entities.iter().cloned()),
             )
-            .context("failed to merge action entities with entity file"),
+            .context("failed to merge action entities into Entities"),
             Err(e) => Err(e).context("failed to construct action entities"),
         },
         None => Ok(entities),
