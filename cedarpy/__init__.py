@@ -147,23 +147,17 @@ def is_authorized_batch(requests: List[dict],
         elif isinstance(schema, dict):
             schema = json.dumps(schema)
 
-    batch_authz_response_strs: List[str] = _internal.is_authorized_batch(requests_local, policies, entities, schema, verbose)
-    print(f'batch_authz_response_strs: {batch_authz_response_strs}')
-    batch_authz_response_objs: List[dict] = []
+    authz_result_strs: List[str] = _internal.is_authorized_batch(requests_local, policies, entities, schema, verbose)
+    authz_result_objs: List[dict] = []
 
-    for item in batch_authz_response_strs:
-        print(f'item: {type(item)}: {item}')
-        try:
-            batch_authz_response_objs.append(json.loads(item))
-        except Exception as e:
-            pass
+    for authz_result_str in authz_result_strs:
+        authz_result_objs.append(json.loads(authz_result_str))
         
-    batch_authz_responses: List[AuthzResult] = []
-    for response_obj in batch_authz_response_objs:
-        print(f'response_obj: {response_obj}')
-        batch_authz_responses.append(AuthzResult(response_obj))
+    authz_results: List[AuthzResult] = []
+    for response_obj in authz_result_objs:
+        authz_results.append(AuthzResult(response_obj))
 
-    return batch_authz_responses
+    return authz_results
 
 
 def format_policies(policies: str,
