@@ -133,6 +133,10 @@ fn is_batch_authorized(requests: Vec<HashMap<String, String>>,
     let t_parse_schema_duration = t_start_schema.elapsed();
 
     // load entities
+    let t_load_entities = Instant::now();
+    let entities = make_entities(entities, &&schema, &mut errs);
+    let t_load_entities_duration = t_load_entities.elapsed();
+
     // build a list of RequestArgs
     // evaluate access one at a time (future work: eval in parallel)
 
@@ -149,7 +153,7 @@ fn is_batch_authorized(requests: Vec<HashMap<String, String>>,
         // println!("> {}", request_args);
         let ans = execute_authorization_request(&request_args,
                                                 &policy_set,
-                                                entities.clone(),
+                                                &entities,
                                                 &schema,
                                                 verbose);
         let response_string: String = match ans {
@@ -158,6 +162,8 @@ fn is_batch_authorized(requests: Vec<HashMap<String, String>>,
                                    t_parse_policies_duration.as_micros());
                 ans.metrics.insert(String::from("parse_schema_duration_micros"),
                                    t_parse_schema_duration.as_micros());
+                ans.metrics.insert(String::from("load_entities_duration_micros"),
+                                   t_load_entities_duration.as_micros());
 
                 let to_json_str_result = serde_json::to_string(&ans);
                 match to_json_str_result {
@@ -242,15 +248,40 @@ impl AuthzResponse {
 fn execute_authorization_request(
     request: &RequestArgs,
     policy_set: &PolicySet,
-    entities_str: String,
+    entities: &Entities,
     schema: &Option<Schema>,
     verbose: bool
 ) -> Result<AuthzResponse, Vec<Error>> {
-    let mut parse_errs:Vec<ParseErrors> = vec![];
-    let mut errs:Vec<Error> = vec![];
+    let mut errs: Vec<Error> = vec![];
     let t_total = Instant::now();
 
-    let t_load_entities = Instant::now();
+    let request = match request.get_request(schema.as_ref()) {
+        Ok(q) => Some(q),
+        Err(e) => {
+            errs.push(e.context("failed to parse schema from request"));
+            None
+        }
+    };
+    if errs.is_empty() {
+        let request = request.expect("if no errors, we should have a valid request");
+        let authorizer = Authorizer::new();
+        let t_authz = Instant::now();
+        let ans = authorizer.is_authorized(&request, &policy_set, &entities);
+        let metrics = HashMap::from([
+            (String::from("total_duration_micros"), t_total.elapsed().as_micros()),
+            (String::from("authz_duration_micros"), t_authz.elapsed().as_micros()),
+        ]);
+        let authz_response = AuthzResponse::new(ans, metrics);
+        Ok(authz_response)
+    } else {
+        if verbose {
+            println!("encountered errors while building request. \nerrs: {:#?} ", errs);
+        }
+        Err(errs)
+    }
+}
+
+fn make_entities(entities_str: String, schema: &&Option<Schema>, errs: &mut Vec<Error>) -> Entities {
     let entities = match load_entities(entities_str, schema.as_ref()) {
         Ok(entities) => entities,
         Err(e) => {
@@ -267,34 +298,7 @@ fn execute_authorization_request(
             Entities::empty()
         }
     };
-    let t_load_entities_duration = t_load_entities.elapsed();
-    
-    let request = match request.get_request(schema.as_ref()) {
-        Ok(q) => Some(q),
-        Err(e) => {
-            errs.push(e.context("failed to parse schema from request"));
-            None
-        }
-    };
-    if parse_errs.is_empty() && errs.is_empty() {
-        let request = request.expect("if no errors, we should have a valid request");
-        let authorizer = Authorizer::new();
-        let t_authz = Instant::now();
-        let ans = authorizer.is_authorized(&request, &policy_set, &entities);
-        let metrics = HashMap::from([
-            (String::from("total_duration_micros"), t_total.elapsed().as_micros()),
-            (String::from("load_entities_duration_micros"), t_load_entities_duration.as_micros()),
-            (String::from("authz_duration_micros"), t_authz.elapsed().as_micros()),
-        ]);
-        let authz_response = AuthzResponse::new(ans, metrics);
-        Ok(authz_response)
-    } else {
-        if verbose {
-            println!("encountered errors while building request.\nparse_errs: {:#?}\nerrs: {:#?} ",
-                     parse_errs, errs);
-        }
-        Err(errs)
-    }
+    entities
 }
 
 fn make_schema(schema_str: &Option<String>, verbose: bool) -> Option<Schema> {
