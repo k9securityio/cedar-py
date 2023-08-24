@@ -6,7 +6,6 @@ use anyhow::{Context as _, Error, Result};
 use cedar_policy::*;
 use cedar_policy_formatter::{Config, policies_str_to_pretty};
 use pyo3::prelude::*;
-use pyo3::types::{IntoPyDict, PyDict, PyList, PyString};
 use serde::{Deserialize, Serialize};
 
 /// Echo (return) the input string
@@ -201,15 +200,6 @@ fn to_request_args(request: &HashMap<String, String>) -> RequestArgs {
         resource: Some(resource),
         context_json: context_json_option,
     }
-}
-
-fn to_pyerr<E: ToString>(errs: &Vec<E>) -> PyErr {
-    let mut err_str = "Errors: ".to_string();
-    for err in errs.iter() {
-        err_str.push_str(" ");
-        err_str.push_str(&err.to_string());
-    }
-    pyo3::exceptions::PyValueError::new_err(err_str)
 }
 
 /// Authorization response returned from the `Authorizer`
