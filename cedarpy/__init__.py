@@ -152,6 +152,7 @@ def is_authorized_batch(requests: List[dict],
     batch_authz_response_objs: List[dict] = []
 
     for item in batch_authz_response_strs:
+        print(f'item: {type(item)}: {item}')
         try:
             batch_authz_response_objs.append(json.loads(item))
         except Exception as e:

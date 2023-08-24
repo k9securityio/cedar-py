@@ -163,7 +163,6 @@ fn is_authorized_batch(requests: Vec<HashMap<String, String>>,
                     Ok(json_str) => { json_str }
                     Err(err) => {
                         println!("{:#}", err);
-                        //Err(to_pyerr(&Vec::from([err])))
                         r#"{"errors": ["{}"]}"#.to_string()
                     }
                 }
@@ -235,7 +234,7 @@ fn execute_authorization_request(
     verbose: bool
 ) -> Result<AuthzResponse, Vec<Error>> {
     let mut errs: Vec<Error> = vec![];
-    let t_total = Instant::now();
+    let t_build_request = Instant::now();
 
     // may want to create request in calling method; then we could get relocate errs
     let request = match request.get_request(schema.as_ref()) {
@@ -245,13 +244,14 @@ fn execute_authorization_request(
             None
         }
     };
+    let build_request_duration = t_build_request.elapsed();
     if errs.is_empty() {
         let request = request.expect("if no errors, we should have a valid request");
         let authorizer = Authorizer::new();
         let t_authz = Instant::now();
         let ans = authorizer.is_authorized(&request, &policy_set, &entities);
         let metrics = HashMap::from([
-            (String::from("total_duration_micros"), t_total.elapsed().as_micros()),
+            (String::from("build_request_duration_micros"), build_request_duration.as_micros()),
             (String::from("authz_duration_micros"), t_authz.elapsed().as_micros()),
         ]);
         let authz_response = AuthzResponse::new(ans, metrics);

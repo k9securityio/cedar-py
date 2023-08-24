@@ -215,10 +215,10 @@ class AuthorizeTestCase(unittest.TestCase):
 
             metrics = actual_authz_result['metrics']
             for metric_name in [
-                'total_duration_micros',
                 'parse_policies_duration_micros',
                 'parse_schema_duration_micros',
                 'load_entities_duration_micros',
+                'build_request_duration_micros',
                 'authz_duration_micros',
             ]:
                 self.assertIn(metric_name, metrics)
