@@ -487,11 +487,15 @@ class AuthorizeTestCase(unittest.TestCase):
 
         t_batch_elapsed: timedelta = utc_now() - t_batch_start
 
-        print(f'num_requests: {len(requests)}')
+        num_requests = len(requests)
+        print(f'num_requests: {num_requests}')
         print(f't_single_elapsed:\t{t_single_elapsed.total_seconds()}')
         print(f't_batch_elapsed:\t{t_batch_elapsed.total_seconds()}')
 
-        self.assertLessEqual(t_batch_elapsed, t_single_elapsed)
+        self.assertGreaterEqual(num_requests, 5,
+                                msg=f"should eval batch perf with at least 5 requests")
+        self.assertLessEqual(t_batch_elapsed, (t_single_elapsed / 3),
+                             msg=f"expected batch eval to be +3x faster; check for perf regression")
 
         # verify batch results match single authz
         for expect_authz_result, actual_authz_result in zip(expect_authz_results, actual_authz_results):
