@@ -76,13 +76,46 @@ def is_authorized(request: dict,
     :returns an AuthzResult
 
     """
-    if "context" in request:
-        context = request["context"]
-        if isinstance(context, dict):
-            # ok user provided context as a dictionary, lets flatten it for them
-            context_json_str = json.dumps(context)
-            request = copy(request)
-            request["context"] = context_json_str
+    return is_authorized_batch(requests=[request],
+                               policies=policies,
+                               entities=entities,
+                               schema=schema,
+                               verbose=verbose)[0]
+
+
+def is_authorized_batch(requests: List[dict],
+                        policies: str,
+                        entities: Union[str, List[dict]],
+                        schema: Union[str, dict, None] = None,
+                        verbose: bool = False) -> List[AuthzResult]:
+    """Evaluate whether a batch of requests are authorized given the other parameters.  Each request is evaluated
+    independently and results in an AuthzResult per request.
+
+    :param requests is list of Cedar-style request objects containing a principal, action, resource, and (optional) context;
+    context may be a dict (preferred) or a string
+    :param policies is a str containing all the policies in the Cedar PolicySet
+    :param entities a list of entities or a json-formatted string containing the list of entities to
+    include in the evaluation
+    :param schema (optional) dictionary or json-formatted string containing the Cedar schema
+    :param verbose (optional) boolean determining whether to enable verbose logging output within the library
+
+    :returns a list of AuthzResults, in same order as the requests
+
+    """
+    requests_local = []
+    for request in requests:
+        if "context" in request:
+            context = request["context"]
+            if isinstance(context, dict):
+                # ok user provided context as a dictionary, lets flatten it for them
+                context_json_str = json.dumps(context)
+                request = copy(request)
+                request["context"] = context_json_str
+            elif context is None:
+                request = copy(request)
+                del request["context"]
+
+        requests_local.append(request)
 
     if isinstance(entities, str):
         pass
@@ -95,8 +128,17 @@ def is_authorized(request: dict,
         elif isinstance(schema, dict):
             schema = json.dumps(schema)
 
-    authz_response = _internal.is_authorized(request, policies, entities, schema, verbose)
-    return AuthzResult(json.loads(authz_response))
+    authz_result_strs: List[str] = _internal.is_authorized_batch(requests_local, policies, entities, schema, verbose)
+    authz_result_objs: List[dict] = []
+
+    for authz_result_str in authz_result_strs:
+        authz_result_objs.append(json.loads(authz_result_str))
+        
+    authz_results: List[AuthzResult] = []
+    for response_obj in authz_result_objs:
+        authz_results.append(AuthzResult(response_obj))
+
+    return authz_results
 
 
 def format_policies(policies: str,

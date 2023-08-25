@@ -6,8 +6,8 @@ use anyhow::{Context as _, Error, Result};
 use cedar_policy::*;
 use cedar_policy_formatter::{Config, policies_str_to_pretty};
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyString};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 
 /// Echo (return) the input string
 #[pyfunction]
@@ -83,84 +83,145 @@ impl RequestArgs {
 }
 
 #[pyfunction]
-#[pyo3(signature = (request, policies, entities, schema=None, verbose=false,))]
-fn is_authorized(request: &PyDict,
+#[pyo3(signature = (request, policies, entities, schema = None, verbose = false,))]
+fn is_authorized(request: HashMap<String, String>,
                  policies: String,
                  entities: String,
                  schema: Option<String>,
                  verbose: Option<bool>)
-                 -> PyResult<String> {
+                 -> String {
+    is_authorized_batch(vec![request], policies, entities, schema, verbose)[0].clone()
+}
+
+#[pyfunction]
+#[pyo3(signature = (requests, policies, entities, schema = None, verbose = false,))]
+fn is_authorized_batch(requests: Vec<HashMap<String, String>>,
+                       policies: String,
+                       entities: String,
+                       schema: Option<String>,
+                       verbose: Option<bool>)
+                       -> Vec<String> {
     // CLI AuthorizeArgs: https://github.com/cedar-policy/cedar/blob/main/cedar-policy-cli/src/lib.rs#L183
     let verbose = verbose.unwrap_or(false);
-    if verbose{
-        println!("request: {}", request);
+    if verbose {
+        //println!("requests: {}", requests);
         println!("policies: {}", policies);
         println!("entities: {}", entities);
         println!("schema: {}", schema.clone().unwrap_or(String::from("<none>")));
     }
+    let mut errs: Vec<Error> = vec![];
 
-    // collect request arguments into a struct compatible with authorization request
-    let principal: String = request.get_item(String::from("principal")).unwrap().downcast::<PyString>()?.to_string();
-    let action: String = request.get_item(String::from("action")).unwrap().downcast::<PyString>()?.to_string();
-    let resource: String = request.get_item(String::from("resource")).unwrap().downcast::<PyString>()?.to_string();
-
-    let context_option = request.get_item(String::from("context"));
-    let context_json_option: Option<String> = match context_option {
-        None => None, // context member not present
-        Some(context) => {
-            if context.is_none(){
-                None  // context member present, but value of None/null
-            } else {
-                //present and has a value
-                // TODO: accept context as a PyDict instead of PyString so it's more convenient in Python binding
-                // the real work is adjusting context creation with e.g. Context::from_json_val
-                Some(context.downcast::<PyString>()?.to_string())
-            }
+    // probably need to deconstruct execute_authorization_request so that we can reuse the
+    // expensive parts (policies, entities, schema):
+    // parse policies
+    let t_parse_policies = Instant::now();
+    let policy_set = match PolicySet::from_str(&policies) {
+        Ok(pset) => pset,
+        Err(parse_errors) => {
+            let err_message = format!("policy parse errors:\n{:#}",
+                                      parse_errors.errors_as_strings().join(""));
+            println!("{:#}", err_message);
+            errs.push(Error::msg(err_message));
+            PolicySet::new()
         }
     };
+    let t_parse_policies_duration = t_parse_policies.elapsed();
 
-    if verbose{
-        println!("context_json_option: {}", context_json_option.clone().unwrap_or(String::from("<none>")));
+    // parse schema
+    let t_start_schema = Instant::now();
+    let schema = make_schema(&schema, verbose);
+    let t_parse_schema_duration = t_start_schema.elapsed();
+
+    // load entities
+    let t_load_entities = Instant::now();
+    let entities = make_entities(entities, &schema, &mut errs);
+    let t_load_entities_duration = t_load_entities.elapsed();
+
+    // build a list of RequestArgs
+    let mut request_args_vec: Vec<RequestArgs> = Vec::new();
+    requests.iter().for_each(|request: &HashMap<String, String>| {
+        request_args_vec.push(to_request_args(request));
+    });
+
+    let mut responses_vec: Vec<String> = Vec::new();
+
+    // evaluate access one at a time (future work: eval in parallel)
+    for request_args in request_args_vec.iter() {
+        if errs.is_empty() {
+            let ans = execute_authorization_request(&request_args,
+                                                    &policy_set,
+                                                    &entities,
+                                                    &schema,
+                                                    verbose);
+            let response_string: String = match ans {
+                Ok(mut ans) => {
+                    ans.metrics.insert(String::from("parse_policies_duration_micros"),
+                                       t_parse_policies_duration.as_micros());
+                    ans.metrics.insert(String::from("parse_schema_duration_micros"),
+                                       t_parse_schema_duration.as_micros());
+                    ans.metrics.insert(String::from("load_entities_duration_micros"),
+                                       t_load_entities_duration.as_micros());
+
+                    let to_json_str_result = serde_json::to_string(&ans);
+                    match to_json_str_result {
+                        Ok(json_str) => { json_str }
+                        Err(err) => {
+                            println!("{:#}", err);
+                            make_authz_result_for_errors(&vec![Error::from(err)])
+                        }
+                    }
+                }
+                Err(errs) => {
+                    for err in &errs {
+                        println!("{:#}", err);
+                    }
+                    make_authz_result_for_errors(&errs)
+                }
+            };
+            responses_vec.push(response_string);
+        } else {
+            responses_vec.push(make_authz_result_for_errors(&errs))
+        }
+
     }
 
-    let request = RequestArgs {
+    return responses_vec;
+}
+
+fn make_authz_result_for_errors(errs: &Vec<Error>) -> String {
+    let json_obj = json!(
+        {
+            "decision": "NoDecision",
+            "diagnostics": {
+                "errors": stringify_errors(&errs)
+            }
+        });
+
+    return json_obj.to_string();
+}
+
+fn stringify_errors(errs: &Vec<Error>) -> Vec<String> {
+    errs.iter().map(|e| e.to_string()).collect()
+}
+
+fn to_request_args(request: &HashMap<String, String>) -> RequestArgs {
+    // collect request arguments into a struct compatible with authorization request
+    let principal: String = request.get(String::from("principal").as_str()).unwrap().to_string();
+    let action: String = request.get(String::from("action").as_str()).unwrap().to_string();
+    let resource: String = request.get(String::from("resource").as_str()).unwrap().to_string();
+
+    let context_option = request.get(String::from("context").as_str());
+    let context_json_option: Option<String> = match context_option {
+        None => None, // context member not present
+        Some(context) => Some(context.to_string())
+    };
+
+    RequestArgs {
         principal: Some(principal),
         action: Some(action),
         resource: Some(resource),
         context_json: context_json_option,
-    };
-
-    let ans = execute_authorization_request(&request,
-                                            policies,
-                                            entities,
-                                            schema,
-                                            verbose);
-    match ans {
-        Ok(ans) => {
-            let to_json_str_result = serde_json::to_string(&ans);
-            match to_json_str_result {
-                Ok(json_str) => { Ok(json_str) },
-                Err(err) => {
-                    Err(to_pyerr(&Vec::from([err])))
-                },
-            }
-        }
-        Err(errs) => {
-            for err in &errs {
-                println!("{:#}", err);
-            }
-            Err(to_pyerr(&errs))
-        }
     }
-}
-
-fn to_pyerr<E: ToString>(errs: &Vec<E>) -> PyErr {
-    let mut err_str = "Errors: ".to_string();
-    for err in errs.iter() {
-        err_str.push_str(" ");
-        err_str.push_str(&err.to_string());
-    }
-    pyo3::exceptions::PyValueError::new_err(err_str)
 }
 
 /// Authorization response returned from the `Authorizer`
@@ -190,27 +251,63 @@ impl AuthzResponse {
 /// This uses the Cedar API to call the authorization engine.
 fn execute_authorization_request(
     request: &RequestArgs,
-    policies_str: String,
-    // links_filename: Option<impl AsRef<Path>>,
-    entities_str: String,
-    schema_str: Option<String>,
+    policy_set: &PolicySet,
+    entities: &Entities,
+    schema: &Option<Schema>,
     verbose: bool
 ) -> Result<AuthzResponse, Vec<Error>> {
-    let mut parse_errs:Vec<ParseErrors> = vec![];
-    let mut errs:Vec<Error> = vec![];
-    let t_total = Instant::now();
+    let mut errs: Vec<Error> = vec![];
+    let t_build_request = Instant::now();
 
-    let t_parse_policies = Instant::now();
-    let policies = match PolicySet::from_str(&policies_str) {
-        Ok(pset) => pset,
+    // may want to create request in calling method; then we could get relocate errs
+    let request = match request.get_request(schema.as_ref()) {
+        Ok(q) => Some(q),
         Err(e) => {
-            parse_errs.push(e);
-            PolicySet::new()
+            errs.push(e.context("failed to parse schema from request"));
+            None
         }
     };
-    let t_parse_policies_duration = t_parse_policies.elapsed();
+    let build_request_duration = t_build_request.elapsed();
+    if errs.is_empty() {
+        let request = request.expect("if no errors, we should have a valid request");
+        let authorizer = Authorizer::new();
+        let t_authz = Instant::now();
+        let ans = authorizer.is_authorized(&request, &policy_set, &entities);
+        let metrics = HashMap::from([
+            (String::from("build_request_duration_micros"), build_request_duration.as_micros()),
+            (String::from("authz_duration_micros"), t_authz.elapsed().as_micros()),
+        ]);
+        let authz_response = AuthzResponse::new(ans, metrics);
+        Ok(authz_response)
+    } else {
+        if verbose {
+            println!("encountered errors while building request. \nerrs: {:#?} ", errs);
+        }
+        Err(errs)
+    }
+}
 
-    let t_start_schema = Instant::now();
+fn make_entities(entities_str: String, schema: &Option<Schema>, errs: &mut Vec<Error>) -> Entities {
+    let entities = match load_entities(entities_str, schema.as_ref()) {
+        Ok(entities) => entities,
+        Err(e) => {
+            errs.push(e);
+            Entities::empty()
+        }
+    };
+    // load actions from the schema and append into entities
+    // we could/may integrate this into the load_entities match
+    let entities = match load_actions_from_schema(entities, schema) {
+        Ok(entities) => entities,
+        Err(e) => {
+            errs.push(e);
+            Entities::empty()
+        }
+    };
+    entities
+}
+
+fn make_schema(schema_str: &Option<String>, verbose: bool) -> Option<Schema> {
     let schema: Option<Schema> = match &schema_str {
         None => None,
         Some(schema_src) => {
@@ -230,55 +327,7 @@ fn execute_authorization_request(
             }
         }
     };
-    let t_parse_schema_duration = t_start_schema.elapsed();
-
-    let t_load_entities = Instant::now();
-    let entities = match load_entities(entities_str, schema.as_ref()) {
-        Ok(entities) => entities,
-        Err(e) => {
-            errs.push(e);
-            Entities::empty()
-        }
-    };
-    // load actions from the schema and append into entities
-    // we could/may integrate this into the load_entities match
-    let entities = match load_actions_from_schema(entities, &schema) {
-        Ok(entities) => entities,
-        Err(e) => {
-            errs.push(e);
-            Entities::empty()
-        }
-    };
-    let t_load_entities_duration = t_load_entities.elapsed();
-    
-    let request = match request.get_request(schema.as_ref()) {
-        Ok(q) => Some(q),
-        Err(e) => {
-            errs.push(e.context("failed to parse schema from request"));
-            None
-        }
-    };
-    if parse_errs.is_empty() && errs.is_empty() {
-        let request = request.expect("if no errors, we should have a valid request");
-        let authorizer = Authorizer::new();
-        let t_authz = Instant::now();
-        let ans = authorizer.is_authorized(&request, &policies, &entities);
-        let metrics = HashMap::from([
-            (String::from("total_duration_micros"), t_total.elapsed().as_micros()),
-            (String::from("parse_policies_duration_micros"), t_parse_policies_duration.as_micros()),
-            (String::from("parse_schema_duration_micros"), t_parse_schema_duration.as_micros()),
-            (String::from("load_entities_duration_micros"), t_load_entities_duration.as_micros()),
-            (String::from("authz_duration_micros"), t_authz.elapsed().as_micros()),
-        ]);
-        let authz_response = AuthzResponse::new(ans, metrics);
-        Ok(authz_response)
-    } else {
-        if verbose {
-            println!("encountered errors while building request.\nparse_errs: {:#?}\nerrs: {:#?} ",
-                     parse_errs, errs);
-        }
-        Err(errs)
-    }
+    schema
 }
 
 /// Load an `Entities` object from the given JSON string and optional schema.
@@ -297,7 +346,7 @@ fn load_actions_from_schema(entities: Entities, schema: &Option<Schema>) -> Resu
                     .cloned()
                     .chain(action_entities.iter().cloned()),
             )
-            .context("failed to merge action entities with entity file"),
+            .context("failed to merge action entities into Entities"),
             Err(e) => Err(e).context("failed to construct action entities"),
         },
         None => Ok(entities),
@@ -310,6 +359,7 @@ fn load_actions_from_schema(entities: Entities, schema: &Option<Schema>) -> Resu
 fn _internal(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(echo, m)?)?;
     m.add_function(wrap_pyfunction!(is_authorized, m)?)?;
+    m.add_function(wrap_pyfunction!(is_authorized_batch, m)?)?;
     m.add_function(wrap_pyfunction!(format_policies, m)?)?;
     Ok(())
 }

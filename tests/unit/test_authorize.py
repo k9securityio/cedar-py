@@ -1,11 +1,12 @@
 import json
 import random
 import unittest
+from datetime import timedelta
 from typing import List, Union
 
-from cedarpy import is_authorized, AuthzResult, Decision
+from cedarpy import is_authorized, AuthzResult, Decision, is_authorized_batch
 
-from unit import load_file_as_str
+from unit import load_file_as_str, utc_now
 
 
 class AuthorizeTestCase(unittest.TestCase):
@@ -132,8 +133,11 @@ class AuthorizeTestCase(unittest.TestCase):
     def assert_authz_responses_equal(self,
                                      expect_authz_result: Union[AuthzResult, dict],
                                      actual_authz_result: AuthzResult,
+                                     ignore_metric_values=False,
                                      msg: str = None):
-        """Assert an AuthzResult matches an expected spec"""
+        """Assert an AuthzResult matches an expected spec
+        :param ignore_metric_values:
+        """
 
         if isinstance(expect_authz_result, dict):
             expect_authz_result = AuthzResult(expect_authz_result)
@@ -151,7 +155,10 @@ class AuthorizeTestCase(unittest.TestCase):
         if expect_authz_result.metrics:
             # only assert equality of metrics if caller has included them.
             # in general, we can't check metrics because they rely on runtime / execution information
-            self.assertEqual(expect_authz_result['metrics'], actual_authz_result['metrics'])
+            if ignore_metric_values:
+                self.assertIsNotNone(actual_authz_result.metrics)
+            else:
+                self.assertEqual(expect_authz_result['metrics'], actual_authz_result['metrics'])
 
     def test_authorize_basic_ALLOW(self):
         request = {
@@ -208,10 +215,10 @@ class AuthorizeTestCase(unittest.TestCase):
 
             metrics = actual_authz_result['metrics']
             for metric_name in [
-                'total_duration_micros',
                 'parse_policies_duration_micros',
                 'parse_schema_duration_micros',
                 'load_entities_duration_micros',
+                'build_request_duration_micros',
                 'authz_duration_micros',
             ]:
                 self.assertIn(metric_name, metrics)
@@ -294,18 +301,18 @@ class AuthorizeTestCase(unittest.TestCase):
 
         actual_authz_result: AuthzResult = is_authorized(request, self.policies["bob"], self.entities)
         self.assert_authz_responses_equal(expect_authz_result, actual_authz_result,
-                                          "expected omitted context to be allowed")
+                                          msg="expected omitted context to be allowed")
 
         # noinspection PyTypedDict
         request["context"] = None
         actual_authz_result = is_authorized(request, self.policies["bob"], self.entities)
         self.assert_authz_responses_equal(expect_authz_result, actual_authz_result,
-                                          "expected context with value None to be allowed")
+                                          msg="expected context with value None to be allowed")
 
         request["context"] = {}
         actual_authz_result = is_authorized(request, self.policies["bob"], self.entities)
         self.assert_authz_responses_equal(expect_authz_result, actual_authz_result,
-                                          "expected empty context to be allowed")
+                                          msg="expected empty context to be allowed")
 
     def test_authorized_to_edit_own_photo_ALLOW(self):
         request = {
@@ -359,3 +366,140 @@ class AuthorizeTestCase(unittest.TestCase):
         actual_authz_result = is_authorized(request, policies, entities,
                                             schema=schema)
         self.assert_authz_responses_equal(expect_authz_result, actual_authz_result)
+
+    def test_authorized_batch_evaluates_authorization_and_returns_in_order(self):
+        policies = self.policies["alice"]
+        entities = load_file_as_str("resources/sandbox_b/entities.json")
+        schema = load_file_as_str("resources/sandbox_b/schema.json")
+
+        requests = []
+        expect_authz_results: List[AuthzResult] = []
+
+        actions = [
+            'Action::"view"',
+            'Action::"edit"',
+            'Action::"comment"',
+            'Action::"delete"',
+            'Action::"listAlbums"',
+            'Action::"listPhotos"',
+            # 'Action::"addPhoto"',
+        ]
+
+        random.shuffle(actions)
+
+        for action in actions:
+            request = {
+                "principal": 'User::"alice"',
+                "action": action,
+                "resource": 'Photo::"alice_w2.jpg"',
+                "context": json.dumps({
+                    "authenticated": False
+                })
+            }
+            requests.append(request)
+            expect_authz_result: AuthzResult = is_authorized(request, policies, entities, schema=schema)
+            expect_authz_results.append(expect_authz_result)
+
+        actual_authz_results = is_authorized_batch(requests, policies, entities, schema)
+        self.assertIsNotNone(actual_authz_results)
+        self.assertEqual(len(expect_authz_results), len(actual_authz_results))
+
+        # verify batch results matches single authz
+        for expect_authz_result, actual_authz_result in zip(expect_authz_results, actual_authz_results):
+            self.assert_authz_responses_equal(expect_authz_result, actual_authz_result,
+                                              ignore_metric_values=True)
+
+    def test_is_authorized_with_a_request_that_errors(self):
+        policies = self.policies["alice"]
+        entities = load_file_as_str("resources/sandbox_b/entities.json")
+        schema = load_file_as_str("resources/sandbox_b/schema.json")
+
+        request = {
+            "principal": 'User::"alice"',
+            "action": 'Action::"addPhoto"',
+            "resource": 'Photo::"alice_w2.jpg"',
+            "context": json.dumps({
+                "authenticated": False
+            })
+        }
+
+        authz_result: AuthzResult = is_authorized(request, policies, entities, schema=schema)
+        self.assertEqual(Decision.NoDecision, authz_result.decision)
+        self.assertEqual(["failed to parse schema from request"],
+                         authz_result.diagnostics.errors)
+    def test_is_authorized_with_policies_that_errors(self):
+        policies = "this is not a real policy"
+        entities = load_file_as_str("resources/sandbox_b/entities.json")
+        schema = load_file_as_str("resources/sandbox_b/schema.json")
+
+        request = {
+            "principal": 'User::"alice"',
+            "action": 'Action::"view"',
+            "resource": 'Photo::"alice_w2.jpg"',
+            "context": json.dumps({
+                "authenticated": False
+            })
+        }
+
+        authz_result: AuthzResult = is_authorized(request, policies, entities, schema=schema)
+        self.assertEqual(Decision.NoDecision, authz_result.decision)
+        self.assertEqual(1, len(authz_result.diagnostics.errors))
+        self.assertIn('policy parse errors:\nUnrecognized token', authz_result.diagnostics.errors[0])
+
+    def test_authorized_batch_perf(self):
+        policies = self.policies["alice"]
+        entities = load_file_as_str("resources/sandbox_b/entities.json")
+        schema = load_file_as_str("resources/sandbox_b/schema.json")
+
+        requests = []
+        expect_authz_results: List[AuthzResult] = []
+
+        t_single_start = utc_now()
+        actions = [
+            'Action::"view"',
+            'Action::"edit"',
+            'Action::"comment"',
+            'Action::"delete"',
+            'Action::"listAlbums"',
+            'Action::"listPhotos"',
+            'Action::"addPhoto"',
+        ]
+        
+        for action in actions:
+            request = {
+                "principal": 'User::"alice"',
+                "action": action,
+                "resource": 'Photo::"alice_w2.jpg"',
+                "context": json.dumps({
+                    "authenticated": False
+                })
+            }
+            requests.append(request)
+            expect_authz_result: AuthzResult = is_authorized(request, policies, entities, schema=schema)
+            expect_authz_results.append(expect_authz_result)
+
+        t_single_elapsed: timedelta = utc_now() - t_single_start
+
+        t_batch_start = utc_now()
+        actual_authz_results = is_authorized_batch(requests, policies, entities, schema)
+        self.assertIsNotNone(actual_authz_results)
+        self.assertEqual(len(expect_authz_results), len(actual_authz_results))
+
+        t_batch_elapsed: timedelta = utc_now() - t_batch_start
+
+        num_requests = len(requests)
+        print(f'num_requests: {num_requests}')
+        print(f't_single_elapsed:\t{t_single_elapsed.total_seconds()}')
+        print(f't_batch_elapsed:\t{t_batch_elapsed.total_seconds()}')
+
+        self.assertGreaterEqual(num_requests, 5,
+                                msg=f"should eval batch perf with at least 5 requests")
+        self.assertLessEqual(t_batch_elapsed, (t_single_elapsed / 3),
+                             msg=f"expected batch eval to be +3x faster; check for perf regression")
+
+        # verify batch results match single authz
+        for expect_authz_result, actual_authz_result in zip(expect_authz_results, actual_authz_results):
+            print(f'actual_authz_result.metrics: {actual_authz_result. metrics}')
+            self.assert_authz_responses_equal(expect_authz_result, actual_authz_result,
+                                              ignore_metric_values=True)
+
