@@ -135,9 +135,7 @@ class AuthorizeTestCase(unittest.TestCase):
                                      actual_authz_result: AuthzResult,
                                      ignore_metric_values=False,
                                      msg: str = None):
-        """Assert an AuthzResult matches an expected spec
-        :param ignore_metric_values:
-        """
+        """Assert an AuthzResult matches an expected spec"""
 
         if isinstance(expect_authz_result, dict):
             expect_authz_result = AuthzResult(expect_authz_result)
