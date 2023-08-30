@@ -47,6 +47,10 @@ class AuthzResult:
         return Decision.Allow == self.decision
 
     @property
+    def correlation_id(self) -> Decision:
+        return self._authz_resp.get('correlation_id', None)
+
+    @property
     def diagnostics(self) -> Diagnostics:
         return self._diagnostics
 

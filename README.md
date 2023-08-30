@@ -60,6 +60,42 @@ The [`AuthzResult`](cedarpy/__init__.py) class also provides diagnostics and met
 
 See the [unit tests](tests/unit) for more examples of use and expected behavior.
 
+### Authorize a batch of requests
+
+You can also authorize a batch of requests with the `is_authorized_batch` function.  `is_authorized_batch` accepts a list of requests to evaluate against shared policies, entities, and schema.
+
+Batch authorization is often _much_ more efficient (+10x) than processing authorization requests one by one with `is_authorized`.  This is because the most expensive part of the authorization process is transforming the policies, entities, and schema into objects that Cedar can evaluate.  See [RFC: support batch authorization requests](https://github.com/k9securityio/cedar-py/issues/13) for details.
+
+Here's an example of how to use `is_authorized_batch` and the optional request-result `correlation_id`:
+
+```python3
+batch_id:str = randomstr()
+requests: List[dict] = []
+for action_name in action_names:
+    requests.append({
+        "principal": f'User::"{user_id}"',
+        "action": f'Action::"{action_name}"',
+        "resource": f'Resource::"{resource_id}"',
+        "context": context_keys,
+        "correlation_id": f"authz_req::{batch_id}-{action_name}"
+    })
+
+# ... resolve get policies, entities, schema ...
+
+# process authorizations in batch
+authz_results: List[AuthzResult] = is_authorized_batch(requests=requests, policies=policies, entities=entities, schema=schema)
+
+# ... verify results came back in correct order via correlation_id ...
+for request, result, in zip(requests, authz_results):
+    assert request.get('correlation_id') == result.correlation_id
+
+```
+cedar-py returns the list of `AuthzResult` objects in the same order as the list of requests provided in the batch.
+
+The above example also supplies an optional `correlation_id` in the request so that you can verify results are returned in the correct order or otherwise map a request to a result.
+
+
+
 ### Formatting Cedar policies
 
 You can use `format_policies` to pretty-print Cedar policies according to

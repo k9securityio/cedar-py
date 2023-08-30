@@ -41,6 +41,9 @@ pub struct RequestArgs {
     /// A JSON object representing the context for the request.
     /// Should be a (possibly empty) map from keys to values.
     pub context_json: Option<String>,
+
+    /// An optional correlation id that will be copied to the AuthzResponse
+    pub correlation_id: Option<String>,
 }
 
 impl RequestArgs {
@@ -209,6 +212,7 @@ fn to_request_args(request: &HashMap<String, String>) -> RequestArgs {
     let principal: String = request.get(String::from("principal").as_str()).unwrap().to_string();
     let action: String = request.get(String::from("action").as_str()).unwrap().to_string();
     let resource: String = request.get(String::from("resource").as_str()).unwrap().to_string();
+    let correlation_id: Option<String> = request.get(String::from("correlation_id").as_str()).cloned();
 
     let context_option = request.get(String::from("context").as_str());
     let context_json_option: Option<String> = match context_option {
@@ -221,6 +225,7 @@ fn to_request_args(request: &HashMap<String, String>) -> RequestArgs {
         action: Some(action),
         resource: Some(resource),
         context_json: context_json_option,
+        correlation_id,
     }
 }
 
@@ -229,6 +234,9 @@ fn to_request_args(request: &HashMap<String, String>) -> RequestArgs {
 struct AuthzResponse {
     /// Authorization decision
     decision: Decision,
+
+    /// (Optional) id to correlate this response to the request
+    correlation_id: Option<String>,
 
     /// Diagnostics providing more information on how this decision was reached
     diagnostics: Diagnostics,
@@ -239,9 +247,10 @@ struct AuthzResponse {
 
 impl AuthzResponse {
     /// Create a new `AuthzResponse`
-    pub fn new(response: Response, metrics: HashMap<String, u128>) -> Self {
+    pub fn new(response: Response, metrics: HashMap<String, u128>, correlation_id: Option<String>) -> Self {
         Self {
             decision: response.decision(),
+            correlation_id,
             diagnostics: response.diagnostics().clone(),
             metrics,
         }
@@ -250,7 +259,7 @@ impl AuthzResponse {
 
 /// This uses the Cedar API to call the authorization engine.
 fn execute_authorization_request(
-    request: &RequestArgs,
+    request_args: &RequestArgs,
     policy_set: &PolicySet,
     entities: &Entities,
     schema: &Option<Schema>,
@@ -260,7 +269,7 @@ fn execute_authorization_request(
     let t_build_request = Instant::now();
 
     // may want to create request in calling method; then we could get relocate errs
-    let request = match request.get_request(schema.as_ref()) {
+    let request = match request_args.get_request(schema.as_ref()) {
         Ok(q) => Some(q),
         Err(e) => {
             errs.push(e.context("failed to parse schema from request"));
@@ -277,7 +286,8 @@ fn execute_authorization_request(
             (String::from("build_request_duration_micros"), build_request_duration.as_micros()),
             (String::from("authz_duration_micros"), t_authz.elapsed().as_micros()),
         ]);
-        let authz_response = AuthzResponse::new(ans, metrics);
+        let authz_response = AuthzResponse::new(ans, metrics,
+                                                request_args.correlation_id.clone());
         Ok(authz_response)
     } else {
         if verbose {
