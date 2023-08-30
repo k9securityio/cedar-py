@@ -1,5 +1,6 @@
 import json
 import random
+import string
 import unittest
 from datetime import timedelta
 from typing import List, Union
@@ -7,6 +8,10 @@ from typing import List, Union
 from cedarpy import is_authorized, AuthzResult, Decision, is_authorized_batch
 
 from unit import load_file_as_str, utc_now
+
+
+def randomstr(size=6, chars=string.ascii_uppercase + string.digits):
+    return ''.join(random.choice(chars) for _ in range(size))
 
 
 class AuthorizeTestCase(unittest.TestCase):
@@ -128,6 +133,10 @@ class AuthorizeTestCase(unittest.TestCase):
             "resource": f'Photo::"{photo_resource}"',
             "context": context
         }
+
+        if random.choice([True, False]):
+            request["correlation_id"] = randomstr()
+
         return request
 
     def assert_authz_responses_equal(self,
@@ -201,9 +210,12 @@ class AuthorizeTestCase(unittest.TestCase):
 
     def test_authorize_basic_shape_of_response(self):
         for _ in range(1, 30):
-            actual_authz_result: AuthzResult = is_authorized(self.make_request(),
+            request = self.make_request()
+            actual_authz_result: AuthzResult = is_authorized(request,
                                                              self.policies["bob"],
                                                              self.entities)
+            self.assertEqual(request.get("correlation_id", None),
+                             actual_authz_result.correlation_id)
             self.assertIsNotNone('decision', actual_authz_result.decision)
 
             self.assertIsNotNone('diagnostics', actual_authz_result)
