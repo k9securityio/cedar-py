@@ -123,9 +123,9 @@ class AuthorizeTestCase(unittest.TestCase):
                                  {'authenticated': True},
                                  ])
         request = {
-            "principal": f"User::\"{username}\"",
-            "action": f"Action::\"{action}\"",
-            "resource": f"Photo::\"{photo_resource}\"",
+            "principal": f'User::"{username}"',
+            "action": f'Action::"{action}"',
+            "resource": f'Photo::"{photo_resource}"',
             "context": context
         }
         return request
