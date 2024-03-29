@@ -11,8 +11,11 @@ crate-type = ["cdylib"]
 [dependencies]
 pyo3 = "0.19.0"
 anyhow = "1.0"
-cedar-policy = "2.2.0"
-cedar-policy-cli = "2.2.0"
-cedar-policy-formatter = "2.2.0"
+cedar-policy = "~2.2.0"
+cedar-policy-cli = "~2.2.0"
+cedar-policy-formatter = "~2.2.0"
 serde = { version = "1.0", features = ["derive", "rc"] }
 serde_json = "1.0"
+
+# manage transitive dependency versions
+rustix = "~0.37.25"
