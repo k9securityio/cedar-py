@@ -314,7 +314,7 @@ dependencies = [
 
 [[package]]
 name = "cedarpy"
-version = "1.4.2"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "cedar-policy",
