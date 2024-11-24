@@ -12,49 +12,6 @@ class FormatPolicyTestCase(unittest.TestCase):
     def setUp(self) -> None:
         super().setUp()
 
-        common_policies = """
-                permit(
-                    principal,
-                    action == Action::"edit",
-                    resource
-                )
-                when {
-                   resource.account == principal
-                };
-                permit(
-                    principal,
-                    action == Action::"delete",
-                    resource
-                )
-                when {
-                    context.authenticated == true
-                    &&
-                    resource has account && principal == resource.account.owner
-                }
-                ;
-
-        """.strip()
-        self.policies: dict[str, str] = {
-            "common": common_policies,
-            "alice": f"""
-                permit(
-                    principal == User::"alice",
-                    action == Action::"view",
-                    resource
-                )
-                ;
-                {common_policies}""".strip(),
-            "bob": f"""
-                permit(
-                    principal == User::"bob",
-                    action == Action::"view",
-                    resource
-                )
-                ;
-                {common_policies}""".strip(),
-        }
-
-
     def test_policy_gets_formatted(self):
         input_policy = dedent("""
             permit(
@@ -99,7 +56,7 @@ class FormatPolicyTestCase(unittest.TestCase):
             pass
 
     def test_policy_to_json(self):
-        result: dict = json.loads(policies_to_json_str(self.policies["bob"]))
+        result: dict = json.loads(policies_to_json_str(load_file_as_str("resources/json/bob_policy1.cedar")))
         expected: dict = json.loads(load_file_as_str("resources/json/bob_policy.json"))
         self.assertEqual(expected, result, msg='expected cedar to be parsed to json correctly')
 
