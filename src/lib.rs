@@ -31,29 +31,29 @@ fn format_policies(s: String, line_width: usize, indent_width: isize) -> PyResul
     }
 }
 
-// #[pyfunction]
-// #[pyo3(signature = (s, line_width, indent_width))]
-// fn to_json_str(s: String, line_width: usize, indent_width: isize) -> PyResult<String> {
-//     match PolicySet::from_str(&s) {
-//         Ok(p) => match p.to_json() {
-//             Ok(v) => match serde_json::to_string(v) {
-//                 Ok(s) => s,
-//                 Err(e) => Err(pyo3::exceptions::PyValueError::new_err(e.to_string()))
-//             },
-//             Err(e) => Err(pyo3::exceptions::PyValueError::new_err(e.to_string()))
-//         },
-//         Err(e) => Err(pyo3::exceptions::PyValueError::new_err(e.to_string())),
-//     }
-// }
+#[pyfunction]
+#[pyo3(signature = (s))]
+fn policies_to_json_str(s: String) -> PyResult<String> {
+    match PolicySet::from_str(&s) {
+        Ok(p) => match p.to_json() {
+            Ok(v) => match serde_json::to_string(&v) {
+                Ok(s) => Ok(s),
+                Err(e) => Err(pyo3::exceptions::PyValueError::new_err(e.to_string()))
+            },
+            Err(e) => Err(pyo3::exceptions::PyValueError::new_err(e.to_string()))
+        },
+        Err(e) => Err(pyo3::exceptions::PyValueError::new_err(e.to_string())),
+    }
+}
 
-// #[pyfunction]
-// #[pyo3(signature = (s, line_width, indent_width))]
-// fn from_json_str(s: String, line_width: usize, indent_width: isize) -> PyResult<String> {
-//     match PolicySet.from_json_str(&s) {
-//         Ok(p) => Ok(p.to_),
-//         Err(e) => Err(pyo3::exceptions::PyValueError::new_err(e.to_string())),
-//     }
-// }
+#[pyfunction]
+#[pyo3(signature = (s))]
+fn policies_from_json_str(s: String) -> PyResult<String> {
+    match PolicySet::from_json_str(&s) {
+        Ok(p) => Ok(p.to_string()),
+        Err(e) => Err(pyo3::exceptions::PyValueError::new_err(e.to_string())),
+    }
+}
 
 
 pub struct RequestArgs {
@@ -337,14 +337,14 @@ fn make_entities(entities_str: String, schema: &Option<Schema>, errs: &mut Vec<E
         }
     };
     // // load actions from the schema and append into entities
-    // // we could/may integrate this into the load_entities match
-    // let entities = match load_actions_from_schema(entities, schema) {
-    //     Ok(entities) => entities,
-    //     Err(e) => {
-    //         errs.push(e);
-    //         Entities::empty()
-    //     }
-    // };
+    // we could/may integrate this into the load_entities match
+    let entities = match load_actions_from_schema(entities, schema) {
+        Ok(entities) => entities,
+        Err(e) => {
+            errs.push(e);
+            Entities::empty()
+        }
+    };
     entities
 }
 
@@ -378,20 +378,20 @@ fn load_entities(entities_str: String, schema: Option<&Schema>) -> Result<Entiti
     ));
 }
 
-// fn load_actions_from_schema(entities: Entities, schema: &Option<Schema>) -> Result<Entities> {
-//     match schema {
-//         Some(schema) => match schema.action_entities() {
-//             Ok(action_entities) => Entities::from_entities(
-//                 entities
-//                     .iter()
-//                     .cloned()
-//                     .chain(action_entities.iter().cloned()), Some(schema))
-//             .context("failed to merge action entities into Entities"),
-//             Err(e) => Err(e).context("failed to construct action entities"),
-//         },
-//         None => Ok(entities),
-//     }
-// }
+fn load_actions_from_schema(entities: Entities, schema: &Option<Schema>) -> Result<Entities> {
+    match schema {
+        Some(schema) => match schema.action_entities() {
+            Ok(action_entities) => Entities::from_entities(
+                entities
+                    .iter()
+                    .cloned()
+                    .chain(action_entities.iter().cloned()), Some(schema))
+            .context("failed to merge action entities into Entities"),
+            Err(e) => Err(e).context("failed to construct action entities"),
+        },
+        None => Ok(entities),
+    }
+}
 
 
 /// A Python module implemented in Rust.
@@ -401,5 +401,7 @@ fn _internal(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(is_authorized, m)?)?;
     m.add_function(wrap_pyfunction!(is_authorized_batch, m)?)?;
     m.add_function(wrap_pyfunction!(format_policies, m)?)?;
+    m.add_function(wrap_pyfunction!(policies_to_json_str, m)?)?;
+    m.add_function(wrap_pyfunction!(policies_from_json_str, m)?)?;
     Ok(())
 }

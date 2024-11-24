@@ -158,3 +158,24 @@ def format_policies(policies: str,
     :raises ValueError: if the input policies cannot be parsed
     """
     return _internal.format_policies(policies, line_width, indent_width)
+
+
+def policies_to_json_str(policies: str) -> str:
+    """Convert a cedar policy file to a json cedar policy file.
+
+    :param policies is a str containing the policies to be converted
+
+    :returns the json formatted policy
+    :raises ValueError: if the input policies cannot be parsed
+    """
+    return _internal.policies_to_json_str(policies)
+
+def policies_from_json_str(policies: str) -> str:
+    """Convert a json cedar policy file to a cedar policy file.
+
+    :param policies is a str containing the policies to be converted
+
+    :returns the cedar formatted policy
+    :raises ValueError: if the input policies cannot be parsed
+    """
+    return _internal.policies_from_json_str(policies)

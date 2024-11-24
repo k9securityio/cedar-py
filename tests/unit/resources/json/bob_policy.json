@@ -1,0 +1,135 @@
+{
+    "templates": {},
+    "staticPolicies": {
+        "policy0": {
+            "effect": "permit",
+            "principal": {
+                "op": "==",
+                "entity": {
+                    "type": "User",
+                    "id": "bob"
+                }
+            },
+            "action": {
+                "op": "==",
+                "entity": {
+                    "type": "Action",
+                    "id": "view"
+                }
+            },
+            "resource": {
+                "op": "All"
+            },
+            "conditions": []
+        },
+        "policy1": {
+            "effect": "permit",
+            "principal": {
+                "op": "All"
+            },
+            "action": {
+                "op": "==",
+                "entity": {
+                    "type": "Action",
+                    "id": "edit"
+                }
+            },
+            "resource": {
+                "op": "All"
+            },
+            "conditions": [
+                {
+                    "kind": "when",
+                    "body": {
+                        "==": {
+                            "left": {
+                                ".": {
+                                    "left": {
+                                        "Var": "resource"
+                                    },
+                                    "attr": "account"
+                                }
+                            },
+                            "right": {
+                                "Var": "principal"
+                            }
+                        }
+                    }
+                }
+            ]
+        },
+        "policy2": {
+            "effect": "permit",
+            "principal": {
+                "op": "All"
+            },
+            "action": {
+                "op": "==",
+                "entity": {
+                    "type": "Action",
+                    "id": "delete"
+                }
+            },
+            "resource": {
+                "op": "All"
+            },
+            "conditions": [
+                {
+                    "kind": "when",
+                    "body": {
+                        "&&": {
+                            "left": {
+                                "&&": {
+                                    "left": {
+                                        "==": {
+                                            "left": {
+                                                ".": {
+                                                    "left": {
+                                                        "Var": "context"
+                                                    },
+                                                    "attr": "authenticated"
+                                                }
+                                            },
+                                            "right": {
+                                                "Value": true
+                                            }
+                                        }
+                                    },
+                                    "right": {
+                                        "has": {
+                                            "left": {
+                                                "Var": "resource"
+                                            },
+                                            "attr": "account"
+                                        }
+                                    }
+                                }
+                            },
+                            "right": {
+                                "==": {
+                                    "left": {
+                                        "Var": "principal"
+                                    },
+                                    "right": {
+                                        ".": {
+                                            "left": {
+                                                ".": {
+                                                    "left": {
+                                                        "Var": "resource"
+                                                    },
+                                                    "attr": "account"
+                                                }
+                                            },
+                                            "attr": "owner"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            ]
+        }
+    },
+    "templateLinks": []
+}
