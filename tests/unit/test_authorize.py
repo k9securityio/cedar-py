@@ -190,9 +190,6 @@ class AuthorizeTestCase(unittest.TestCase):
             # omit metrics
         })
         actual_authz_result: AuthzResult = is_authorized(request, self.policies["bob"], self.entities)
-        print(actual_authz_result)
-        for error in actual_authz_result.diagnostics.errors:
-            print(error)
         self.assert_authz_responses_equal(expect_authz_result, actual_authz_result)
 
     def test_authorize_basic_DENY(self):
@@ -212,9 +209,6 @@ class AuthorizeTestCase(unittest.TestCase):
             }
         })
         actual_authz_result: AuthzResult = is_authorized(request, self.policies["bob"], self.entities)
-        for error in actual_authz_result.diagnostics.errors:
-            print(error)
-
         self.assert_authz_responses_equal(expect_authz_result, actual_authz_result)
 
     def test_authorize_basic_shape_of_response(self):
@@ -386,9 +380,6 @@ class AuthorizeTestCase(unittest.TestCase):
         expect_authz_result = AuthzResult({"decision": "Allow", "diagnostics": {"reason": ["policy2"], "errors": []}})
         actual_authz_result = is_authorized(request, policies, entities,
                                             schema=schema)
-        for error in actual_authz_result.diagnostics.errors:
-            print(error)
-
         self.assert_authz_responses_equal(expect_authz_result, actual_authz_result)
 
     def test_authorized_batch_evaluates_authorization_and_returns_in_order(self):
@@ -528,3 +519,4 @@ class AuthorizeTestCase(unittest.TestCase):
             print(f'actual_authz_result.metrics: {actual_authz_result. metrics}')
             self.assert_authz_responses_equal(expect_authz_result, actual_authz_result,
                                               ignore_metric_values=True)
+
