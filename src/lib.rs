@@ -355,7 +355,7 @@ fn make_schema(schema_str: &Option<String>, verbose: bool) -> Option<Schema> {
             if verbose {
                 println!("schema: {}", schema_src.as_str());
             }
-            match Schema::from_str(&schema_src) {
+            match Schema::from_json_str(&schema_src) {
                 Ok(schema) => Some(schema),
                 Err(e) => {
                     // TODO: record this error
