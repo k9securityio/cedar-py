@@ -40,7 +40,7 @@ class AuthzResult:
 
     @property
     def decision(self) -> Decision:
-        return Decision[self._authz_resp['decision']]
+        return Decision(self._authz_resp['decision'])
 
     @property
     def allowed(self) -> bool:
