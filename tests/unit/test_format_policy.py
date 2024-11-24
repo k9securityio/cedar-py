@@ -27,7 +27,7 @@ class FormatPolicyTestCase(unittest.TestCase):
               resource
             )
             when { resource.owner == principal };
-        """).strip()
+        """).lstrip()
 
         actual_result = format_policies(input_policy, indent_width=2)
 
