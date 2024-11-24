@@ -329,23 +329,13 @@ fn execute_authorization_request(
 }
 
 fn make_entities(entities_str: String, schema: &Option<Schema>, errs: &mut Vec<Error>) -> Entities {
-    let entities = match load_entities(entities_str, schema.as_ref()) {
+    match load_entities(entities_str, schema.as_ref()) {
         Ok(entities) => entities,
         Err(e) => {
             errs.push(e);
             Entities::empty()
         }
-    };
-    // // load actions from the schema and append into entities
-    // we could/may integrate this into the load_entities match
-    let entities = match load_actions_from_schema(entities, schema) {
-        Ok(entities) => entities,
-        Err(e) => {
-            errs.push(e);
-            Entities::empty()
-        }
-    };
-    entities
+    }
 }
 
 fn make_schema(schema_str: &Option<String>, verbose: bool) -> Option<Schema> {
@@ -374,25 +364,9 @@ fn make_schema(schema_str: &Option<String>, verbose: bool) -> Option<Schema> {
 /// Load an `Entities` object from the given JSON string and optional schema.
 fn load_entities(entities_str: String, schema: Option<&Schema>) -> Result<Entities> {
     return Entities::from_json_str(&entities_str, schema).context(format!(
-        "failed to parse entities from:\n{}\nwith schema\n{}", entities_str, schema.map(|_s|"schema").or(Some("none")).expect("wibble")
-    ));
+        "failed to parse entities from:\n{}", entities_str)
+    );
 }
-
-fn load_actions_from_schema(entities: Entities, schema: &Option<Schema>) -> Result<Entities> {
-    match schema {
-        Some(schema) => match schema.action_entities() {
-            Ok(action_entities) => Entities::from_entities(
-                entities
-                    .iter()
-                    .cloned()
-                    .chain(action_entities.iter().cloned()), Some(schema))
-            .context("failed to merge action entities into Entities"),
-            Err(e) => Err(e).context("failed to construct action entities"),
-        },
-        None => Ok(entities),
-    }
-}
-
 
 /// A Python module implemented in Rust.
 #[pymodule]

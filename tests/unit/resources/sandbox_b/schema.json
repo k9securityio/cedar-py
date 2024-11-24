@@ -24,7 +24,13 @@
         "shape": {
           "type": "Record",
           "additionalAttributes": false,
-          "attributes": {}
+          "attributes": {
+            "owner": {
+              "type": "Entity",
+              "name": "User",
+              "required": false
+            }
+          }
         },
         "memberOfTypes": []
       },

@@ -60,7 +60,8 @@
   },
   {
     "uid": {
-      "__entity": { "type" : "UserGroup", "id" : "alice_friends" }
+      "type" : "UserGroup",
+      "id" : "alice_friends"
     },
     "attrs": {},
     "parents": []
