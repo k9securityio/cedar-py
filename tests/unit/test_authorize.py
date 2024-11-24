@@ -468,7 +468,7 @@ class AuthorizeTestCase(unittest.TestCase):
         authz_result: AuthzResult = is_authorized(request, policies, entities, schema=schema)
         self.assertEqual(Decision.NoDecision, authz_result.decision)
         self.assertEqual(1, len(authz_result.diagnostics.errors))
-        self.assertIn('policy parse errors:\nUnrecognized token', authz_result.diagnostics.errors[0])
+        self.assertIn('policy parse errors:\nunexpected token `is`', authz_result.diagnostics.errors[0])
 
     def test_authorized_batch_perf(self):
         policies = self.policies["alice"]
@@ -545,4 +545,4 @@ class AuthorizeTestCase(unittest.TestCase):
             load_file_as_str("resources/json/bob_policy6.cedar"),
         ]
         result = format_policies(policies_from_json_str(json_str))
-        self.assertTrue(result in expected, msg='expected json to be parsed to cedar correctly')
+        self.assertIn(result, expected, msg='expected json to be parsed to cedar correctly')
