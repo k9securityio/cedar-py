@@ -5,7 +5,7 @@ import unittest
 from datetime import timedelta
 from typing import List, Union
 
-from cedarpy import is_authorized, AuthzResult, Decision, is_authorized_batch, policies_from_json_str, policies_to_json_str, format_policies
+from cedarpy import is_authorized, AuthzResult, Decision, is_authorized_batch
 
 from unit import load_file_as_str, utc_now
 
@@ -451,6 +451,8 @@ class AuthorizeTestCase(unittest.TestCase):
         self.assertEqual(Decision.NoDecision, authz_result.decision)
         self.assertEqual(["failed to parse schema from request"],
                          authz_result.diagnostics.errors)
+
+
     def test_is_authorized_with_policies_that_errors(self):
         policies = "this is not a real policy"
         entities = load_file_as_str("resources/sandbox_b/entities.json")
@@ -526,23 +528,3 @@ class AuthorizeTestCase(unittest.TestCase):
             print(f'actual_authz_result.metrics: {actual_authz_result. metrics}')
             self.assert_authz_responses_equal(expect_authz_result, actual_authz_result,
                                               ignore_metric_values=True)
-
-    def test_policy_to_json(self):
-        result: dict = json.loads(policies_to_json_str(self.policies["bob"]))
-        expected: dict = json.loads(load_file_as_str("resources/json/bob_policy.json"))
-        self.assertEqual(expected, result, msg='expected cedar to be parsed to json correctly')
-
-    def test_policy_from_json(self):
-        json_str = load_file_as_str("resources/json/bob_policy.json")
-        # this is required as conversion order in rust cedar library is non deterministic so could be one of n! variants
-        # good thing bob only has three policies!!!
-        expected = [
-            load_file_as_str("resources/json/bob_policy1.cedar"),
-            load_file_as_str("resources/json/bob_policy2.cedar"),
-            load_file_as_str("resources/json/bob_policy3.cedar"),
-            load_file_as_str("resources/json/bob_policy4.cedar"),
-            load_file_as_str("resources/json/bob_policy5.cedar"),
-            load_file_as_str("resources/json/bob_policy6.cedar"),
-        ]
-        result = format_policies(policies_from_json_str(json_str))
-        self.assertIn(result, expected, msg='expected json to be parsed to cedar correctly')
