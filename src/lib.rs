@@ -219,16 +219,16 @@ fn to_request_args(request: &HashMap<String, String>) -> RequestArgs {
     let correlation_id: Option<String> = request.get(String::from("correlation_id").as_str()).cloned();
 
     let context_option = request.get(String::from("context").as_str());
-    let context_json_option: Option<String> = match context_option {
+    let context_json: Option<String> = match context_option {
         None => None, // context member not present
         Some(context) => Some(context.to_string())
     };
 
     RequestArgs {
-        principal: principal,
-        action: action,
-        resource: resource,
-        context_json: context_json_option,
+        principal,
+        action,
+        resource,
+        context_json,
         correlation_id,
     }
 }
