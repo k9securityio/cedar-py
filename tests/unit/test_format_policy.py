@@ -2,7 +2,11 @@ import unittest
 
 from textwrap import dedent
 
-from cedarpy import format_policies
+from cedarpy import format_policies, policies_from_json_str, policies_to_json_str
+
+from unit import load_file_as_str
+
+import json
 
 class FormatPolicyTestCase(unittest.TestCase):
     def setUp(self) -> None:
@@ -27,7 +31,7 @@ class FormatPolicyTestCase(unittest.TestCase):
               resource
             )
             when { resource.owner == principal };
-        """).strip()
+        """).lstrip()
 
         actual_result = format_policies(input_policy, indent_width=2)
 
@@ -50,3 +54,24 @@ class FormatPolicyTestCase(unittest.TestCase):
             self.fail("should have failed to parse")
         except ValueError as e:
             pass
+
+    def test_policy_to_json(self):
+        result: dict = json.loads(policies_to_json_str(load_file_as_str("resources/json/bob_policy1.cedar")))
+        expected: dict = json.loads(load_file_as_str("resources/json/bob_policy.json"))
+        self.assertEqual(expected, result, msg='expected cedar to be parsed to json correctly')
+
+    def test_policy_from_json(self):
+        json_str = load_file_as_str("resources/json/bob_policy.json")
+        # this is required as conversion order in rust cedar library is non deterministic so could be one of n! variants
+        # good thing bob only has three policies!!!
+        expected = [
+            load_file_as_str("resources/json/bob_policy1.cedar"),
+            load_file_as_str("resources/json/bob_policy2.cedar"),
+            load_file_as_str("resources/json/bob_policy3.cedar"),
+            load_file_as_str("resources/json/bob_policy4.cedar"),
+            load_file_as_str("resources/json/bob_policy5.cedar"),
+            load_file_as_str("resources/json/bob_policy6.cedar"),
+        ]
+        result = format_policies(policies_from_json_str(json_str))
+        self.assertIn(result, expected, msg='expected json to be parsed to cedar correctly')
+

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::time::Instant;
 
@@ -31,13 +31,38 @@ fn format_policies(s: String, line_width: usize, indent_width: isize) -> PyResul
     }
 }
 
+#[pyfunction]
+#[pyo3(signature = (s))]
+fn policies_to_json_str(s: String) -> PyResult<String> {
+    match PolicySet::from_str(&s) {
+        Ok(p) => match p.to_json() {
+            Ok(v) => match serde_json::to_string(&v) {
+                Ok(s) => Ok(s),
+                Err(e) => Err(pyo3::exceptions::PyValueError::new_err(e.to_string()))
+            },
+            Err(e) => Err(pyo3::exceptions::PyValueError::new_err(e.to_string()))
+        },
+        Err(e) => Err(pyo3::exceptions::PyValueError::new_err(e.to_string())),
+    }
+}
+
+#[pyfunction]
+#[pyo3(signature = (s))]
+fn policies_from_json_str(s: String) -> PyResult<String> {
+    match PolicySet::from_json_str(&s) {
+        Ok(p) => Ok(p.to_string()),
+        Err(e) => Err(pyo3::exceptions::PyValueError::new_err(e.to_string())),
+    }
+}
+
+
 pub struct RequestArgs {
     /// Principal for the request, e.g., User::"alice"
-    pub principal: Option<String>,
+    pub principal: String,
     /// Action for the request, e.g., Action::"view"
-    pub action: Option<String>,
+    pub action: String,
     /// Resource for the request, e.g., File::"myfile.txt"
-    pub resource: Option<String>,
+    pub resource: String,
     /// A JSON object representing the context for the request.
     /// Should be a (possibly empty) map from keys to values.
     pub context_json: Option<String>,
@@ -49,39 +74,18 @@ pub struct RequestArgs {
 impl RequestArgs {
     /// Turn this `RequestArgs` into the appropriate `Request` object
     fn get_request(&self, schema: Option<&Schema>) -> Result<Request> {
-        let principal = self
-            .principal
-            .as_ref()
-            .map(|s| {
-                s.parse()
-                    .context(format!("failed to parse principal {s} as entity Uid"))
-            })
-            .transpose()?;
-        let action = self
-            .action
-            .as_ref()
-            .map(|s| {
-                s.parse()
-                    .context(format!("failed to parse action {s} as entity Uid"))
-            })
-            .transpose()?;
-        let resource = self
-            .resource
-            .as_ref()
-            .map(|s| {
-                s.parse()
-                    .context(format!("failed to parse resource {s} as entity Uid"))
-            })
-            .transpose()?;
+        let principal: EntityUid = self.principal.parse().context(format!("Failed to parse principal as entity Uid"))?;
+        let action: EntityUid = self.action.parse().context(format!("Failed to parse action as entity Uid"))?;
+        let resource: EntityUid = self.resource.parse().context(format!("Failed to parse resource as entity Uid"))?;
         let context: Context = match &self.context_json {
             None => Context::empty(),
             Some(context_json_str) => {
                 // Must provide action EUID because actions define their own schemas
                 Context::from_json_str(context_json_str,
-                                       schema.and_then(|s| Some((s, action.as_ref()?))))?
+                                       schema.and_then(|s| Some((s, &action))))?
             },
         };
-        Ok(Request::new(principal, action, resource, context))
+        Ok(Request::new(principal, action, resource, context, schema)?)
     }
 }
 
@@ -122,7 +126,7 @@ fn is_authorized_batch(requests: Vec<HashMap<String, String>>,
         Ok(pset) => pset,
         Err(parse_errors) => {
             let err_message = format!("policy parse errors:\n{:#}",
-                                      parse_errors.errors_as_strings().join(""));
+                                      parse_errors.to_string());
             println!("{:#}", err_message);
             errs.push(Error::msg(err_message));
             PolicySet::new()
@@ -215,31 +219,52 @@ fn to_request_args(request: &HashMap<String, String>) -> RequestArgs {
     let correlation_id: Option<String> = request.get(String::from("correlation_id").as_str()).cloned();
 
     let context_option = request.get(String::from("context").as_str());
-    let context_json_option: Option<String> = match context_option {
+    let context_json: Option<String> = match context_option {
         None => None, // context member not present
         Some(context) => Some(context.to_string())
     };
 
     RequestArgs {
-        principal: Some(principal),
-        action: Some(action),
-        resource: Some(resource),
-        context_json: context_json_option,
+        principal,
+        action,
+        resource,
+        context_json,
         correlation_id,
     }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
+pub struct DiagnosticsSer {
+    /// `PolicyId`s of the policies that contributed to the decision.
+    /// If no policies applied to the request, this set will be empty.
+    reason: HashSet<PolicyId>,
+    /// Errors that occurred during authorization. The errors should be
+    /// treated as unordered, since policies may be evaluated in any order.
+    errors: Vec<String>,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
+pub enum DecisionSer {
+    /// The `Authorizer` determined that the request should be allowed
+    Allow,
+    /// The `Authorizer` determined that the request should be denied.
+    /// This is also returned if sufficiently fatal errors are encountered such
+    /// that no decision could be safely reached; for example, errors parsing
+    /// the policies.
+    Deny,
 }
 
 /// Authorization response returned from the `Authorizer`
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 struct AuthzResponse {
     /// Authorization decision
-    decision: Decision,
+    decision: DecisionSer,
 
     /// (Optional) id to correlate this response to the request
     correlation_id: Option<String>,
 
     /// Diagnostics providing more information on how this decision was reached
-    diagnostics: Diagnostics,
+    diagnostics: DiagnosticsSer,
 
     /// Metrics providing timing information on the authorization decision
     metrics: HashMap<String, u128>,
@@ -249,9 +274,15 @@ impl AuthzResponse {
     /// Create a new `AuthzResponse`
     pub fn new(response: Response, metrics: HashMap<String, u128>, correlation_id: Option<String>) -> Self {
         Self {
-            decision: response.decision(),
+            decision: match response.decision() {
+                Decision::Allow => DecisionSer::Allow,
+                Decision::Deny => DecisionSer::Deny
+            },
             correlation_id,
-            diagnostics: response.diagnostics().clone(),
+            diagnostics: DiagnosticsSer{
+                reason: response.diagnostics().reason().cloned().collect(),
+                errors: response.diagnostics().errors().cloned().map(|e|e.to_string()).collect(),
+            },
             metrics,
         }
     }
@@ -298,23 +329,13 @@ fn execute_authorization_request(
 }
 
 fn make_entities(entities_str: String, schema: &Option<Schema>, errs: &mut Vec<Error>) -> Entities {
-    let entities = match load_entities(entities_str, schema.as_ref()) {
+    match load_entities(entities_str, schema.as_ref()) {
         Ok(entities) => entities,
         Err(e) => {
             errs.push(e);
             Entities::empty()
         }
-    };
-    // load actions from the schema and append into entities
-    // we could/may integrate this into the load_entities match
-    let entities = match load_actions_from_schema(entities, schema) {
-        Ok(entities) => entities,
-        Err(e) => {
-            errs.push(e);
-            Entities::empty()
-        }
-    };
-    entities
+    }
 }
 
 fn make_schema(schema_str: &Option<String>, verbose: bool) -> Option<Schema> {
@@ -324,7 +345,7 @@ fn make_schema(schema_str: &Option<String>, verbose: bool) -> Option<Schema> {
             if verbose {
                 println!("schema: {}", schema_src.as_str());
             }
-            match Schema::from_str(&schema_src) {
+            match Schema::from_json_str(&schema_src) {
                 Ok(schema) => Some(schema),
                 Err(e) => {
                     // TODO: record this error
@@ -343,26 +364,9 @@ fn make_schema(schema_str: &Option<String>, verbose: bool) -> Option<Schema> {
 /// Load an `Entities` object from the given JSON string and optional schema.
 fn load_entities(entities_str: String, schema: Option<&Schema>) -> Result<Entities> {
     return Entities::from_json_str(&entities_str, schema).context(format!(
-        "failed to parse entities from:\n{}", entities_str
-    ));
+        "failed to parse entities from:\n{}", entities_str)
+    );
 }
-
-fn load_actions_from_schema(entities: Entities, schema: &Option<Schema>) -> Result<Entities> {
-    match schema {
-        Some(schema) => match schema.action_entities() {
-            Ok(action_entities) => Entities::from_entities(
-                entities
-                    .iter()
-                    .cloned()
-                    .chain(action_entities.iter().cloned()),
-            )
-            .context("failed to merge action entities into Entities"),
-            Err(e) => Err(e).context("failed to construct action entities"),
-        },
-        None => Ok(entities),
-    }
-}
-
 
 /// A Python module implemented in Rust.
 #[pymodule]
@@ -371,5 +375,7 @@ fn _internal(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(is_authorized, m)?)?;
     m.add_function(wrap_pyfunction!(is_authorized_batch, m)?)?;
     m.add_function(wrap_pyfunction!(format_policies, m)?)?;
+    m.add_function(wrap_pyfunction!(policies_to_json_str, m)?)?;
+    m.add_function(wrap_pyfunction!(policies_from_json_str, m)?)?;
     Ok(())
 }
