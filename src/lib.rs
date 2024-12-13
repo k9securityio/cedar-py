@@ -345,19 +345,26 @@ fn make_schema(schema_str: &Option<String>, verbose: bool) -> Option<Schema> {
             if verbose {
                 println!("schema: {}", schema_src.as_str());
             }
+
             match Schema::from_json_str(&schema_src) {
                 Ok(schema) => Some(schema),
-                Err(e) => {
-                    // TODO: record this error
-                    // errs.push(e);
+                Err(json_err) => {
                     if verbose {
-                        println!("!!! error constructing schema: {}", e);
+                        println!("!!! could not construct schema from JSON: {}", json_err);
                     }
-                    None
+                    match Schema::from_str(&schema_src) {
+                        Ok(schema) => Some(schema),
+                        Err(str_err) => {
+                            if verbose {
+                                println!("!!! could not construct schema from str: {}", str_err);
+                            }
+                            None
+                        }
+                    }
                 }
             }
         }
-    };
+    };    
     schema
 }
 
