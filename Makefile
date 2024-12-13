@@ -22,10 +22,10 @@ quick:
 	maturin develop ;\
 	pytest
 
-submodule-cedar: third_party/cedar/cedar-integration-tests/
+submodule-cedar-integration-tests: third_party/cedar-integration-tests/
 	git submodule update --init --recursive
 
-submodules: submodule-cedar
+submodules: submodule-cedar-integration-tests
 
 .PHONY: integration-tests
 integration-tests: submodules
