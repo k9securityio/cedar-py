@@ -343,23 +343,33 @@ fn make_schema(schema_str: &Option<String>, verbose: bool) -> Option<Schema> {
         None => None,
         Some(schema_src) => {
             if verbose {
-                println!("schema: {}", schema_src.as_str());
+                println!("schema: {}", schema_src);
             }
 
-            match Schema::from_json_str(&schema_src) {
-                Ok(schema) => Some(schema),
-                Err(json_err) => {
-                    if verbose {
-                        println!("!!! could not construct schema from JSON: {}", json_err);
-                    }
-                    match Schema::from_str(&schema_src) {
-                        Ok(schema) => Some(schema),
-                        Err(str_err) => {
-                            if verbose {
-                                println!("!!! could not construct schema from str: {}", str_err);
-                            }
-                            None
+            let trimmed_schema_src = schema_src.trim();
+
+            if trimmed_schema_src.is_empty() {
+                return None;
+            }
+
+            if trimmed_schema_src.starts_with('{') {
+                match Schema::from_json_str(trimmed_schema_src) {
+                    Ok(schema) => Some(schema),
+                    Err(json_err) => {
+                        if verbose {
+                            println!("!!! could not construct schema from JSON: {}", json_err);
                         }
+                        None
+                    }
+                }
+            } else {
+                match Schema::from_str(trimmed_schema_src) {
+                    Ok(schema) => Some(schema),
+                    Err(str_err) => {
+                        if verbose {
+                            println!("!!! could not construct schema from str: {}", str_err);
+                        }
+                        None
                     }
                 }
             }

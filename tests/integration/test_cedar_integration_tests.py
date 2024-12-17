@@ -57,7 +57,7 @@ class BaseDataDrivenCedarIntegrationTestCase(unittest.TestCase):
                                          schema: str,
                                          should_validate: bool,  # ignored; currently don't have the equivalent
                                          request_model: dict) -> None:
-        print(f"executing authz request:\n{pretty_format(request_model)}")
+        print(f"executing authz request model:\n{pretty_format(request_model)}")
         request = {
             'principal': f"{request_model['principal']['type']}::\"{request_model['principal']['id']}\"",
             'action': f"{request_model['action']['type']}::\"{request_model['action']['id']}\"",
