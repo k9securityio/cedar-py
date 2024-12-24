@@ -38,9 +38,9 @@ entities: list = [  # a list of Cedar entities; can also be a json-formatted str
     # ...
 ]
 request = {
-    "principal": "User::\"bob\"",
-    "action": "Action::\"view\"",
-    "resource": "Photo::\"1234-abcd\"",
+    "principal": 'User::"bob"',
+    "action": 'Action::"view"',
+    "resource": 'Photo::"1234-abcd"',
     "context": {}
 }
 
