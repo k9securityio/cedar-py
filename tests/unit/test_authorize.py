@@ -63,45 +63,51 @@ class AuthorizeTestCase(unittest.TestCase):
         }
         self.entities: List[dict] = [
             {
-                "uid": {
-                    "__expr": "User::\"alice\""
+                "uid" : {
+                    "type" : "User",
+                    "id" : "alice"
                 },
                 "attrs": {},
                 "parents": []
             },
             {
                 "uid": {
-                    "__expr": "User::\"bob\""
+                    "type" : "User",
+                    "id" : "bob"
                 },
                 "attrs": {},
                 "parents": []
             },
             {
                 "uid": {
-                    "__expr": "Photo::\"bobs-photo-1\""
+                    "type" : "Photo",
+                    "id" : "bobs-photo-1"
                 },
                 "attrs": {
-                    "account": {"__expr": "User::\"bob\""}
+                    "account": {"__entity": { "type" : "User", "id" : "bob"} }
                 },
                 "parents": []
             },
             {
                 "uid": {
-                    "__expr": "Action::\"view\""
-                },
-                "attrs": {},
-                "parents": []
-            },
-            {
-                "uid": {
-                    "__expr": "Action::\"edit\""
+                    "type" : "Action",
+                    "id" : "view"
                 },
                 "attrs": {},
                 "parents": []
             },
             {
                 "uid": {
-                    "__expr": "Action::\"delete\""
+                    "type" : "Action",
+                    "id" : "edit"
+                },
+                "attrs": {},
+                "parents": []
+            },
+            {
+                "uid": {
+                    "type" : "Action",
+                    "id" : "delete"
                 },
                 "attrs": {},
                 "parents": []
@@ -197,9 +203,8 @@ class AuthorizeTestCase(unittest.TestCase):
         expect_authz_result = AuthzResult({
             'decision': 'Deny',
             'diagnostics': {
-                'errors': ['while evaluating policy policy2, encountered the '
-                           'following error: record does not have the '
-                           'required attribute: authenticated'],
+                'errors': ['error while evaluating policy `policy2`: record does not have the '
+                           'attribute `authenticated`'],
                 'reason': []
             }
         })
@@ -437,6 +442,8 @@ class AuthorizeTestCase(unittest.TestCase):
         self.assertEqual(Decision.NoDecision, authz_result.decision)
         self.assertEqual(["failed to parse schema from request"],
                          authz_result.diagnostics.errors)
+
+
     def test_is_authorized_with_policies_that_errors(self):
         policies = "this is not a real policy"
         entities = load_file_as_str("resources/sandbox_b/entities.json")
@@ -454,7 +461,7 @@ class AuthorizeTestCase(unittest.TestCase):
         authz_result: AuthzResult = is_authorized(request, policies, entities, schema=schema)
         self.assertEqual(Decision.NoDecision, authz_result.decision)
         self.assertEqual(1, len(authz_result.diagnostics.errors))
-        self.assertIn('policy parse errors:\nUnrecognized token', authz_result.diagnostics.errors[0])
+        self.assertIn('policy parse errors:\nunexpected token `is`', authz_result.diagnostics.errors[0])
 
     def test_authorized_batch_perf(self):
         policies = self.policies["alice"]

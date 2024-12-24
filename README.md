@@ -34,13 +34,13 @@ from cedarpy import is_authorized, AuthzResult, Decision
 
 policies: str = "//a string containing cedar policies"
 entities: list = [  # a list of Cedar entities; can also be a json-formatted string of Cedar entities
-    {"uid": {"__expr": "User::\"alice\""}, "attrs": {}, "parents": []}
+    {"uid": {"__entity": { "type" : "User", "id" : "alice" }}, "attrs": {}, "parents": []}
     # ...
 ]
 request = {
-    "principal": "User::\"bob\"",
-    "action": "Action::\"view\"",
-    "resource": "Photo::\"1234-abcd\"",
+    "principal": 'User::"bob"',
+    "action": 'Action::"view"',
+    "resource": 'Photo::"1234-abcd"',
     "context": {}
 }
 

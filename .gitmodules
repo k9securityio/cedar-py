@@ -1,3 +1,8 @@
 [submodule "cedar"]
 	path = third_party/cedar
 	url = https://github.com/cedar-policy/cedar.git
+[submodule "cedar-integration-tests"]
+	path = third_party/cedar-integration-tests
+	url = https://github.com/cedar-policy/cedar-integration-tests.git
+	branch = release/4.1.x
+
