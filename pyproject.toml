@@ -3,6 +3,8 @@ requires = ["maturin==1.7.8"]
 build-backend = "maturin"
 
 [project]
+# Maturin merges package metadata from pyproject.toml (preferred) and Cargo.toml
+# c.f. https://github.com/PyO3/maturin?tab=readme-ov-file#python-metadata
 name = "cedarpy"
 requires-python = ">=3.9"
 classifiers = [
@@ -10,6 +12,8 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
+
+dynamic = ["version"]
 
 [project.optional-dependencies]
 dev = [

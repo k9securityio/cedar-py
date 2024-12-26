@@ -1,4 +1,6 @@
 [package]
+# Maturin merges package metadata from pyproject.toml (preferred) and Cargo.toml
+# c.f. https://github.com/PyO3/maturin?tab=readme-ov-file#python-metadata
 name = "cedarpy"
 version = "4.1.0"
 edition = "2021"
