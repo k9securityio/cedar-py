@@ -80,12 +80,11 @@ jobs:
             pip3 install cedarpy --find-links dist --force-reinstall
             pip install -r requirements.txt -r requirements.dev.txt
             pytest
-      - name: integration tests (x86_64)
+      - name: integration tests (aarch64)
         if: ${{ startsWith(matrix.platform.target, 'aarch64') }}
         shell: bash
         run: |
           set -e
-          source .venv/bin/activate
           make integration-tests
 
   windows:
