@@ -56,7 +56,7 @@ jobs:
           python3 -m venv .venv
           source .venv/bin/activate
           pip install cedarpy --no-index --find-links dist --force-reinstall
-          pip install pytest
+          pip install -r requirements.txt -r requirements.dev.txt
           pytest
       - name: integration tests (x86_64)
         if: ${{ startsWith(matrix.platform.target, 'x86_64') }}
@@ -75,10 +75,10 @@ jobs:
           install: |
             apt-get update
             apt-get install -y --no-install-recommends python3 python3-pip
-            pip3 install -U pip pytest
           run: |
             set -e
             pip3 install cedarpy --find-links dist --force-reinstall
+            pip install -r requirements.txt -r requirements.dev.txt
             pytest
       - name: integration tests (x86_64)
         if: ${{ startsWith(matrix.platform.target, 'aarch64') }}
