@@ -84,7 +84,7 @@ jobs:
             echo 'running unit tests'
             pytest
             echo 'running integration tests'
-            make integration-tests
+            pytest tests/integration
 
   windows:
     runs-on: ${{ matrix.platform.runner }}
