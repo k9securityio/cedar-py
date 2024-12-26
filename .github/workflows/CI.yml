@@ -29,6 +29,8 @@ jobs:
             target: aarch64
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: 'true'
       - uses: actions/setup-python@v5
         with:
           python-version: 3.x
@@ -44,7 +46,7 @@ jobs:
         with:
           name: wheels-linux-${{ matrix.platform.target }}
           path: dist
-      - name: pytest
+      - name: unit tests (x86_64)
         if: ${{ startsWith(matrix.platform.target, 'x86_64') }}
         shell: bash
         # disabling the PyPI index on `pip install cedarpy` to ensure we
@@ -56,8 +58,15 @@ jobs:
           pip install cedarpy --no-index --find-links dist --force-reinstall
           pip install pytest
           pytest
-      - name: pytest
-        if: ${{ !startsWith(matrix.platform.target, 'x86') && matrix.platform.target != 'ppc64' }}
+      - name: integration tests (x86_64)
+        if: ${{ startsWith(matrix.platform.target, 'x86_64') }}
+        shell: bash
+        run: |
+          set -e
+          source .venv/bin/activate
+          make integration-tests
+      - name: unit tests (aarch64)
+        if: ${{ startsWith(matrix.platform.target, 'aarch64') }}
         uses: uraimo/run-on-arch-action@v2
         with:
           arch: ${{ matrix.platform.target }}
@@ -71,6 +80,13 @@ jobs:
             set -e
             pip3 install cedarpy --find-links dist --force-reinstall
             pytest
+      - name: integration tests (x86_64)
+        if: ${{ startsWith(matrix.platform.target, 'aarch64') }}
+        shell: bash
+        run: |
+          set -e
+          source .venv/bin/activate
+          make integration-tests
 
   windows:
     runs-on: ${{ matrix.platform.runner }}
