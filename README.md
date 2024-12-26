@@ -6,7 +6,18 @@
 * check whether a request is authorized by the [Cedar Policy](https://www.cedarpolicy.com) engine
 * format policies
 
-`cedarpy` packages are availble for the following platforms:
+`cedarpy` releases correspond to the following Cedar Policy engine versions:
+<table>
+<thead><tr><th>Cedar Policy (engine) release</th><th>cedarpy release</th><th>cedarpy branch</th></tr></thead>
+<tbody>
+    <tr><td>v4.1.0</td><td>v4.1.0</td><td>main</td></tr>
+    <tr><td>v2.2.0</td><td>v0.4.1</td><td>release/2.2.x</td></tr>
+</tbody>
+</table>
+
+Beginning with v4.1.0, `cedarpy`'s version number indicates the Cedar Policy engine major and minor version that it is based on. Select the `cedarpy` version that provides the [Cedar Policy](https://www.cedarpolicy.com/en) language and engine features you need. 
+
+`cedarpy` packages are available for the following platforms:
 <table>
 <thead><tr><th>Operating System</th><th>Processor Architectures</th></tr></thead>
 <tbody>
