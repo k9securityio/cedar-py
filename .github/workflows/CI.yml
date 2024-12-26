@@ -65,7 +65,7 @@ jobs:
           set -e
           source .venv/bin/activate
           make integration-tests
-      - name: unit tests (aarch64)
+      - name: unit & integration tests (aarch64)
         if: ${{ startsWith(matrix.platform.target, 'aarch64') }}
         uses: uraimo/run-on-arch-action@v2
         with:
@@ -81,15 +81,10 @@ jobs:
             source .venv/bin/activate
             pip3 install cedarpy --no-index --find-links dist --force-reinstall
             pip install -r requirements.txt -r requirements.dev.txt
+            echo 'running unit tests'
             pytest
-      - name: integration tests (aarch64)
-        if: ${{ startsWith(matrix.platform.target, 'aarch64') }}
-        shell: bash
-        run: |
-          set -e
-          python3 -m venv .venv
-          source .venv/bin/activate
-          make integration-tests
+            echo 'running integration tests'
+            make integration-tests
 
   windows:
     runs-on: ${{ matrix.platform.runner }}
