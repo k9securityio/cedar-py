@@ -14,8 +14,8 @@ anyhow = "1.0"
 cedar-policy = "~4.1.0"
 cedar-policy-cli = "~4.1.0"
 cedar-policy-formatter = "~4.1.0"
-serde = { version = "1.0", features = ["derive", "rc"] }
-serde_json = "1.0"
+serde = { version = "1.0.0", features = ["derive", "rc"] }
+serde_json = "1.0.0"
 
 # manage transitive dependency versions
 rustix = "~0.37.25"
