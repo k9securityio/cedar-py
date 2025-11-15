@@ -520,3 +520,85 @@ class AuthorizeTestCase(unittest.TestCase):
             self.assert_authz_responses_equal(expect_authz_result, actual_authz_result,
                                               ignore_metric_values=True)
 
+    def test_cedar_43_isempty_operator_ALLOW(self):
+        """Test Cedar 4.3+ isEmpty() operator allows when set is empty."""
+        policies = """
+            permit(
+                principal,
+                action == Action::"access",
+                resource
+            )
+            when {
+                principal.tags.isEmpty()
+            };
+        """
+
+        entities = [
+            {"uid": {"type": "User", "id": "alice"}, "attrs": {"tags": []}, "parents": []},
+            {"uid": {"type": "Resource", "id": "file1"}, "attrs": {}, "parents": []}
+        ]
+
+        request = {
+            "principal": 'User::"alice"',
+            "action": 'Action::"access"',
+            "resource": 'Resource::"file1"'
+        }
+
+        result = is_authorized(request, policies, entities)
+        self.assertEqual(Decision.Allow, result.decision)
+
+    def test_cedar_43_isempty_operator_DENY(self):
+        """Test Cedar 4.3+ isEmpty() operator denies when set is not empty."""
+        policies = """
+            permit(
+                principal,
+                action == Action::"access",
+                resource
+            )
+            when {
+                principal.tags.isEmpty()
+            };
+        """
+
+        entities = [
+            {"uid": {"type": "User", "id": "bob"}, "attrs": {"tags": ["admin", "developer"]}, "parents": []},
+            {"uid": {"type": "Resource", "id": "file1"}, "attrs": {}, "parents": []}
+        ]
+
+        request = {
+            "principal": 'User::"bob"',
+            "action": 'Action::"access"',
+            "resource": 'Resource::"file1"'
+        }
+
+        result = is_authorized(request, policies, entities)
+        self.assertEqual(Decision.Deny, result.decision)
+
+    def test_cedar_45_trailing_commas_in_policies(self):
+        """Test Cedar 4.5+ support for trailing commas in policy syntax."""
+        # Trailing comma after 'resource,' should be accepted
+        policies = """
+            permit(
+                principal == User::"alice",
+                action == Action::"read",
+                resource,
+            )
+            when {
+                resource.public == true
+            };
+        """
+
+        entities = [
+            {"uid": {"type": "User", "id": "alice"}, "attrs": {}, "parents": []},
+            {"uid": {"type": "File", "id": "doc1"}, "attrs": {"public": True}, "parents": []}
+        ]
+
+        request = {
+            "principal": 'User::"alice"',
+            "action": 'Action::"read"',
+            "resource": 'File::"doc1"'
+        }
+
+        result = is_authorized(request, policies, entities)
+        self.assertEqual(Decision.Allow, result.decision)
+
