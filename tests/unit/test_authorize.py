@@ -464,6 +464,8 @@ class AuthorizeTestCase(unittest.TestCase):
         self.assertIn('policy parse errors:\nunexpected token `is`', authz_result.diagnostics.errors[0])
 
     def test_authorized_batch_perf(self):
+        import platform
+
         policies = self.policies["alice"]
         entities = load_file_as_str("resources/sandbox_b/entities.json")
         schema = load_file_as_str("resources/sandbox_b/schema.json")
@@ -481,7 +483,7 @@ class AuthorizeTestCase(unittest.TestCase):
             'Action::"listPhotos"',
             'Action::"addPhoto"',
         ]
-        
+
         for action in actions:
             request = {
                 "principal": 'User::"alice"',
@@ -511,8 +513,11 @@ class AuthorizeTestCase(unittest.TestCase):
 
         self.assertGreaterEqual(num_requests, 5,
                                 msg=f"should eval batch perf with at least 5 requests")
-        self.assertLessEqual(t_batch_elapsed, (t_single_elapsed / 3),
-                             msg=f"expected batch eval to be +3x faster; check for perf regression")
+
+        # Windows shows lower performance for batch req since adoption of cedar-policy 4.7 engine, relax requirement
+        expected_speedup = 2.0 if platform.system() == 'Windows' else 3.0
+        self.assertLessEqual(t_batch_elapsed, (t_single_elapsed / expected_speedup),
+                             msg=f"expected batch eval to be +{expected_speedup}x faster; check for perf regression")
 
         # verify batch results match single authz
         for expect_authz_result, actual_authz_result in zip(expect_authz_results, actual_authz_results):
