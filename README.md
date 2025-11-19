@@ -20,11 +20,11 @@ Beginning with v4.1.0, `cedarpy`'s version number indicates the Cedar Policy eng
 
 `cedarpy` packages are available for the following platforms:
 <table>
-<thead><tr><th>Operating System</th><th>Processor Architectures</th></tr></thead>
+<thead><tr><th>Operating System</th><th>Processor Architectures</th><td>Python</td></tr></thead>
 <tbody>
-    <tr><td>Linux</td><td>x86_64, aarch64</td></tr>
-    <tr><td>Mac</td><td>x86_64, aarch64</td></tr>
-    <tr><td>Windows</td><td>x86_64</td></tr>
+    <tr><td>Linux</td><td>x86_64, aarch64</td><td>3.9 - 3.14</td></tr>
+    <tr><td>Mac</td><td>x86_64, aarch64</td><td>3.11 - 3.14</td></tr>
+    <tr><td>Windows</td><td>x86_64</td><td>3.9 - 3.14</td></tr>
 </tbody>
 </table>
 
