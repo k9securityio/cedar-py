@@ -474,28 +474,32 @@ class AuthorizeTestCase(unittest.TestCase):
         expect_authz_results: List[AuthzResult] = []
 
         t_single_start = utc_now()
-        actions = [
+        photo_actions = [
             'Action::"view"',
             'Action::"edit"',
             'Action::"comment"',
             'Action::"delete"',
-            'Action::"listAlbums"',
-            'Action::"listPhotos"',
-            'Action::"addPhoto"',
         ]
-
-        for action in actions:
-            request = {
-                "principal": 'User::"alice"',
-                "action": action,
-                "resource": 'Photo::"alice_w2.jpg"',
-                "context": json.dumps({
-                    "authenticated": False
-                })
-            }
-            requests.append(request)
-            expect_authz_result: AuthzResult = is_authorized(request, policies, entities, schema=schema)
-            expect_authz_results.append(expect_authz_result)
+        photo_resources = [
+            # defined in entities
+            "alice_w2.jpg",
+            "vacation.jpg",
+            "sales_projections.jpg",
+            "prototype_v0.jpg",
+        ]
+        for action in photo_actions:
+            for resource in photo_resources:
+                request = {
+                    "principal": 'User::"alice"',
+                    "action": action,
+                    "resource": f'Photo::"{resource}"',
+                    "context": json.dumps({
+                        "authenticated": False
+                    })
+                }
+                requests.append(request)
+                expect_authz_result: AuthzResult = is_authorized(request, policies, entities, schema=schema)
+                expect_authz_results.append(expect_authz_result)
 
         t_single_elapsed: timedelta = utc_now() - t_single_start
 
