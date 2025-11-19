@@ -19,9 +19,7 @@ dynamic = ["version"]
 dev = [
     'maturin>=1.8,<2',
     'parameterized==0.9.0',
-    # pin pip because pip 24 does not seem to be compatible with pip-tools 6.13 and `make fresh-requirements` breaks
-    'pip==23.1.2',
-    'pip-tools==6.13.0',
+    'pip-tools>=7.4.1',
     'pytest == 7.4.0',
 ]
 
