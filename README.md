@@ -4,6 +4,7 @@
 
 `cedarpy` helps you use the (Rust) [Cedar Policy](https://github.com/cedar-policy/cedar/tree/main) library from Python. You can use `cedarpy` to:
 * check whether a request is authorized by the [Cedar Policy](https://www.cedarpolicy.com) engine
+* validate policies against a schema
 * format policies
 
 `cedarpy` releases correspond to the following Cedar Policy engine versions:
@@ -107,6 +108,36 @@ cedar-py returns the list of `AuthzResult` objects in the same order as the list
 The above example also supplies an optional `correlation_id` in the request so that you can verify results are returned in the correct order or otherwise map a request to a result.
 
 
+### Validating policies against a schema
+
+You can use `validate_policies` to validate Cedar policies against a schema before deploying them. Validation catches common mistakes like typos in entity types, invalid actions, type mismatches, and unsafe access to optional attributes—errors that would otherwise cause policies to silently fail at runtime.
+
+This is particularly useful in CI/CD pipelines to catch policy errors before they reach production. See the [Cedar validation documentation](https://docs.cedarpolicy.com/policies/validation.html) for details on what the validator checks.
+
+Here's an example of basic use:
+
+```python
+from cedarpy import validate_policies, ValidationResult
+
+policies: str = "// a string containing Cedar policies"
+schema: str = "// a Cedar schema as JSON string, Cedar schema string, or Python dict"
+
+result: ValidationResult = validate_policies(policies, schema)
+
+# so you can check validation passed like:
+assert result.validation_passed
+
+# or use ValidationResult in a boolean context
+assert result  # True if validation passed
+
+# and if validation fails, iterate over errors:
+for error in result.errors:
+    print(f"error: {error}")
+
+```
+The [`ValidationResult`](cedarpy/__init__.py) class provides the validation outcome and a list of `ValidationError` objects when validation fails.
+
+See the [unit tests](tests/unit) for more examples of use and expected behavior.
 
 ### Formatting Cedar policies
 
@@ -222,7 +253,7 @@ Then you can run:
 make integration-tests
 ```
 
-`cedar-py` currently passes 69 of the 82 tests defined in the `example_use_cases_doc`, `multi`, `ip`, and `decimal` suites. (The pass rate is actually higher, but we skip some tests that pass due to the way test suites are loaded.)  See [test_cedar_integration_tests.py](tests/integration/test_cedar_integration_tests.py) for details.
+`cedar-py` currently passes 69 of the 74 tests defined in the `example_use_cases`, `multi`, `ip`, and `decimal` suites. The integration tests also validate policies against schemas when `shouldValidate` is set in the test definition. See [test_cedar_integration_tests.py](tests/integration/test_cedar_integration_tests.py) for details.
 
 ### Using locally-built artifacts
 

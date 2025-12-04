@@ -62,6 +62,56 @@ class AuthzResult:
         return getattr(self, __name)
 
 
+class ValidationError:
+    """Represents a single validation error found when validating policies against a schema."""
+
+    def __init__(self, error_dict: dict) -> None:
+        self._error = error_dict
+
+    @property
+    def policy_id(self) -> str:
+        """The policy ID where the error occurred (may be empty for parse errors)."""
+        return self._error.get('policy_id', '')
+
+    @property
+    def error(self) -> str:
+        """Human-readable error message."""
+        return self._error.get('error', '')
+
+    def __str__(self) -> str:
+        if self.policy_id:
+            return f"[{self.policy_id}] {self.error}"
+        return self.error
+
+    def __repr__(self) -> str:
+        return f"ValidationError(policy_id={self.policy_id!r}, error={self.error!r})"
+
+
+class ValidationResult:
+    """Result of validating Cedar policies against a schema."""
+
+    def __init__(self, result_dict: dict) -> None:
+        self._result = result_dict
+        self._errors = [ValidationError(e) for e in result_dict.get('errors', [])]
+
+    @property
+    def validation_passed(self) -> bool:
+        """True if all policies passed validation."""
+        return self._result.get('validation_passed', False)
+
+    @property
+    def errors(self) -> List['ValidationError']:
+        """List of validation errors (empty if validation passed)."""
+        return self._errors
+
+    def __bool__(self) -> bool:
+        """Allows `if validation_result:` syntax."""
+        return self.validation_passed
+
+    def __repr__(self) -> str:
+        return f"ValidationResult(validation_passed={self.validation_passed}, num_errors={len(self._errors)})"
+
+
 def is_authorized(request: dict,
                   policies: str,
                   entities: Union[str, List[dict]],
@@ -179,3 +229,32 @@ def policies_from_json_str(policies: str) -> str:
     :raises ValueError: if the input policies cannot be parsed
     """
     return _internal.policies_from_json_str(policies)
+
+
+def validate_policies(policies: str,
+                      schema: Union[str, dict]) -> ValidationResult:
+    """Validate Cedar policies against a schema.
+
+    This function checks that policies are valid according to the provided schema,
+    including entity type checking, action validation, and type checking of
+    expressions in policy conditions.
+
+    :param policies: Cedar policies as a string
+    :param schema: Cedar schema (JSON dict, JSON string, or Cedar schema string)
+
+    :returns: ValidationResult with validation_passed boolean and list of errors
+
+    Example:
+        >>> result = validate_policies(policies, schema)
+        >>> if result.validation_passed:
+        ...     print("Policies are valid!")
+        ... else:
+        ...     for error in result.errors:
+        ...         print(f"Error: {error}")
+    """
+    if isinstance(schema, dict):
+        schema = json.dumps(schema)
+
+    result_str = _internal.validate_policies(policies, schema)
+    result_dict = json.loads(result_str)
+    return ValidationResult(result_dict)
