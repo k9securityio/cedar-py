@@ -95,6 +95,8 @@ jobs:
             target: x64
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: 'true'
       - uses: actions/setup-python@v5
         with:
           python-version: 3.13
@@ -134,6 +136,8 @@ jobs:
             target: x86_64
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: 'true'
       - uses: actions/setup-python@v5
         with:
           python-version: 3.13

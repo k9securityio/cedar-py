@@ -55,8 +55,15 @@ class BaseDataDrivenCedarIntegrationTestCase(unittest.TestCase):
                                          policies: str,
                                          entities: list,
                                          schema: str,
-                                         should_validate: bool,  # ignored; currently don't have the equivalent
+                                         should_validate: bool,
                                          request_model: dict) -> None:
+        # Validate policies against schema if should_validate is True
+        if should_validate:
+            validation_result = cedarpy.validate_policies(policies, schema)
+            self.assertTrue(validation_result.validation_passed,
+                           f"Expected policies to validate but got errors: "
+                           f"{[str(e) for e in validation_result.errors]}")
+
         print(f"executing authz request model:\n{pretty_format(request_model)}")
         request = {
             'principal': f"{request_model['principal']['type']}::\"{request_model['principal']['id']}\"",

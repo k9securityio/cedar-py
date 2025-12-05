@@ -270,6 +270,24 @@ struct AuthzResponse {
     metrics: HashMap<String, u128>,
 }
 
+/// Serializable validation error for Python
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ValidationErrorSer {
+    /// Policy ID where the error occurred
+    policy_id: String,
+    /// Human-readable error message
+    error: String,
+}
+
+/// Serializable validation result for Python
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ValidationResultSer {
+    /// Whether validation passed (no errors)
+    validation_passed: bool,
+    /// List of validation errors
+    errors: Vec<ValidationErrorSer>,
+}
+
 impl AuthzResponse {
     /// Create a new `AuthzResponse`
     pub fn new(response: Response, metrics: HashMap<String, u128>, correlation_id: Option<String>) -> Self {
@@ -385,6 +403,90 @@ fn load_entities(entities_str: String, schema: Option<&Schema>) -> Result<Entiti
     );
 }
 
+/// Validate Cedar policies against a schema and return a JSON result.
+#[pyfunction]
+#[pyo3(signature = (policies, schema))]
+fn validate_policies(policies: String, schema: String) -> String {
+    // Parse policies
+    let policy_set = match PolicySet::from_str(&policies) {
+        Ok(pset) => pset,
+        Err(parse_errors) => {
+            let result = ValidationResultSer {
+                validation_passed: false,
+                errors: vec![ValidationErrorSer {
+                    policy_id: String::new(),
+                    error: format!("Policy parse error: {}", parse_errors),
+                }],
+            };
+            return serde_json::to_string(&result).unwrap();
+        }
+    };
+
+    // Parse schema (required for validation)
+    let trimmed_schema = schema.trim();
+    if trimmed_schema.is_empty() {
+        let result = ValidationResultSer {
+            validation_passed: false,
+            errors: vec![ValidationErrorSer {
+                policy_id: String::new(),
+                error: "Schema is required for validation".to_string(),
+            }],
+        };
+        return serde_json::to_string(&result).unwrap();
+    }
+
+    // Parse schema - handle JSON and Cedar schema syntax separately since they have different error types
+    let cedar_schema: Schema = if trimmed_schema.starts_with('{') {
+        match Schema::from_json_str(trimmed_schema) {
+            Ok(s) => s,
+            Err(e) => {
+                let result = ValidationResultSer {
+                    validation_passed: false,
+                    errors: vec![ValidationErrorSer {
+                        policy_id: String::new(),
+                        error: format!("Schema parse error: {}", e),
+                    }],
+                };
+                return serde_json::to_string(&result).unwrap();
+            }
+        }
+    } else {
+        match Schema::from_str(trimmed_schema) {
+            Ok(s) => s,
+            Err(e) => {
+                let result = ValidationResultSer {
+                    validation_passed: false,
+                    errors: vec![ValidationErrorSer {
+                        policy_id: String::new(),
+                        error: format!("Schema parse error: {}", e),
+                    }],
+                };
+                return serde_json::to_string(&result).unwrap();
+            }
+        }
+    };
+
+    // Create validator and validate
+    let validator = Validator::new(cedar_schema);
+    let validation_result = validator.validate(&policy_set, ValidationMode::default());
+
+    // Convert to serializable result
+    let result = ValidationResultSer {
+        validation_passed: validation_result.validation_passed(),
+        errors: validation_result
+            .validation_errors()
+            .map(|e| {
+                ValidationErrorSer {
+                    policy_id: e.policy_id().to_string(),
+                    error: e.to_string(),
+                }
+            })
+            .collect(),
+    };
+
+    serde_json::to_string(&result).unwrap()
+}
+
 /// A Python module implemented in Rust.
 #[pymodule]
 fn _internal(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -394,5 +496,6 @@ fn _internal(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(format_policies, m)?)?;
     m.add_function(wrap_pyfunction!(policies_to_json_str, m)?)?;
     m.add_function(wrap_pyfunction!(policies_from_json_str, m)?)?;
+    m.add_function(wrap_pyfunction!(validate_policies, m)?)?;
     Ok(())
 }
