@@ -17,7 +17,7 @@
 </tbody>
 </table>
 
-Beginning with v4.1.0, `cedarpy`'s version number indicates the Cedar Policy engine major and minor version that it is based on. Select the `cedarpy` version that provides the [Cedar Policy](https://www.cedarpolicy.com/en) language and engine features you need. 
+Beginning with v4.1.0, `cedarpy`'s version number indicates the Cedar Policy engine major and minor version that it is based on. `cedarpy` increases the patch number when releasing backwards-compatible changes and bug fixes. So the `cedarpy` and Cedar Engine patch versions can and will diverge. Select the `cedarpy` version that provides the [Cedar Policy](https://www.cedarpolicy.com/en) language and engine features you need. 
 
 `cedarpy` packages are available for the following platforms:
 <table>
