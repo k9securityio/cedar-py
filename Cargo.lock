@@ -210,9 +210,9 @@ dependencies = [
 
 [[package]]
 name = "cedar-policy"
-version = "4.7.0"
+version = "4.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec59e2364d36d767fe2be9a38040087746b1db20b27868701f4356d9fc589736"
+checksum = "c8c84f46d7feed570e52cd93b0f1e3ce7f57e2ac61712fba0d1318f84c96a99b"
 dependencies = [
  "cedar-policy-core",
  "cedar-policy-formatter",
@@ -230,9 +230,9 @@ dependencies = [
 
 [[package]]
 name = "cedar-policy-cli"
-version = "4.7.0"
+version = "4.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "55758eb9ff3c88db4e61219be8e72014035c6556187db08a0b04b1d311a60d33"
+checksum = "b104955337acdc0574eee1aad08c02559706dcd5a22f94ec8c6f7b01fcd19f5f"
 dependencies = [
  "cedar-policy",
  "cedar-policy-formatter",
@@ -247,9 +247,9 @@ dependencies = [
 
 [[package]]
 name = "cedar-policy-core"
-version = "4.7.0"
+version = "4.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4b9d9a9691e7429fc89b447222688bbe2ef052a2c9b1e1f3a1d3f169cae080a6"
+checksum = "8011d10d2ffa8ee4497d4d7234d0d4e97f52a6e6e66a1150c5c3409ba7fe1b5c"
 dependencies = [
  "chrono",
  "educe",
@@ -275,9 +275,9 @@ dependencies = [
 
 [[package]]
 name = "cedar-policy-formatter"
-version = "4.7.0"
+version = "4.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22c837a7c5e55828c73ea468ba368aa1c74fb151ff8110ff94fb97bebcb5d095"
+checksum = "f29faad4ed540d812bc213b1228de39a34731730bca6dd51a8086796461415c0"
 dependencies = [
  "cedar-policy-core",
  "itertools",
@@ -290,7 +290,7 @@ dependencies = [
 
 [[package]]
 name = "cedarpy"
-version = "4.7.2"
+version = "4.8.0"
 dependencies = [
  "anyhow",
  "cedar-policy",
@@ -1330,9 +1330,9 @@ dependencies = [
 
 [[package]]
 name = "serde_with"
-version = "3.16.0"
+version = "3.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "10574371d41b0d9b2cff89418eda27da52bcaff2cc8741db26382a77c29131f1"
+checksum = "4fa237f2807440d238e0364a218270b98f767a00d3dada77b1c53ae88940e2e7"
 dependencies = [
  "base64",
  "chrono",
@@ -1349,9 +1349,9 @@ dependencies = [
 
 [[package]]
 name = "serde_with_macros"
-version = "3.16.0"
+version = "3.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08a72d8216842fdd57820dc78d840bef99248e35fb2554ff923319e60f2d686b"
+checksum = "52a8e3ca0ca629121f70ab50f95249e5a6f925cc0f6ffe8256c45b728875706c"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -1727,7 +1727,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]

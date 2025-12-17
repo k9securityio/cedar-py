@@ -5,8 +5,8 @@ permit (
 )
 when
 {
-  (((context["authenticated"]) == true) && (resource has "account")) &&
-  (principal == ((resource["account"])["owner"]))
+  (((context.authenticated) == true) && (resource has account)) &&
+  (principal == ((resource.account).owner))
 };
 
 permit (
@@ -14,7 +14,7 @@ permit (
   action == Action::"edit",
   resource
 )
-when { (resource["account"]) == principal };
+when { (resource.account) == principal };
 
 permit (
   principal == User::"bob",
