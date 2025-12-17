@@ -21,6 +21,7 @@ dev = [
     'parameterized==0.9.0',
     'pip-tools>=7.4.1',
     'pytest == 7.4.0',
+    'pytest-benchmark >= 4.0.0',
 ]
 
 [tool.maturin]
@@ -32,3 +33,24 @@ log_cli = true
 testpaths = [
     "tests/unit"
 ]
+# Discover test classes starting with Test OR ending with TestCase
+python_classes = ["Test*", "*TestCase"]
+# Note: Benchmark tests are in tests/benchmark/ (separate from testpaths)
+# Run them explicitly with: pytest tests/benchmark --benchmark-only
+
+[tool.pytest-benchmark]
+# Benchmark configuration
+# See: https://pytest-benchmark.readthedocs.io/en/latest/usage.html
+min_rounds = 20
+min_time = 0.000005
+max_time = 1.0
+calibration_precision = 10
+warmup = true
+warmup_iterations = 1000
+disable_gc = true
+# Column formatting for results table
+columns = ["min", "median", "max", "mean", "stddev", "rounds", "iterations"]
+# Sort by mean time
+sort = "median"
+# Group benchmarks by class
+group_by = "group"
