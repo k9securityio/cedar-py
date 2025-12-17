@@ -72,3 +72,6 @@ docs/_build/
 
 # Pyenv
 .python-version
+
+# Benchmark results (machine-specific, should not be committed)
+tests/benchmark/results/out
