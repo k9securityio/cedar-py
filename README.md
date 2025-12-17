@@ -11,8 +11,8 @@
 <table>
 <thead><tr><th>Cedar Policy (engine) release</th><th>cedarpy release</th><th>cedarpy branch</th></tr></thead>
 <tbody>
-    <tr><td>v4.8.0</td><td>v4.8.2</td><td>main</td></tr>
-    <tr><td>v4.7.0</td><td>v4.7.1</td><td>release/4.7.x</td></tr>
+    <tr><td>v4.8.2</td><td>v4.8.0</td><td>main</td></tr>
+    <tr><td>v4.7.2</td><td>v4.7.1</td><td>release/4.7.x</td></tr>
     <tr><td>v4.1.0</td><td>v4.1.0</td><td>release/4.1.x</td></tr>
     <tr><td>v2.2.0</td><td>v0.4.1</td><td>release/2.2.x</td></tr>
 </tbody>
