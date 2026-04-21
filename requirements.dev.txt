@@ -34,7 +34,7 @@ pytest==7.4.0
     #   pytest-benchmark
 pytest-benchmark==5.0.1
     # via cedarpy (pyproject.toml)
-wheel==0.40.0
+wheel==0.46.2
     # via pip-tools
 
 # The following packages are considered to be unsafe in a requirements file:
