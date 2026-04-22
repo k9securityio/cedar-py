@@ -183,8 +183,13 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
     needs: [linux, windows, macos, sdist]
+    # Requires a GitHub environment named "pypi-release" and a matching
+    # PyPI trusted publisher configured at
+    # https://pypi.org/manage/project/cedarpy/settings/publishing/
+    environment: pypi-release
     permissions:
-      # Use to sign the release artifacts
+      # Mint short-lived OIDC tokens for PyPI trusted publishing and for
+      # build-provenance attestation
       id-token: write
       # Used to upload release artifacts
       contents: write
@@ -199,8 +204,6 @@ jobs:
       - name: Publish to PyPI
         if: ${{ startsWith(github.ref, 'refs/tags/') }}
         uses: PyO3/maturin-action@v1
-        env:
-          MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
         with:
           command: upload
           args: --non-interactive --skip-existing wheels-*/*
