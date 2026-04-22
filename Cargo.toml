@@ -12,7 +12,7 @@ name = "cedarpy"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = "0.27.0"
+pyo3 = "0.28.3"
 anyhow = "1.0"
 cedar-policy = "4.8.2"
 cedar-policy-cli = "4.8.2"
