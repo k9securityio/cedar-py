@@ -12,29 +12,32 @@ iniconfig==2.0.0
     # via pytest
 maturin==1.10.2
     # via cedarpy (pyproject.toml)
-packaging==23.1
+packaging==26.1
     # via
     #   build
     #   pytest
+    #   wheel
 parameterized==0.9.0
     # via cedarpy (pyproject.toml)
 pip-tools==7.5.2
     # via cedarpy (pyproject.toml)
-pluggy==1.2.0
+pluggy==1.6.0
     # via pytest
 py-cpuinfo==9.0.0
     # via pytest-benchmark
+pygments==2.20.0
+    # via pytest
 pyproject-hooks==1.0.0
     # via
     #   build
     #   pip-tools
-pytest==7.4.0
+pytest==9.0.3
     # via
     #   cedarpy (pyproject.toml)
     #   pytest-benchmark
 pytest-benchmark==5.0.1
     # via cedarpy (pyproject.toml)
-wheel==0.40.0
+wheel==0.47.0
     # via pip-tools
 
 # The following packages are considered to be unsafe in a requirements file:
