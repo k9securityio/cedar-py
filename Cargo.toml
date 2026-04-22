@@ -19,6 +19,3 @@ cedar-policy-cli = "4.8.2"
 cedar-policy-formatter = "4.8.2"
 serde = { version = "1.0.0", features = ["derive", "rc"] }
 serde_json = "1.0.0"
-
-# manage transitive dependency versions
-rustix = "~0.37.25"
