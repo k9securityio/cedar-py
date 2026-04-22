@@ -35,7 +35,7 @@ pytest==9.0.3
     # via
     #   cedarpy (pyproject.toml)
     #   pytest-benchmark
-pytest-benchmark==5.0.1
+pytest-benchmark==5.2.3
     # via cedarpy (pyproject.toml)
 wheel==0.47.0
     # via pip-tools
