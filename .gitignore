@@ -70,6 +70,9 @@ docs/_build/
 # VSCode
 .vscode/
 
+# Claude Code local settings
+.claude/settings.local.json
+
 # Pyenv
 .python-version
 
