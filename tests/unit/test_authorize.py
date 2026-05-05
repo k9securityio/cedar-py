@@ -463,6 +463,100 @@ class AuthorizeTestCase(unittest.TestCase):
         self.assertEqual(1, len(authz_result.diagnostics.errors))
         self.assertIn('policy parse errors:\nunexpected token `is`', authz_result.diagnostics.errors[0])
 
+    def test_id_annotation_renames_policy_id_in_reasons(self):
+        # Feature from https://github.com/k9securityio/cedar-py/issues/29 (item 2)
+        # An @id("...") annotation should override the auto-generated policyN id,
+        # so AuthzResult.diagnostics.reasons surfaces the human-readable id.
+        policies = """
+            @id("alice_can_view")
+            permit(
+                principal == User::"alice",
+                action == Action::"view",
+                resource
+            );
+        """.strip()
+
+        request = {
+            "principal": 'User::"alice"',
+            "action": 'Action::"view"',
+            "resource": 'Photo::"alice_w2.jpg"',
+            "context": {},
+        }
+
+        authz_result: AuthzResult = is_authorized(request, policies, self.entities)
+        self.assertEqual(Decision.Allow, authz_result.decision)
+        self.assertEqual(["alice_can_view"], authz_result.diagnostics.reasons)
+
+    def test_id_annotation_mixed_with_unannotated_policies(self):
+        # Mix annotated + un-annotated policies. Annotated policy keeps its
+        # custom id; un-annotated policy retains the auto-generated id.
+        policies = """
+            @id("alice_view")
+            permit(
+                principal == User::"alice",
+                action == Action::"view",
+                resource
+            );
+            permit(
+                principal == User::"bob",
+                action == Action::"view",
+                resource
+            );
+        """.strip()
+
+        alice_request = {
+            "principal": 'User::"alice"',
+            "action": 'Action::"view"',
+            "resource": 'Photo::"alice_w2.jpg"',
+            "context": {},
+        }
+        bob_request = {
+            "principal": 'User::"bob"',
+            "action": 'Action::"view"',
+            "resource": 'Photo::"bobs-photo-1"',
+            "context": {},
+        }
+
+        alice_result: AuthzResult = is_authorized(alice_request, policies, self.entities)
+        self.assertEqual(Decision.Allow, alice_result.decision)
+        self.assertEqual(["alice_view"], alice_result.diagnostics.reasons)
+
+        bob_result: AuthzResult = is_authorized(bob_request, policies, self.entities)
+        self.assertEqual(Decision.Allow, bob_result.decision)
+        # un-annotated policy keeps cedar's default id (some "policyN")
+        self.assertEqual(1, len(bob_result.diagnostics.reasons))
+        self.assertNotEqual("alice_view", bob_result.diagnostics.reasons[0])
+
+    def test_id_annotation_duplicate_returns_no_decision(self):
+        # Two policies that resolve to the same @id are a configuration error;
+        # surface as NoDecision + diagnostic rather than silently dropping one.
+        policies = """
+            @id("dup")
+            permit(
+                principal == User::"alice",
+                action == Action::"view",
+                resource
+            );
+            @id("dup")
+            permit(
+                principal == User::"bob",
+                action == Action::"view",
+                resource
+            );
+        """.strip()
+
+        request = {
+            "principal": 'User::"alice"',
+            "action": 'Action::"view"',
+            "resource": 'Photo::"alice_w2.jpg"',
+            "context": {},
+        }
+
+        authz_result: AuthzResult = is_authorized(request, policies, self.entities)
+        self.assertEqual(Decision.NoDecision, authz_result.decision)
+        self.assertEqual(1, len(authz_result.diagnostics.errors))
+        self.assertIn("duplicate policy id", authz_result.diagnostics.errors[0].lower())
+
     def test_authorized_batch_perf(self):
         import platform
 
