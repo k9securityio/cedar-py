@@ -377,7 +377,7 @@ fn make_schema(schema_str: &Option<String>, verbose: bool, errs: &mut Vec<Error>
                         if verbose {
                             println!("!!! could not construct schema from JSON: {}", json_err);
                         }
-                        errs.push(Error::msg(format!("failed to parse schema as JSON: {}", json_err)));
+                        errs.push(Error::msg(format!("failed to parse schema from JSON: {}", json_err)));
                         None
                     }
                 }
@@ -388,7 +388,7 @@ fn make_schema(schema_str: &Option<String>, verbose: bool, errs: &mut Vec<Error>
                         if verbose {
                             println!("!!! could not construct schema from str: {}", str_err);
                         }
-                        errs.push(Error::msg(format!("failed to parse schema: {}", str_err)));
+                        errs.push(Error::msg(format!("failed to parse schema from Cedar: {}", str_err)));
                         None
                     }
                 }
