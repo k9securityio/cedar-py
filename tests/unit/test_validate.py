@@ -152,6 +152,22 @@ class ValidatePoliciesTestCase(unittest.TestCase):
         self.assertIn("ValidationResult", repr_str)
         self.assertIn("validation_passed=True", repr_str)
 
+    def test_id_annotation_renames_policy_id_in_validation_errors(self):
+        """Validation errors should report the @id-annotated policy id."""
+        policy_with_id = """
+            @id("alice_view_bad_entity")
+            permit(
+                principal == Usr::"alice",
+                action == Action::"view",
+                resource
+            );
+        """
+        result = validate_policies(policy_with_id, self.schema)
+
+        self.assertFalse(result.validation_passed)
+        self.assertGreater(len(result.errors), 0)
+        self.assertEqual("alice_view_bad_entity", result.errors[0].policy_id)
+
 
 class ValidatePoliciesWithCedarSchemaTestCase(unittest.TestCase):
     """Tests for validate_policies with Cedar schema syntax (not JSON)."""
