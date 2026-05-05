@@ -463,6 +463,45 @@ class AuthorizeTestCase(unittest.TestCase):
         self.assertEqual(1, len(authz_result.diagnostics.errors))
         self.assertIn('policy parse errors:\nunexpected token `is`', authz_result.diagnostics.errors[0])
 
+    def test_is_authorized_with_invalid_cedar_schema_returns_no_decision(self):
+        # Regression for https://github.com/k9securityio/cedar-py/issues/27
+        # Invalid (non-empty) schemas previously returned a real decision while
+        # silently dropping the schema. Now they must surface as NoDecision +
+        # a diagnostic error.
+        policies = self.policies["alice"]
+        entities = load_file_as_str("resources/sandbox_b/entities.json")
+        invalid_schema = "this is definitely not a cedar schema"
+
+        request = {
+            "principal": 'User::"alice"',
+            "action": 'Action::"view"',
+            "resource": 'Photo::"alice_w2.jpg"',
+            "context": json.dumps({"authenticated": False}),
+        }
+
+        authz_result: AuthzResult = is_authorized(request, policies, entities, schema=invalid_schema)
+        self.assertEqual(Decision.NoDecision, authz_result.decision)
+        self.assertEqual(1, len(authz_result.diagnostics.errors))
+        self.assertIn("schema", authz_result.diagnostics.errors[0].lower())
+
+    def test_is_authorized_with_invalid_json_schema_returns_no_decision(self):
+        # Regression for https://github.com/k9securityio/cedar-py/issues/27
+        policies = self.policies["alice"]
+        entities = load_file_as_str("resources/sandbox_b/entities.json")
+        invalid_json_schema = '{"not a valid": "cedar json schema"}'
+
+        request = {
+            "principal": 'User::"alice"',
+            "action": 'Action::"view"',
+            "resource": 'Photo::"alice_w2.jpg"',
+            "context": json.dumps({"authenticated": False}),
+        }
+
+        authz_result: AuthzResult = is_authorized(request, policies, entities, schema=invalid_json_schema)
+        self.assertEqual(Decision.NoDecision, authz_result.decision)
+        self.assertEqual(1, len(authz_result.diagnostics.errors))
+        self.assertIn("schema", authz_result.diagnostics.errors[0].lower())
+
     def test_authorized_batch_perf(self):
         import platform
 
