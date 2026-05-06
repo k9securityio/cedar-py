@@ -152,6 +152,71 @@ class ValidatePoliciesTestCase(unittest.TestCase):
         self.assertIn("ValidationResult", repr_str)
         self.assertIn("validation_passed=True", repr_str)
 
+    def test_id_annotation_renames_policy_id_in_validation_errors(self):
+        """Validation errors should report the @id-annotated policy id."""
+        policy_with_id = """
+            @id("alice_view_bad_entity")
+            permit(
+                principal == Usr::"alice",
+                action == Action::"view",
+                resource
+            );
+        """
+        result = validate_policies(policy_with_id, self.schema)
+
+        self.assertFalse(result.validation_passed)
+        self.assertGreater(len(result.errors), 0)
+        self.assertEqual("alice_view_bad_entity", result.errors[0].policy_id)
+
+    def test_validate_with_duplicate_policy_id_annotations(self):
+        """Document the library's behavior when a caller declares two
+        policies with the same @id annotation.
+
+        Pre-PR-66, cedarpy ignored @id entirely, so duplicate annotations
+        were inert — validation proceeded against whatever cedar's
+        auto-generated ids were. After PR-66, duplicates are surfaced as a
+        validation failure.
+
+        The current diagnostic returned by validate_policies:
+          - validation_passed:  False
+          - errors:             single ValidationError
+          - errors[0].policy_id:  the offending policy's pre-rename id
+                                  (e.g. 'policy1' for the second of two
+                                  duplicates), so callers can locate the
+                                  conflict in their input
+          - errors[0].error:    starts with 'Policy id annotation error:'
+                                and contains 'duplicate policy id'
+
+        This test exists to make any future change to that behavior
+        deliberate and visible in diffs.
+        """
+        policies = """
+            @id("dup")
+            permit(
+                principal == User::"alice",
+                action == Action::"view",
+                resource
+            );
+            @id("dup")
+            permit(
+                principal == User::"bob",
+                action == Action::"view",
+                resource
+            );
+        """
+        result = validate_policies(policies, self.schema)
+
+        self.assertFalse(result.validation_passed)
+        self.assertEqual(1, len(result.errors))
+
+        err = result.errors[0]
+        self.assertEqual("policy1", err.policy_id)
+        self.assertTrue(
+            err.error.startswith("Policy id annotation error:"),
+            f"unexpected error prefix: {err.error!r}",
+        )
+        self.assertIn("duplicate policy id", err.error.lower())
+
 
 class ValidatePoliciesWithCedarSchemaTestCase(unittest.TestCase):
     """Tests for validate_policies with Cedar schema syntax (not JSON)."""

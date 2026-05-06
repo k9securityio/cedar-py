@@ -123,7 +123,14 @@ fn is_authorized_batch(requests: Vec<HashMap<String, String>>,
     // parse policies
     let t_parse_policies = Instant::now();
     let policy_set = match PolicySet::from_str(&policies) {
-        Ok(pset) => pset,
+        Ok(pset) => match rename_from_id_annotation(pset) {
+            Ok(renamed) => renamed,
+            Err((_policy_id, e)) => {
+                println!("{:#}", e);
+                errs.push(e);
+                PolicySet::new()
+            }
+        },
         Err(parse_errors) => {
             let err_message = format!("policy parse errors:\n{:#}",
                                       parse_errors.to_string());
@@ -405,13 +412,85 @@ fn load_entities(entities_str: String, schema: Option<&Schema>) -> Result<Entiti
     );
 }
 
+/// Apply `@id("...")` annotations to override the auto-generated PolicyId of
+/// each policy and template. Mirrors cedar-policy-cli behavior so cedarpy
+/// users see human-readable ids in `AuthzResult.diagnostics.reasons` and in
+/// validation errors.
+///
+/// PolicyId::from_str is currently infallible, but we still propagate it as
+/// an error to be defensive against future API changes. Adding renamed
+/// policies/templates can fail on duplicate id, in which case the caller
+/// receives the conflict error.
+///
+/// On error, returns `(original_policy_id, Error)` so callers can surface the
+/// pre-rename id of the offending policy/template (e.g. as
+/// `ValidationError.policy_id`).
+fn rename_from_id_annotation(ps: PolicySet) -> Result<PolicySet, (String, Error)> {
+    let mut new_ps = PolicySet::new();
+    for t in ps.templates() {
+        let original_id = t.id().to_string();
+        let renamed = match t.annotation("id") {
+            None => t.clone(),
+            Some(anno) => match anno.parse::<PolicyId>() {
+                Ok(new_id) => t.new_id(new_id),
+                Err(e) => return Err((
+                    original_id.clone(),
+                    Error::new(e).context(format!(
+                        "invalid @id annotation on template '{}': '{}'", original_id, anno
+                    )),
+                )),
+            },
+        };
+        if let Err(e) = new_ps.add_template(renamed) {
+            return Err((
+                original_id,
+                Error::new(e).context("duplicate template id after applying @id annotation"),
+            ));
+        }
+    }
+    for p in ps.policies() {
+        let original_id = p.id().to_string();
+        let renamed = match p.annotation("id") {
+            None => p.clone(),
+            Some(anno) => match anno.parse::<PolicyId>() {
+                Ok(new_id) => p.new_id(new_id),
+                Err(e) => return Err((
+                    original_id.clone(),
+                    Error::new(e).context(format!(
+                        "invalid @id annotation on policy '{}': '{}'", original_id, anno
+                    )),
+                )),
+            },
+        };
+        if let Err(e) = new_ps.add(renamed) {
+            return Err((
+                original_id,
+                Error::new(e).context("duplicate policy id after applying @id annotation"),
+            ));
+        }
+    }
+    Ok(new_ps)
+}
+
 /// Validate Cedar policies against a schema and return a JSON result.
 #[pyfunction]
 #[pyo3(signature = (policies, schema))]
 fn validate_policies(policies: String, schema: String) -> String {
     // Parse policies
     let policy_set = match PolicySet::from_str(&policies) {
-        Ok(pset) => pset,
+        Ok(pset) => match rename_from_id_annotation(pset) {
+            Ok(renamed) => renamed,
+            Err((policy_id, e)) => {
+                let result = ValidationResultSer {
+                    validation_passed: false,
+                    errors: vec![ValidationErrorSer {
+                        policy_id,
+                        error: format!("Policy id annotation error: {}", e),
+                    }],
+                };
+                return serde_json::to_string(&result).unwrap();
+            }
+        },
         Err(parse_errors) => {
             let result = ValidationResultSer {
                 validation_passed: false,
