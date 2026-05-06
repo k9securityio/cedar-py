@@ -180,8 +180,10 @@ class ValidatePoliciesTestCase(unittest.TestCase):
         The current diagnostic returned by validate_policies:
           - validation_passed:  False
           - errors:             single ValidationError
-          - errors[0].policy_id:  ''  (empty — the offending policy's
-                                       pre-rename id is not propagated yet)
+          - errors[0].policy_id:  the offending policy's pre-rename id
+                                  (e.g. 'policy1' for the second of two
+                                  duplicates), so callers can locate the
+                                  conflict in their input
           - errors[0].error:    starts with 'Policy id annotation error:'
                                 and contains 'duplicate policy id'
 
@@ -208,7 +210,7 @@ class ValidatePoliciesTestCase(unittest.TestCase):
         self.assertEqual(1, len(result.errors))
 
         err = result.errors[0]
-        self.assertEqual("", err.policy_id)
+        self.assertEqual("policy1", err.policy_id)
         self.assertTrue(
             err.error.startswith("Policy id annotation error:"),
             f"unexpected error prefix: {err.error!r}",

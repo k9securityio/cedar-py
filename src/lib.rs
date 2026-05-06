@@ -125,7 +125,7 @@ fn is_authorized_batch(requests: Vec<HashMap<String, String>>,
     let policy_set = match PolicySet::from_str(&policies) {
         Ok(pset) => match rename_from_id_annotation(pset) {
             Ok(renamed) => renamed,
-            Err(e) => {
+            Err((_policy_id, e)) => {
                 println!("{:#}", e);
                 errs.push(e);
                 PolicySet::new()
@@ -419,33 +419,53 @@ fn load_entities(entities_str: String, schema: Option<&Schema>) -> Result<Entiti
 /// an error to be defensive against future API changes. Adding renamed
 /// policies/templates can fail on duplicate id, in which case the caller
 /// receives the conflict error.
-fn rename_from_id_annotation(ps: PolicySet) -> Result<PolicySet> {
+///
+/// On error, returns `(original_policy_id, Error)` so callers can surface the
+/// pre-rename id of the offending policy/template (e.g. as
+/// `ValidationError.policy_id`).
+fn rename_from_id_annotation(ps: PolicySet) -> Result<PolicySet, (String, Error)> {
     let mut new_ps = PolicySet::new();
     for t in ps.templates() {
+        let original_id = t.id().to_string();
         let renamed = match t.annotation("id") {
             None => t.clone(),
-            Some(anno) => {
-                let new_id: PolicyId = anno.parse().context(format!(
-                    "invalid @id annotation on template '{}': '{}'", t.id(), anno
-                ))?;
-                t.new_id(new_id)
-            }
+            Some(anno) => match anno.parse::<PolicyId>() {
+                Ok(new_id) => t.new_id(new_id),
+                Err(e) => return Err((
+                    original_id.clone(),
+                    Error::new(e).context(format!(
+                        "invalid @id annotation on template '{}': '{}'", original_id, anno
+                    )),
+                )),
+            },
         };
-        new_ps.add_template(renamed)
-            .context("duplicate template id after applying @id annotation")?;
+        if let Err(e) = new_ps.add_template(renamed) {
+            return Err((
+                original_id,
+                Error::new(e).context("duplicate template id after applying @id annotation"),
+            ));
+        }
     }
     for p in ps.policies() {
+        let original_id = p.id().to_string();
         let renamed = match p.annotation("id") {
             None => p.clone(),
-            Some(anno) => {
-                let new_id: PolicyId = anno.parse().context(format!(
-                    "invalid @id annotation on policy '{}': '{}'", p.id(), anno
-                ))?;
-                p.new_id(new_id)
-            }
+            Some(anno) => match anno.parse::<PolicyId>() {
+                Ok(new_id) => p.new_id(new_id),
+                Err(e) => return Err((
+                    original_id.clone(),
+                    Error::new(e).context(format!(
+                        "invalid @id annotation on policy '{}': '{}'", original_id, anno
+                    )),
+                )),
+            },
         };
-        new_ps.add(renamed)
-            .context("duplicate policy id after applying @id annotation")?;
+        if let Err(e) = new_ps.add(renamed) {
+            return Err((
+                original_id,
+                Error::new(e).context("duplicate policy id after applying @id annotation"),
+            ));
+        }
     }
     Ok(new_ps)
 }
@@ -458,11 +478,11 @@ fn validate_policies(policies: String, schema: String) -> String {
     let policy_set = match PolicySet::from_str(&policies) {
         Ok(pset) => match rename_from_id_annotation(pset) {
             Ok(renamed) => renamed,
-            Err(e) => {
+            Err((policy_id, e)) => {
                 let result = ValidationResultSer {
                     validation_passed: false,
                     errors: vec![ValidationErrorSer {
-                        policy_id: String::new(),
+                        policy_id,
                         error: format!("Policy id annotation error: {}", e),
                     }],
                 };
