@@ -143,7 +143,7 @@ fn is_authorized_batch(requests: Vec<HashMap<String, String>>,
 
     // parse schema
     let t_start_schema = Instant::now();
-    let schema = make_schema(&schema, verbose);
+    let schema = make_schema(&schema, verbose, &mut errs);
     let t_parse_schema_duration = t_start_schema.elapsed();
 
     // load entities
@@ -363,7 +363,7 @@ fn make_entities(entities_str: String, schema: &Option<Schema>, errs: &mut Vec<E
     }
 }
 
-fn make_schema(schema_str: &Option<String>, verbose: bool) -> Option<Schema> {
+fn make_schema(schema_str: &Option<String>, verbose: bool, errs: &mut Vec<Error>) -> Option<Schema> {
     let schema: Option<Schema> = match &schema_str {
         None => None,
         Some(schema_src) => {
@@ -384,6 +384,7 @@ fn make_schema(schema_str: &Option<String>, verbose: bool) -> Option<Schema> {
                         if verbose {
                             println!("!!! could not construct schema from JSON: {}", json_err);
                         }
+                        errs.push(Error::msg(format!("failed to parse schema from JSON: {}", json_err)));
                         None
                     }
                 }
@@ -394,12 +395,13 @@ fn make_schema(schema_str: &Option<String>, verbose: bool) -> Option<Schema> {
                         if verbose {
                             println!("!!! could not construct schema from str: {}", str_err);
                         }
+                        errs.push(Error::msg(format!("failed to parse schema from Cedar: {}", str_err)));
                         None
                     }
                 }
             }
         }
-    };    
+    };
     schema
 }
 
