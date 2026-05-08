@@ -22,11 +22,14 @@ git checkout main && git pull
 git checkout -b release/X.Y.Z
 ```
 
-Update three files:
+Update four files:
 
 - `Cargo.toml` — bump the `version` field (line 5)
 - `README.md` — update the `cedarpy release` cell in the compatibility table
 - `Cargo.lock` — regenerate by running `cargo build`
+- `CHANGELOG.md` — promote the `[Unreleased]` section to a new `[X.Y.Z] - YYYY-MM-DD` heading. Add a fresh empty `[Unreleased]` block above it, and add the new comparison link in the footer references (and update the `[Unreleased]` link to `vX.Y.Z...HEAD`)
+
+If `CHANGELOG.md`'s `[Unreleased]` section is thin or missing entries that should be there, fill them in from `git log v<previous>..main` before promoting it. Contributors are expected to update `[Unreleased]` in their PRs, but this is the maintainer's last chance to catch gaps.
 
 Commit with a message whose body is the draft release notes:
 
@@ -74,16 +77,20 @@ Confirm at https://pypi.org/project/cedarpy/X.Y.Z/ that:
 
 ### 5. Publish the GitHub Release
 
+The release notes are the version's section from `CHANGELOG.md`. Extract that section, then publish:
+
 ```bash
 gh release create vX.Y.Z --title "cedarpy vX.Y.Z" --notes-file <path-to-notes>
 ```
 
-Release notes should cover:
+If editorial polish is needed for the GitHub-rendered version (e.g. an opening paragraph, contributor thanks, a `Full Changelog: <previous-tag>...vX.Y.Z` link at the bottom), make those edits in the release notes only — do not re-edit `CHANGELOG.md`. The two are intentionally similar but the changelog is the durable, in-repo record while the release notes are the GitHub-rendered presentation.
+
+`CHANGELOG.md` should already cover:
 
 - Security fixes (with CVE / advisory IDs)
 - Cedar Policy engine version change, if any
 - Build / supply-chain changes
-- `Full Changelog: <previous-tag>...vX.Y.Z` link
+- Behavior changes called out under `Changed`
 
 ## Rollback
 
