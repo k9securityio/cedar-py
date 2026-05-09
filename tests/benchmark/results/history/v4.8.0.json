@@ -1,0 +1,210 @@
+{
+  "commit": {
+    "sha": "450a8a51cb81c6993d0639554273eaa5fc02f675",
+    "short_sha": "450a8a5",
+    "tag": "v4.8.0",
+    "label": "v4.8.0",
+    "date": "2025-12-17",
+    "subject": "tests: Add cedarpy benchmark results for Cedar Policy engine 4.8.2 on cedarpy main for 4.8.0 release",
+    "note": "tagged release"
+  },
+  "build": {
+    "mode": "release",
+    "python_implementation": "CPython",
+    "python_version": "3.11.1",
+    "platform": "Darwin-CPython-3.11-64bit"
+  },
+  "captured_at": "2026-05-09T16:03:37+00:00",
+  "save_prefix": "v4_8_0",
+  "source_runs": [
+    "0003_v4_8_0-run1.json",
+    "0004_v4_8_0-run2.json",
+    "0005_v4_8_0-run3.json",
+    "0006_v4_8_0-run4.json",
+    "0007_v4_8_0-run5.json"
+  ],
+  "benchmarks": {
+    "test_batch_complex_policy": {
+      "median_us": 1278.04,
+      "max_us": 1291.5,
+      "min_us": 1258.22,
+      "n_runs": 5,
+      "stdev_us": 14.79
+    },
+    "test_batch_simple_policy": {
+      "median_us": 395.84,
+      "max_us": 428.42,
+      "min_us": 392.09,
+      "n_runs": 5,
+      "stdev_us": 14.98
+    },
+    "test_batch_size_scaling[100]": {
+      "median_us": 4137.76,
+      "max_us": 4487.6,
+      "min_us": 4098.5,
+      "n_runs": 5,
+      "stdev_us": 161.82
+    },
+    "test_batch_size_scaling[10]": {
+      "median_us": 1138.82,
+      "max_us": 1204.91,
+      "min_us": 1123.75,
+      "n_runs": 5,
+      "stdev_us": 32.39
+    },
+    "test_batch_size_scaling[1]": {
+      "median_us": 826.29,
+      "max_us": 831.22,
+      "min_us": 813.94,
+      "n_runs": 5,
+      "stdev_us": 6.55
+    },
+    "test_batch_size_scaling[25]": {
+      "median_us": 1620.98,
+      "max_us": 2140.21,
+      "min_us": 1608.12,
+      "n_runs": 5,
+      "stdev_us": 233.88
+    },
+    "test_batch_size_scaling[50]": {
+      "median_us": 2463.79,
+      "max_us": 2512.08,
+      "min_us": 2453.11,
+      "n_runs": 5,
+      "stdev_us": 23.06
+    },
+    "test_batch_size_scaling[5]": {
+      "median_us": 963.08,
+      "max_us": 969.89,
+      "min_us": 950.53,
+      "n_runs": 5,
+      "stdev_us": 7.34
+    },
+    "test_complex_policy": {
+      "median_us": 281.08,
+      "max_us": 285.66,
+      "min_us": 279.59,
+      "n_runs": 5,
+      "stdev_us": 2.29
+    },
+    "test_context_as_dict": {
+      "median_us": 830.27,
+      "max_us": 905.76,
+      "min_us": 824.79,
+      "n_runs": 5,
+      "stdev_us": 33.64
+    },
+    "test_context_as_json_string": {
+      "median_us": 907.11,
+      "max_us": 948.4,
+      "min_us": 815.34,
+      "n_runs": 5,
+      "stdev_us": 59.06
+    },
+    "test_entities_as_json_string": {
+      "median_us": 747.19,
+      "max_us": 768.59,
+      "min_us": 745.01,
+      "n_runs": 5,
+      "stdev_us": 10.21
+    },
+    "test_entities_as_list": {
+      "median_us": 817.27,
+      "max_us": 827.33,
+      "min_us": 815.06,
+      "n_runs": 5,
+      "stdev_us": 5.92
+    },
+    "test_large_entity_set": {
+      "median_us": 3915.69,
+      "max_us": 3967.46,
+      "min_us": 3897.98,
+      "n_runs": 5,
+      "stdev_us": 28.08
+    },
+    "test_medium_entity_set": {
+      "median_us": 814.82,
+      "max_us": 854.81,
+      "min_us": 813.06,
+      "n_runs": 5,
+      "stdev_us": 18.11
+    },
+    "test_medium_policy": {
+      "median_us": 192.79,
+      "max_us": 220.48,
+      "min_us": 192.19,
+      "n_runs": 5,
+      "stdev_us": 12.27
+    },
+    "test_sandbox_b_batch_mixed_actions": {
+      "median_us": 1142.36,
+      "max_us": 1167.79,
+      "min_us": 1110.5,
+      "n_runs": 5,
+      "stdev_us": 24.26
+    },
+    "test_sandbox_b_batch_multiple_users": {
+      "median_us": 709.15,
+      "max_us": 718.36,
+      "min_us": 695.77,
+      "n_runs": 5,
+      "stdev_us": 8.78
+    },
+    "test_sandbox_b_delete_with_auth": {
+      "median_us": 601.04,
+      "max_us": 618.05,
+      "min_us": 587.32,
+      "n_runs": 5,
+      "stdev_us": 14.35
+    },
+    "test_sandbox_b_view_own_photo": {
+      "median_us": 591.74,
+      "max_us": 803.31,
+      "min_us": 588.82,
+      "n_runs": 5,
+      "stdev_us": 110.59
+    },
+    "test_sandbox_b_view_public_photo": {
+      "median_us": 595.81,
+      "max_us": 755.46,
+      "min_us": 589.55,
+      "n_runs": 5,
+      "stdev_us": 74.94
+    },
+    "test_simple_policy_allow": {
+      "median_us": 148.63,
+      "max_us": 150.9,
+      "min_us": 147.36,
+      "n_runs": 5,
+      "stdev_us": 1.45
+    },
+    "test_simple_policy_deny": {
+      "median_us": 148.11,
+      "max_us": 156.31,
+      "min_us": 146.52,
+      "n_runs": 5,
+      "stdev_us": 4.03
+    },
+    "test_small_entity_set": {
+      "median_us": 193.64,
+      "max_us": 201.05,
+      "min_us": 190.22,
+      "n_runs": 5,
+      "stdev_us": 4.22
+    },
+    "test_ten_batch_call": {
+      "median_us": 1137.78,
+      "max_us": 1145.02,
+      "min_us": 1116.83,
+      "n_runs": 5,
+      "stdev_us": 12.84
+    },
+    "test_ten_single_calls": {
+      "median_us": 8272.16,
+      "max_us": 8310.64,
+      "min_us": 8180.48,
+      "n_runs": 5,
+      "stdev_us": 52.79
+    }
+  }
+}
