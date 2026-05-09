@@ -13,6 +13,9 @@ Project-specific guidance for Claude Code sessions working in `cedar-py`.
 - **Unit tests:** `pytest` (discovers `tests/unit/`)
 - **Integration tests:** `make integration-tests` — pulls the `third_party/cedar-integration-tests` git submodule
 - **Benchmarks:** `make benchmark-compare`. Do NOT refresh `tests/benchmark/results/baseline.json` for routine dep updates — only when performance-relevant code changes.
+  - **Build mode is debug.** `make benchmark-compare` runs `maturin develop` (debug). The committed `baseline.json` was also recorded in debug mode. Do NOT change one without the other — debug-mode runs are ~8× slower than release-mode runs, so a release-mode run trivially "passes" against the debug baseline. Tracked in #69.
+  - **Single-run benchmarks are very noisy.** Run-to-run mean swings of 30–50 percentage points on tail outliers are normal — the same code can fail one run and pass the next. For any meaningful regression analysis, run N≥5 times and take **medians**, not single-run means. The `out/v4.8.2-bisect/` directory has a working aggregator (`aggregate.py`) and runner (`run.sh`) that demonstrate the pattern. #69 tracks productizing this.
+  - The release process (`docs/release-process.md`) requires `make benchmark-compare` before opening a release PR. If a single run reports a regression, run it 4 more times and check the medians before declaring a real issue.
 
 ## Dependency management
 
@@ -46,7 +49,18 @@ Documented in `docs/release-process.md`. Highlights:
 - **Branch naming:** conventional-commits style (`feat/`, `fix/`, `chore/`, `docs/`, `release/<version>`). **Do not** prefix branches with internal Jira keys (e.g. `CLOUD-####`) — this is an open-source repo.
 - **Commit messages and PR descriptions:** same rule — keep internal Jira keys out. Internal tracking is one-way (the Jira issue links out to GitHub PRs, not the other way).
 - **Cedar engine ↔ cedarpy mapping:** README has a table. Update the cedarpy column on every release.
+- **Editing contributor PRs as maintainer:** when "Allow edits from maintainers" is checked on a fork-based PR, push directly for trivial changes (typos, error-message wording, release-note tweaks), and use a review comment for substantive logic edits. Always leave a PR comment summarizing what you pushed and why — name the SHA so the contributor can locate the change without hunting.
+
+## Cedar API gotchas worth knowing
+
+- **`Policy::clone()` is not cheap.** `cedar_policy::ast::Policy` has an `Arc<Template>` internally, but the public `Policy` type also carries a separate `LosslessPolicy` representation that gets cloned alongside the AST. Plus, `PolicySet::add()` does its own validation + indexing per insert. So rebuilding a `PolicySet` (e.g. to rename policies) costs in proportion to `|policies|` — measurable at ~15% on complex-policy workloads in release mode (much more in debug). Don't put per-call `PolicySet` rebuilds on the hot path. (#68 was this exact mistake; the fix made `@id` rename opt-in via the `resolve_policy_ids_from_annotations` parameter.)
+- **`@id` annotations are not parser directives** — they're metadata. `PolicySet::from_str` assigns auto-ids (`policy0`, `policy1`, ...) regardless of `@id` content. Honoring `@id` requires either rebuilding the `PolicySet` (current implementation, opt-in) or translating ids at result-construction time (alternative drafted but not adopted).
 
 ## Follow-on work to be aware of
 
 - **GitHub Actions consolidation (GH issue #62):** 6 actions in `CI.yml` are on outdated major versions (e.g. `actions/upload-artifact@v4` when v7 is current). Planned approach: one consolidated PR pinning all actions to commit SHAs with tag comments. Defer until there's time to review the cross-major changelogs, and do not bundle with a release.
+- **Benchmark process improvements (GH issue #69):** four items: add a benchmark variant exercising `resolve_policy_ids_from_annotations=True`; switch `make benchmark` targets to release builds; refresh `baseline.json` to a release-mode recording at the post-#68 tip; productize the multi-run aggregation pattern (currently in `out/v4.8.2-bisect/`). Items 2+3 must move together. Important pre-release-tooling work — until #69 lands, treat single-run regression alarms with skepticism and re-run N=5+ for medians.
+
+## Out-of-tree working artifacts
+
+The `out/` directory at the repo root holds local-only working artifacts (analysis docs, captured tool output, draft PR/issue text, benchmark JSONs from ad-hoc bisects). Currently NOT in `.gitignore`. Treat its contents as scratch space — useful for the maintainer running an investigation, not for the public repo. Don't commit `out/` files unless explicitly intended.
