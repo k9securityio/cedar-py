@@ -153,7 +153,29 @@ class ValidatePoliciesTestCase(unittest.TestCase):
         self.assertIn("validation_passed=True", repr_str)
 
     def test_id_annotation_renames_policy_id_in_validation_errors(self):
-        """Validation errors should report the @id-annotated policy id."""
+        """When `resolve_policy_ids_from_annotations=True`, validation errors
+        should report the @id-annotated policy id."""
+        policy_with_id = """
+            @id("alice_view_bad_entity")
+            permit(
+                principal == Usr::"alice",
+                action == Action::"view",
+                resource
+            );
+        """
+        result = validate_policies(
+            policy_with_id, self.schema,
+            resolve_policy_ids_from_annotations=True,
+        )
+
+        self.assertFalse(result.validation_passed)
+        self.assertGreater(len(result.errors), 0)
+        self.assertEqual("alice_view_bad_entity", result.errors[0].policy_id)
+
+    def test_id_annotation_ignored_in_validation_errors_by_default(self):
+        """With the default (`resolve_policy_ids_from_annotations=False`),
+        validation errors carry cedar's auto-generated PolicyId, not the
+        @id-annotated value."""
         policy_with_id = """
             @id("alice_view_bad_entity")
             permit(
@@ -166,29 +188,14 @@ class ValidatePoliciesTestCase(unittest.TestCase):
 
         self.assertFalse(result.validation_passed)
         self.assertGreater(len(result.errors), 0)
-        self.assertEqual("alice_view_bad_entity", result.errors[0].policy_id)
+        # Default: cedar's auto-id is surfaced, not the annotation value
+        self.assertNotEqual("alice_view_bad_entity", result.errors[0].policy_id)
 
     def test_validate_with_duplicate_policy_id_annotations(self):
-        """Document the library's behavior when a caller declares two
-        policies with the same @id annotation.
-
-        Pre-PR-66, cedarpy ignored @id entirely, so duplicate annotations
-        were inert — validation proceeded against whatever cedar's
-        auto-generated ids were. After PR-66, duplicates are surfaced as a
-        validation failure.
-
-        The current diagnostic returned by validate_policies:
-          - validation_passed:  False
-          - errors:             single ValidationError
-          - errors[0].policy_id:  the offending policy's pre-rename id
-                                  (e.g. 'policy1' for the second of two
-                                  duplicates), so callers can locate the
-                                  conflict in their input
-          - errors[0].error:    starts with 'Policy id annotation error:'
-                                and contains 'duplicate policy id'
-
-        This test exists to make any future change to that behavior
-        deliberate and visible in diffs.
+        """When `resolve_policy_ids_from_annotations=True` and two policies
+        declare the same @id, the rename is surfaced as a validation failure
+        with the offending policy's pre-rename id (e.g. 'policy1' for the
+        second of two duplicates).
         """
         policies = """
             @id("dup")
@@ -204,7 +211,10 @@ class ValidatePoliciesTestCase(unittest.TestCase):
                 resource
             );
         """
-        result = validate_policies(policies, self.schema)
+        result = validate_policies(
+            policies, self.schema,
+            resolve_policy_ids_from_annotations=True,
+        )
 
         self.assertFalse(result.validation_passed)
         self.assertEqual(1, len(result.errors))

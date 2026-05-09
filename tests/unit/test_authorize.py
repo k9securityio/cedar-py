@@ -522,9 +522,39 @@ class AuthorizeTestCase(unittest.TestCase):
             "context": {},
         }
 
-        authz_result: AuthzResult = is_authorized(request, policies, self.entities)
+        authz_result: AuthzResult = is_authorized(
+            request, policies, self.entities,
+            resolve_policy_ids_from_annotations=True,
+        )
         self.assertEqual(Decision.Allow, authz_result.decision)
         self.assertEqual(["alice_can_view"], authz_result.diagnostics.reasons)
+
+    def test_id_annotation_ignored_by_default(self):
+        # `@id` annotations are ignored unless the caller opts in via
+        # `resolve_policy_ids_from_annotations=True`. With the default
+        # (False), the annotation has no effect on diagnostics.reasons,
+        # which contains cedar's auto-generated id (e.g., "policy0").
+        policies = """
+            @id("alice_can_view")
+            permit(
+                principal == User::"alice",
+                action == Action::"view",
+                resource
+            );
+        """.strip()
+
+        request = {
+            "principal": 'User::"alice"',
+            "action": 'Action::"view"',
+            "resource": 'Photo::"alice_w2.jpg"',
+            "context": {},
+        }
+
+        authz_result: AuthzResult = is_authorized(request, policies, self.entities)
+        self.assertEqual(Decision.Allow, authz_result.decision)
+        # Default: cedar's auto-id, not the @id-annotation value
+        self.assertNotIn("alice_can_view", authz_result.diagnostics.reasons)
+        self.assertEqual(1, len(authz_result.diagnostics.reasons))
 
     def test_id_annotation_mixed_with_unannotated_policies(self):
         # Mix annotated + un-annotated policies. Annotated policy keeps its
@@ -556,19 +586,26 @@ class AuthorizeTestCase(unittest.TestCase):
             "context": {},
         }
 
-        alice_result: AuthzResult = is_authorized(alice_request, policies, self.entities)
+        alice_result: AuthzResult = is_authorized(
+            alice_request, policies, self.entities,
+            resolve_policy_ids_from_annotations=True,
+        )
         self.assertEqual(Decision.Allow, alice_result.decision)
         self.assertEqual(["alice_view"], alice_result.diagnostics.reasons)
 
-        bob_result: AuthzResult = is_authorized(bob_request, policies, self.entities)
+        bob_result: AuthzResult = is_authorized(
+            bob_request, policies, self.entities,
+            resolve_policy_ids_from_annotations=True,
+        )
         self.assertEqual(Decision.Allow, bob_result.decision)
         # un-annotated policy keeps cedar's default id (some "policyN")
         self.assertEqual(1, len(bob_result.diagnostics.reasons))
         self.assertNotEqual("alice_view", bob_result.diagnostics.reasons[0])
 
     def test_id_annotation_duplicate_returns_no_decision(self):
-        # Two policies that resolve to the same @id are a configuration error;
-        # surface as NoDecision + diagnostic rather than silently dropping one.
+        # When resolve_policy_ids_from_annotations=True, two policies that
+        # resolve to the same @id are a configuration error: surface as
+        # NoDecision + diagnostic rather than silently dropping one.
         policies = """
             @id("dup")
             permit(
@@ -591,7 +628,10 @@ class AuthorizeTestCase(unittest.TestCase):
             "context": {},
         }
 
-        authz_result: AuthzResult = is_authorized(request, policies, self.entities)
+        authz_result: AuthzResult = is_authorized(
+            request, policies, self.entities,
+            resolve_policy_ids_from_annotations=True,
+        )
         self.assertEqual(Decision.NoDecision, authz_result.decision)
         self.assertEqual(1, len(authz_result.diagnostics.errors))
         self.assertIn("duplicate policy id", authz_result.diagnostics.errors[0].lower())

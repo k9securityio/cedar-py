@@ -90,26 +90,29 @@ impl RequestArgs {
 }
 
 #[pyfunction]
-#[pyo3(signature = (request, policies, entities, schema = None, verbose = false,))]
+#[pyo3(signature = (request, policies, entities, schema = None, verbose = false, resolve_policy_ids_from_annotations = false))]
 fn is_authorized(request: HashMap<String, String>,
                  policies: String,
                  entities: String,
                  schema: Option<String>,
-                 verbose: Option<bool>)
+                 verbose: Option<bool>,
+                 resolve_policy_ids_from_annotations: Option<bool>)
                  -> String {
-    is_authorized_batch(vec![request], policies, entities, schema, verbose)[0].clone()
+    is_authorized_batch(vec![request], policies, entities, schema, verbose, resolve_policy_ids_from_annotations)[0].clone()
 }
 
 #[pyfunction]
-#[pyo3(signature = (requests, policies, entities, schema = None, verbose = false,))]
+#[pyo3(signature = (requests, policies, entities, schema = None, verbose = false, resolve_policy_ids_from_annotations = false))]
 fn is_authorized_batch(requests: Vec<HashMap<String, String>>,
                        policies: String,
                        entities: String,
                        schema: Option<String>,
-                       verbose: Option<bool>)
+                       verbose: Option<bool>,
+                       resolve_policy_ids_from_annotations: Option<bool>)
                        -> Vec<String> {
     // CLI AuthorizeArgs: https://github.com/cedar-policy/cedar/blob/main/cedar-policy-cli/src/lib.rs#L183
     let verbose = verbose.unwrap_or(false);
+    let resolve_ids = resolve_policy_ids_from_annotations.unwrap_or(false);
     if verbose {
         //println!("requests: {}", requests);
         println!("policies: {}", policies);
@@ -123,14 +126,20 @@ fn is_authorized_batch(requests: Vec<HashMap<String, String>>,
     // parse policies
     let t_parse_policies = Instant::now();
     let policy_set = match PolicySet::from_str(&policies) {
-        Ok(pset) => match rename_from_id_annotation(pset) {
-            Ok(renamed) => renamed,
-            Err((_policy_id, e)) => {
-                println!("{:#}", e);
-                errs.push(e);
-                PolicySet::new()
+        Ok(pset) => {
+            if resolve_ids {
+                match rename_from_id_annotation(pset) {
+                    Ok(renamed) => renamed,
+                    Err((_policy_id, e)) => {
+                        println!("{:#}", e);
+                        errs.push(e);
+                        PolicySet::new()
+                    }
+                }
+            } else {
+                pset
             }
-        },
+        }
         Err(parse_errors) => {
             let err_message = format!("policy parse errors:\n{:#}",
                                       parse_errors.to_string());
@@ -474,23 +483,30 @@ fn rename_from_id_annotation(ps: PolicySet) -> Result<PolicySet, (String, Error)
 
 /// Validate Cedar policies against a schema and return a JSON result.
 #[pyfunction]
-#[pyo3(signature = (policies, schema))]
-fn validate_policies(policies: String, schema: String) -> String {
+#[pyo3(signature = (policies, schema, resolve_policy_ids_from_annotations = false))]
+fn validate_policies(policies: String, schema: String, resolve_policy_ids_from_annotations: Option<bool>) -> String {
+    let resolve_ids = resolve_policy_ids_from_annotations.unwrap_or(false);
     // Parse policies
     let policy_set = match PolicySet::from_str(&policies) {
-        Ok(pset) => match rename_from_id_annotation(pset) {
-            Ok(renamed) => renamed,
-            Err((policy_id, e)) => {
-                let result = ValidationResultSer {
-                    validation_passed: false,
-                    errors: vec![ValidationErrorSer {
-                        policy_id,
-                        error: format!("Policy id annotation error: {}", e),
-                    }],
-                };
-                return serde_json::to_string(&result).unwrap();
+        Ok(pset) => {
+            if resolve_ids {
+                match rename_from_id_annotation(pset) {
+                    Ok(renamed) => renamed,
+                    Err((policy_id, e)) => {
+                        let result = ValidationResultSer {
+                            validation_passed: false,
+                            errors: vec![ValidationErrorSer {
+                                policy_id,
+                                error: format!("Policy id annotation error: {}", e),
+                            }],
+                        };
+                        return serde_json::to_string(&result).unwrap();
+                    }
+                }
+            } else {
+                pset
             }
-        },
+        }
         Err(parse_errors) => {
             let result = ValidationResultSer {
                 validation_passed: false,

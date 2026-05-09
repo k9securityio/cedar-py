@@ -10,12 +10,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- `@id("...")` annotations on a policy or template now override the auto-generated `policy0`/`policy1`/... id, so `AuthzResult.diagnostics.reasons` and `ValidationError.policy_id` carry the human-readable id the user wrote in their policies ([#66](https://github.com/k9securityio/cedar-py/pull/66))
+- New optional parameter `resolve_policy_ids_from_annotations` on `is_authorized`, `is_authorized_batch`, and `validate_policies`. When `True`, `@id("...")` annotations on a policy or template override cedar's auto-generated `policy0`/`policy1`/... ids in `AuthzResult.diagnostics.reasons` and `ValidationError.policy_id`. Defaults to `False` because resolving annotations carries a per-call cost proportional to the number of policies (cedar's `PolicySet` is rebuilt with the renamed ids); callers who want the human-readable ids opt in explicitly. Resolves [#68](https://github.com/k9securityio/cedar-py/issues/68)
 
 ### Changed
 
 - **Behavior change.** `is_authorized` / `is_authorized_batch` now return `Decision.NoDecision` with a diagnostic when given an invalid schema, instead of silently discarding the schema and returning a real `Allow` / `Deny`. The same path applies in `validate_policies` ([#65](https://github.com/k9securityio/cedar-py/pull/65))
-- **Behavior change.** Two policies with the same `@id` annotation now surface as `Decision.NoDecision` (in `is_authorized`) or `validation_passed=False` (in `validate_policies`) with a `"duplicate policy id"` diagnostic. Prior to [#66](https://github.com/k9securityio/cedar-py/pull/66), `@id` annotations were ignored entirely, so duplicates were inert ([#66](https://github.com/k9securityio/cedar-py/pull/66))
+- **Behavior change.** Two policies with the same `@id` annotation now surface as `Decision.NoDecision` (in `is_authorized`) or `validation_passed=False` (in `validate_policies`) with a `"duplicate policy id"` diagnostic — but only when `resolve_policy_ids_from_annotations=True`. With the default, duplicate `@id` annotations are inert, matching the pre-`@id`-feature behavior ([#66](https://github.com/k9securityio/cedar-py/pull/66))
 
 ## [4.8.1] - 2026-04-22
 

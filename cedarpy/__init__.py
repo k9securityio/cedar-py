@@ -116,7 +116,8 @@ def is_authorized(request: dict,
                   policies: str,
                   entities: Union[str, List[dict]],
                   schema: Union[str, dict, None] = None,
-                  verbose: bool = False) -> AuthzResult:
+                  verbose: bool = False,
+                  resolve_policy_ids_from_annotations: bool = False) -> AuthzResult:
     """Evaluate whether the request is authorized given the parameters.
 
     :param request is a Cedar-style request object containing a principal, action, resource, and (optional) context;
@@ -126,6 +127,10 @@ def is_authorized(request: dict,
     include in the evaluation
     :param schema (optional) dictionary or json-formatted string containing the Cedar schema
     :param verbose (optional) boolean determining whether to enable verbose logging output within the library
+    :param resolve_policy_ids_from_annotations (optional, default False) when True, ``@id("...")`` annotations on
+    policies and templates override cedar's auto-generated ``policy0``/``policy1``/... ids in
+    ``AuthzResult.diagnostics.reasons``. Opt-in because this carries a measurable per-call cost
+    proportional to the number of policies (the underlying ``PolicySet`` is rebuilt with the renamed ids).
 
     :returns an AuthzResult
 
@@ -134,14 +139,16 @@ def is_authorized(request: dict,
                                policies=policies,
                                entities=entities,
                                schema=schema,
-                               verbose=verbose)[0]
+                               verbose=verbose,
+                               resolve_policy_ids_from_annotations=resolve_policy_ids_from_annotations)[0]
 
 
 def is_authorized_batch(requests: List[dict],
                         policies: str,
                         entities: Union[str, List[dict]],
                         schema: Union[str, dict, None] = None,
-                        verbose: bool = False) -> List[AuthzResult]:
+                        verbose: bool = False,
+                        resolve_policy_ids_from_annotations: bool = False) -> List[AuthzResult]:
     """Evaluate whether a batch of requests are authorized given the other parameters.  Each request is evaluated
     independently and results in an AuthzResult per request.
 
@@ -152,6 +159,10 @@ def is_authorized_batch(requests: List[dict],
     include in the evaluation
     :param schema (optional) dictionary or json-formatted string containing the Cedar schema
     :param verbose (optional) boolean determining whether to enable verbose logging output within the library
+    :param resolve_policy_ids_from_annotations (optional, default False) when True, ``@id("...")`` annotations on
+    policies and templates override cedar's auto-generated ``policy0``/``policy1``/... ids in each
+    ``AuthzResult.diagnostics.reasons``. Opt-in because this carries a measurable per-call cost
+    proportional to the number of policies.
 
     :returns a list of AuthzResults, in same order as the requests
 
@@ -182,7 +193,9 @@ def is_authorized_batch(requests: List[dict],
         elif isinstance(schema, dict):
             schema = json.dumps(schema)
 
-    authz_result_strs: List[str] = _internal.is_authorized_batch(requests_local, policies, entities, schema, verbose)
+    authz_result_strs: List[str] = _internal.is_authorized_batch(
+        requests_local, policies, entities, schema, verbose, resolve_policy_ids_from_annotations
+    )
     authz_result_objs: List[dict] = []
 
     for authz_result_str in authz_result_strs:
@@ -232,7 +245,8 @@ def policies_from_json_str(policies: str) -> str:
 
 
 def validate_policies(policies: str,
-                      schema: Union[str, dict]) -> ValidationResult:
+                      schema: Union[str, dict],
+                      resolve_policy_ids_from_annotations: bool = False) -> ValidationResult:
     """Validate Cedar policies against a schema.
 
     This function checks that policies are valid according to the provided schema,
@@ -241,6 +255,10 @@ def validate_policies(policies: str,
 
     :param policies: Cedar policies as a string
     :param schema: Cedar schema (JSON dict, JSON string, or Cedar schema string)
+    :param resolve_policy_ids_from_annotations: (optional, default False) when True,
+        ``@id("...")`` annotations on policies and templates override cedar's auto-generated
+        ``policy0``/``policy1``/... ids in ``ValidationError.policy_id``. Opt-in because this
+        carries a measurable per-call cost proportional to the number of policies.
 
     :returns: ValidationResult with validation_passed boolean and list of errors
 
@@ -255,6 +273,6 @@ def validate_policies(policies: str,
     if isinstance(schema, dict):
         schema = json.dumps(schema)
 
-    result_str = _internal.validate_policies(policies, schema)
+    result_str = _internal.validate_policies(policies, schema, resolve_policy_ids_from_annotations)
     result_dict = json.loads(result_str)
     return ValidationResult(result_dict)
