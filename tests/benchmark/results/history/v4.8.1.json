@@ -6,7 +6,7 @@
     "label": "v4.8.1",
     "date": "2026-04-22",
     "subject": "Merge pull request #61 from k9securityio/release/4.8.1",
-    "note": "PR #61 merge"
+    "note": "PR #61: release: bump version to 4.8.1"
   },
   "build": {
     "mode": "release",
@@ -14,7 +14,7 @@
     "python_version": "3.11.1",
     "platform": "Darwin-CPython-3.11-64bit"
   },
-  "captured_at": "2026-05-09T16:03:37+00:00",
+  "captured_at": "2026-05-09T16:42:05+00:00",
   "save_prefix": "v4_8_1",
   "source_runs": [
     "0008_v4_8_1-run1.json",

@@ -3,10 +3,10 @@
     "sha": "6f601dfcf0bc5f69c73f8af5edf3a88c787eb7d7",
     "short_sha": "6f601df",
     "tag": null,
-    "label": "6f601df (PR #65 merge)",
+    "label": "6f601df (PR #65: fix: surface invalid schema as NoDecision with diagnostic error (#27))",
     "date": "2026-05-05",
     "subject": "Merge pull request #65 from rupivbluegreen/fix/issue-27-invalid-schema-no-decision",
-    "note": "PR #65 merge"
+    "note": "PR #65: fix: surface invalid schema as NoDecision with diagnostic error (#27)"
   },
   "build": {
     "mode": "release",
@@ -14,7 +14,7 @@
     "python_version": "3.11.1",
     "platform": "Darwin-CPython-3.11-64bit"
   },
-  "captured_at": "2026-05-09T16:03:37+00:00",
+  "captured_at": "2026-05-09T16:42:05+00:00",
   "save_prefix": "pr65_6f601df",
   "source_runs": [
     "0013_pr65_6f601df-run1.json",

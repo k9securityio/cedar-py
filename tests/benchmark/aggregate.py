@@ -77,15 +77,25 @@ def discover_native_runs() -> dict[str, list[Path]]:
 
 
 def commit_metadata(sha: str) -> dict:
-    """Return {sha, short_sha, date, subject, tag} for a commit."""
+    """Return {sha, short_sha, date, subject, body_first_line, tag} for a commit.
+
+    body_first_line is the first non-empty line of the commit body, used to
+    pull the PR title out of GitHub merge commits (whose subject is the
+    boilerplate "Merge pull request #N from ...").
+    """
     info = git(
         "log", "-1",
-        "--pretty=format:%H%x1f%h%x1f%aI%x1f%s",
+        "--pretty=format:%H%x1f%h%x1f%aI%x1f%s%x1f%b",
         sha,
     ).split("\x1f")
-    long_sha, short_sha, iso_date, subject = info
+    long_sha, short_sha, iso_date, subject, body = info
     # Author date as YYYY-MM-DD
     date = iso_date.split("T", 1)[0]
+    # First non-empty line of the body (PR title for GitHub merges)
+    body_first_line = next(
+        (line.strip() for line in body.splitlines() if line.strip()),
+        "",
+    )
     # Tag pointing exactly at this commit (if any)
     try:
         tag = git("tag", "--points-at", long_sha).split("\n", 1)[0] or None
@@ -98,6 +108,7 @@ def commit_metadata(sha: str) -> dict:
         "short_sha": short_sha,
         "date": date,
         "subject": subject,
+        "body_first_line": body_first_line,
         "tag": tag,
     }
 
@@ -106,13 +117,19 @@ def label_for(meta: dict, save_prefix: str) -> tuple[str, str | None]:
     """Return (label, note) for the markdown row.
 
     label is human-readable: tag if any; else short SHA + concise note.
-    note is a short descriptor (e.g., "PR #65 merge") or None.
+    For GitHub merge commits, the note is "PR #N: <body first line>" so the
+    label carries the PR title rather than the boilerplate "Merge pull request
+    #N" subject. Falls back to "PR #N merge" if the body is empty.
     """
     tag = meta["tag"]
+    body_first_line = meta.get("body_first_line", "")
     note: str | None = None
     m = re.search(r"Merge pull request #(\d+)", meta["subject"])
     if m:
-        note = f"PR #{m.group(1)} merge"
+        if body_first_line:
+            note = f"PR #{m.group(1)}: {body_first_line}"
+        else:
+            note = f"PR #{m.group(1)} merge"
     elif tag:
         note = "tagged release"
     if tag:
