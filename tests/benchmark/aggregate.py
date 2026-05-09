@@ -41,6 +41,7 @@ RESULTS_DIR = REPO_ROOT / "tests" / "benchmark" / "results"
 NATIVE_DIR = RESULTS_DIR / "Darwin-CPython-3.11-64bit"
 HISTORY_DIR = RESULTS_DIR / "history"
 HISTORY_MD = RESULTS_DIR / "HISTORY.md"
+MANIFEST_PATH = HISTORY_DIR / "states-manifest.json"
 
 # Native pytest-benchmark filename formats produced by --benchmark-save:
 #   <NNNN>_<save-name>.json                                   (5.x default)
@@ -113,14 +114,25 @@ def commit_metadata(sha: str) -> dict:
     }
 
 
-def label_for(meta: dict, save_prefix: str) -> tuple[str, str | None]:
+def load_state_manifest() -> dict[str, dict]:
+    """Load states-manifest.json (written by capture_history.sh) keyed by save_prefix."""
+    if not MANIFEST_PATH.exists():
+        return {}
+    data = json.loads(MANIFEST_PATH.read_text())
+    return {entry["save_prefix"]: entry for entry in data}
+
+
+def label_for(meta: dict, save_prefix: str, description: str | None) -> tuple[str, str | None]:
     """Return (label, note) for the markdown row.
 
-    label is human-readable: tag if any; else short SHA + concise note.
-    For GitHub merge commits, the note is "PR #N: <body first line>" so the
-    label carries the PR title rather than the boilerplate "Merge pull request
-    #N" subject. Falls back to "PR #N merge" if the body is empty.
+    The label is the curated description from states-manifest.json. If the
+    description is missing (manifest absent or save_prefix not listed), fall
+    back to the prior auto-derivation: tag if any; else short SHA + concise
+    note from the merge-commit body.
     """
+    if description:
+        return description, description
+
     tag = meta["tag"]
     body_first_line = meta.get("body_first_line", "")
     note: str | None = None
@@ -177,6 +189,7 @@ def phase_a() -> list[Path]:
     Returns the list of summary JSON files written.
     """
     HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+    manifest = load_state_manifest()
     by_prefix = discover_native_runs()
     if not by_prefix:
         print(f"warning: no matching native JSONs found in {NATIVE_DIR}")
@@ -189,7 +202,9 @@ def phase_a() -> list[Path]:
         sha = first.get("commit_info", {}).get("id") or "HEAD"
 
         meta = commit_metadata(sha)
-        label, note = label_for(meta, prefix)
+        manifest_entry = manifest.get(prefix)
+        description = manifest_entry.get("description") if manifest_entry else None
+        label, note = label_for(meta, prefix, description)
         machine = first.get("machine_info", {})
 
         summary = {
@@ -243,9 +258,13 @@ def phase_b() -> Path:
 
     summaries = []
     for path in sorted(HISTORY_DIR.glob("*.json")):
-        if path.name == "manifest.json":
+        if path == MANIFEST_PATH:
             continue
-        summaries.append(json.loads(path.read_text()))
+        data = json.loads(path.read_text())
+        # Skip anything that isn't a per-commit summary (e.g., other configs).
+        if not isinstance(data, dict) or "commit" not in data:
+            continue
+        summaries.append(data)
 
     if not summaries:
         print(f"error: no per-commit summaries in {HISTORY_DIR}", file=sys.stderr)

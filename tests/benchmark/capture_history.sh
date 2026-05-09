@@ -3,14 +3,19 @@
 # commits. Used to maintain tests/benchmark/results/history/ — the committed
 # historical perf record.
 #
+# Each STATES entry is "<save_prefix>:<git-ref>:<description>". All three
+# fields are required. The description is used as the row label in HISTORY.md.
+#
 # For each state: git checkout, maturin develop --release, then RUNS× pytest
 # --benchmark-save. Native pytest-benchmark JSONs land in
 # tests/benchmark/results/Darwin-CPython-3.11-64bit/.
 #
 # Restores the starting branch on exit (success or failure).
 #
-# Adding a new state: append "<save_prefix>:<git-ref>" to STATES below and
-# re-run. The aggregator (aggregate.py) discovers states from filenames.
+# Adding a new state: append "<save_prefix>:<git-ref>:<description>" to STATES
+# below and re-run. The aggregator (aggregate.py) reads descriptions from
+# tests/benchmark/results/history/states-manifest.json, which this script
+# writes before the capture loop.
 
 set -euo pipefail
 
@@ -35,16 +40,38 @@ echo "Starting on: $START_BRANCH"
 STORAGE="$REPO_ROOT/tests/benchmark/results"
 RUNS="${BENCHMARK_RUNS:-5}"
 
-# save_prefix : git-ref  (chronological order)
-# - tagged states use sanitized tag (dots -> underscores)
-# - untagged commits use "<descriptor>_<short-sha>"
+# save_prefix : git-ref : description  (chronological order)
+# - save_prefix: pytest-benchmark save-name prefix; for tagged states use the
+#   sanitized tag (dots -> underscores); for untagged commits use
+#   "<descriptor>_<short-sha>"
+# - git-ref: any git ref (tag, short SHA, branch tip)
+# - description: row label in HISTORY.md (REQUIRED, non-empty)
 STATES=(
-  "v4_8_0:v4.8.0"
-  "v4_8_1:v4.8.1"
-  "pr65_6f601df:6f601df"
-  "pr66_500a8d0:500a8d0"
-  "main_ca5d83c:ca5d83c"
+  "v4_8_0:v4.8.0:v4.8.0"
+  "v4_8_1:v4.8.1:v4.8.1"
+  "pr65_6f601df:6f601df:PR65 surface invalid schema"
+  "pr66_500a8d0:500a8d0:PR66 honor id annotation"
+  "main_ca5d83c:ca5d83c:main_ca5d83c docs update"
 )
+
+# Write states-manifest.json for the aggregator to consume.
+HISTORY_DIR="$STORAGE/history"
+MANIFEST="$HISTORY_DIR/states-manifest.json"
+mkdir -p "$HISTORY_DIR"
+printf '%s\n' "${STATES[@]}" | python3 -c '
+import json, sys
+states = []
+for line in sys.stdin:
+    line = line.rstrip("\n")
+    if not line:
+        continue
+    parts = line.split(":", 2)
+    if len(parts) != 3 or not parts[2]:
+        sys.exit(f"ERROR: state {line!r} is missing required description (3rd field)")
+    states.append({"save_prefix": parts[0], "ref": parts[1], "description": parts[2]})
+print(json.dumps(states, indent=2))
+' > "$MANIFEST"
+echo "wrote manifest: $MANIFEST"
 
 restore_branch() {
   echo
@@ -56,10 +83,10 @@ restore_branch() {
 trap restore_branch EXIT
 
 for state in "${STATES[@]}"; do
-  IFS=':' read -r prefix ref <<< "$state"
+  IFS=':' read -r prefix ref description <<< "$state"
   echo
   echo "==================================================================="
-  echo "===== STATE: $prefix (ref=$ref) at $(date +%H:%M:%S) ====="
+  echo "===== STATE: $prefix (ref=$ref, desc=$description) at $(date +%H:%M:%S) ====="
   echo "==================================================================="
 
   git reset --hard >/dev/null
