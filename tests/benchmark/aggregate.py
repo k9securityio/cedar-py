@@ -269,23 +269,25 @@ def phase_b() -> Path:
 
     for bench in all_benchmarks:
         lines.append(f"\n## `{bench}`\n")
-        lines.append("| Commit | Date | Median (μs) | Max (μs) | Δ median |")
-        lines.append("|---|---|---|---|---|")
+        lines.append("| Commit | Date | Median (μs) | Δ median | Max (μs) | Δ max |")
+        lines.append("|---|---|---|---|---|---|")
 
-        ref = baseline["benchmarks"].get(bench, {}).get("median_us")
+        ref_median = baseline["benchmarks"].get(bench, {}).get("median_us")
+        ref_max    = baseline["benchmarks"].get(bench, {}).get("max_us")
         for s in summaries:
             stats = s["benchmarks"].get(bench)
             commit = s["commit"]
             label = commit["label"]
             date = commit["date"]
             if not stats:
-                lines.append(f"| {label} | {date} | — | — | — |")
+                lines.append(f"| {label} | {date} | — | — | — | — |")
                 continue
             med = stats.get("median_us")
-            mx = stats.get("max_us")
-            delta = "—" if s is baseline else fmt_pct(med, ref)
+            mx  = stats.get("max_us")
+            delta_median = "—" if s is baseline else fmt_pct(med, ref_median)
+            delta_max    = "—" if s is baseline else fmt_pct(mx,  ref_max)
             lines.append(
-                f"| {label} | {date} | {fmt_us(med)} | {fmt_us(mx)} | {delta} |"
+                f"| {label} | {date} | {fmt_us(med)} | {delta_median} | {fmt_us(mx)} | {delta_max} |"
             )
 
     HISTORY_MD.write_text("\n".join(lines) + "\n")
