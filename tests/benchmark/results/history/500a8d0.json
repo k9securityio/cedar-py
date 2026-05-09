@@ -3,10 +3,10 @@
     "sha": "500a8d0e16fc459b48cd70d3eeeec4a2638eb6ae",
     "short_sha": "500a8d0",
     "tag": null,
-    "label": "500a8d0 (PR #66: feat: honor @id(\"...\") annotation as the policy id)",
+    "label": "PR66 honor id annotation",
     "date": "2026-05-06",
     "subject": "Merge pull request #66 from rupivbluegreen/feat/issue-29-id-annotation-policy-id",
-    "note": "PR #66: feat: honor @id(\"...\") annotation as the policy id"
+    "note": "PR66 honor id annotation"
   },
   "build": {
     "mode": "release",
@@ -14,7 +14,7 @@
     "python_version": "3.11.1",
     "platform": "Darwin-CPython-3.11-64bit"
   },
-  "captured_at": "2026-05-09T16:42:05+00:00",
+  "captured_at": "2026-05-09T18:16:37+00:00",
   "save_prefix": "pr66_500a8d0",
   "source_runs": [
     "0018_pr66_500a8d0-run1.json",

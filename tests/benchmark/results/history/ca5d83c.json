@@ -3,10 +3,10 @@
     "sha": "ca5d83c55027a4fd7c08854b7e8c5d8644d91aca",
     "short_sha": "ca5d83c",
     "tag": null,
-    "label": "ca5d83c (PR #67: docs: add CHANGELOG.md and reference it in release process)",
+    "label": "main_ca5d83c docs update",
     "date": "2026-05-08",
     "subject": "Merge pull request #67 from k9securityio/docs/changelog",
-    "note": "PR #67: docs: add CHANGELOG.md and reference it in release process"
+    "note": "main_ca5d83c docs update"
   },
   "build": {
     "mode": "release",
@@ -14,7 +14,7 @@
     "python_version": "3.11.1",
     "platform": "Darwin-CPython-3.11-64bit"
   },
-  "captured_at": "2026-05-09T16:42:05+00:00",
+  "captured_at": "2026-05-09T18:16:37+00:00",
   "save_prefix": "main_ca5d83c",
   "source_runs": [
     "0023_main_ca5d83c-run1.json",

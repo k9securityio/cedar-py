@@ -6,7 +6,7 @@
     "label": "v4.8.0",
     "date": "2025-12-17",
     "subject": "tests: Add cedarpy benchmark results for Cedar Policy engine 4.8.2 on cedarpy main for 4.8.0 release",
-    "note": "tagged release"
+    "note": "v4.8.0"
   },
   "build": {
     "mode": "release",
@@ -14,7 +14,7 @@
     "python_version": "3.11.1",
     "platform": "Darwin-CPython-3.11-64bit"
   },
-  "captured_at": "2026-05-09T16:42:05+00:00",
+  "captured_at": "2026-05-09T18:16:37+00:00",
   "save_prefix": "v4_8_0",
   "source_runs": [
     "0003_v4_8_0-run1.json",
