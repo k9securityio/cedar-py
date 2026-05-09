@@ -79,3 +79,11 @@ benchmark-compare:
 		--benchmark-compare=$(BENCHMARK_RESULTS_DIR)/baseline.json -v \
 		--benchmark-compare-fail=median:5% \
 		--benchmark-compare-fail=mean:15%
+
+.PHONY: benchmark-history
+benchmark-history:
+	@echo Capturing release-mode benchmark history across the commits listed in tests/benchmark/capture_history.sh
+	@echo "(this takes ~30-40 min; switches branches and restores on exit)"
+	set -e ;\
+	bash tests/benchmark/capture_history.sh ;\
+	python tests/benchmark/aggregate.py
