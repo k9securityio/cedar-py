@@ -40,7 +40,7 @@ integration-tests: submodules
 release:
 	@echo Building a release
 	set -e ;\
-	maturin build ;\
+	maturin build --release ;\
 	pytest
 
 # Performance benchmark targets
