@@ -1,0 +1,27 @@
+[
+  {
+    "save_prefix": "v4_8_0",
+    "ref": "v4.8.0",
+    "description": "v4.8.0"
+  },
+  {
+    "save_prefix": "v4_8_1",
+    "ref": "v4.8.1",
+    "description": "v4.8.1"
+  },
+  {
+    "save_prefix": "pr65_6f601df",
+    "ref": "6f601df",
+    "description": "PR65 surface invalid schema"
+  },
+  {
+    "save_prefix": "pr66_500a8d0",
+    "ref": "500a8d0",
+    "description": "PR66 honor id annotation"
+  },
+  {
+    "save_prefix": "main_ca5d83c",
+    "ref": "ca5d83c",
+    "description": "main_ca5d83c docs update"
+  }
+]

@@ -12,7 +12,10 @@ Project-specific guidance for Claude Code sessions working in `cedar-py`.
 - **Rebuild native extension after Rust changes:** `maturin develop --release`
 - **Unit tests:** `pytest` (discovers `tests/unit/`)
 - **Integration tests:** `make integration-tests` — pulls the `third_party/cedar-integration-tests` git submodule
-- **Benchmarks:** `make benchmark-compare`. Do NOT refresh `tests/benchmark/results/baseline.json` for routine dep updates — only when performance-relevant code changes.
+- **Benchmarks:**
+  - `make benchmark-compare` for single-run regression check vs `tests/benchmark/results/baseline.json`. Do NOT refresh the baseline for routine dep updates — only for performance-relevant code changes.
+  - `make benchmark-history` for release-mode multi-run capture across the historical commits listed in `tests/benchmark/capture_history.sh`. Outputs land in `tests/benchmark/results/history/<state>.json` (per-commit summary stats) and `tests/benchmark/results/HISTORY.md` (rendered cross-state table). The script does a `git checkout` per state and restores the starting branch on exit.
+  - See `tests/benchmark/README.md` for the workflow, default run count (N=5) and why we landed there, the `STATES` format (`<save_prefix>:<git_ref>:<description>`, all required), and the `states-manifest.json` plumbing between the runner and aggregator.
 
 ## Dependency management
 
@@ -50,3 +53,8 @@ Documented in `docs/release-process.md`. Highlights:
 ## Follow-on work to be aware of
 
 - **GitHub Actions consolidation (GH issue #62):** 6 actions in `CI.yml` are on outdated major versions (e.g. `actions/upload-artifact@v4` when v7 is current). Planned approach: one consolidated PR pinning all actions to commit SHAs with tag comments. Defer until there's time to review the cross-major changelogs, and do not bundle with a release.
+- **Benchmark process improvements (GH issue #69):** three goals.
+  - **Goal 2** (committed historical record + tooling for it) lands via PR #71 on `feat/issue-69-benchmark-history`: `make benchmark-history`, `tests/benchmark/capture_history.sh`, `tests/benchmark/aggregate.py`, `tests/benchmark/results/HISTORY.md`, and the per-commit summaries under `tests/benchmark/results/history/`.
+  - **Goals 1 and 3 are still open.** Goal 1 switches `make benchmark` / `benchmark-save` / `benchmark-compare` to release mode (currently debug). Goal 3 rewires `make benchmark-compare` to do N=5 release-mode runs at HEAD and gate on **median Δ** vs a refreshed `baseline.json` — `pytest-benchmark` 5.x has no native cross-invocation aggregation, so the gating logic has to live in our aggregator.
+  - **Sequencing:** goal 1 (release-mode targets) and the matching `baseline.json` refresh must move together — a release-mode run vs the current debug-mode baseline trivially "passes". The new baseline should be captured post-#68-fix on main; until that fix lands, `baseline.json` would record the regression as "normal".
+  - **Empirical finding from PR #71's data:** medians are robust at N=5 (N=7 backfill shifted Δ by <1.3 pp on every benchmark we checked); max grows monotonically with N as more samples capture rare tail outliers and shouldn't be used for cross-state gating. The Δ max column in `HISTORY.md` is informational only.
