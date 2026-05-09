@@ -86,4 +86,4 @@ benchmark-history:
 	@echo "(this takes ~30-40 min; switches branches and restores on exit)"
 	set -e ;\
 	bash tests/benchmark/capture_history.sh ;\
-	python tests/benchmark/aggregate.py
+	python3 tests/benchmark/aggregate.py

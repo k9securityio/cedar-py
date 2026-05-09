@@ -42,11 +42,12 @@ NATIVE_DIR = RESULTS_DIR / "Darwin-CPython-3.11-64bit"
 HISTORY_DIR = RESULTS_DIR / "history"
 HISTORY_MD = RESULTS_DIR / "HISTORY.md"
 
-# Native pytest-benchmark filename format:
-#   <NNNN>_<save-name>.<vcs-id>.<YYYYMMDD_HHMMSS>.json
+# Native pytest-benchmark filename formats produced by --benchmark-save:
+#   <NNNN>_<save-name>.json                                   (5.x default)
+#   <NNNN>_<save-name>.<vcs-id>.<YYYYMMDD_HHMMSS>.json        (legacy autosave)
 # where save-name = "<save-prefix>-run<N>".
 NATIVE_FILE_RE = re.compile(
-    r"^\d{4}_(?P<save_name>.+?)\.(?P<vcs>[0-9a-f]+)\.(?P<ts>\d{8}_\d{6})\.json$"
+    r"^\d{4}_(?P<save_name>.+?)(?:\.(?P<vcs>[0-9a-f]+)\.(?P<ts>\d{8}_\d{6}))?\.json$"
 )
 SAVE_NAME_RE = re.compile(r"^(?P<prefix>.+)-run(?P<n>\d+)$")
 
