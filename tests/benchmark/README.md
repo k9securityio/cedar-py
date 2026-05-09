@@ -45,5 +45,5 @@ Useful after manual edits to per-commit JSONs (e.g., correcting a label).
 
 ## Run-count and modes
 
-- N runs per state: defaults to 5; override with `BENCHMARK_RUNS=N make benchmark-history`.
+- N runs per state: defaults to 5; override with `BENCHMARK_RUNS=N make benchmark-history`. We tested N=7 in a backfill experiment: medians shifted by <1.3 percentage points (already converged at N=5) and max actually became *noisier* (more samples → more chances of capturing rare tail outliers, which then dominate the max statistic). N=5 is the right default for the median signal we gate on; a useful tail estimate (e.g., p90) would need N≥20–30 plus a percentile-aware aggregator — out of scope for the historical record.
 - Build mode is **release** (`maturin develop --release`). The committed historical record exists explicitly to be release-mode, since debug-mode variance is too high for cross-commit comparison (#69 motivation).
