@@ -52,6 +52,7 @@ STATES=(
   "pr65_6f601df:6f601df:PR65 surface invalid schema"
   "pr66_500a8d0:500a8d0:PR66 honor id annotation"
   "main_ca5d83c:ca5d83c:main_ca5d83c docs update"
+  "pr70_1511625:1511625:PR70 opt-in @id annotation resolution"
 )
 
 # Write states-manifest.json for the aggregator to consume.
