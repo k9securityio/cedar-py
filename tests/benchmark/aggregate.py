@@ -43,6 +43,11 @@ HISTORY_DIR = RESULTS_DIR / "history"
 HISTORY_MD = RESULTS_DIR / "HISTORY.md"
 MANIFEST_PATH = HISTORY_DIR / "states-manifest.json"
 
+
+def median_baseline_path(save_prefix: str) -> Path:
+    """Default output path for build_baseline_from_state, per save_prefix."""
+    return RESULTS_DIR / f"baseline-{save_prefix}-median.json"
+
 # Native pytest-benchmark filename formats produced by --benchmark-save:
 #   <NNNN>_<save-name>.json                                   (5.x default)
 #   <NNNN>_<save-name>.<vcs-id>.<YYYYMMDD_HHMMSS>.json        (legacy autosave)
@@ -331,11 +336,86 @@ def phase_b() -> Path:
     return HISTORY_MD
 
 
+def build_baseline_from_state(save_prefix: str, output_path: Path | None = None) -> Path:
+    """Synthesize a baseline JSON from the median of N runs for a given save_prefix.
+
+    Writes to `tests/benchmark/results/baseline-<save_prefix>-median.json` by
+    default; override with output_path. Does NOT touch the existing
+    tests/benchmark/results/baseline.json — that file is preserved for the
+    maintainer to swap in deliberately if desired.
+
+    Produces a pytest-benchmark-shaped JSON whose per-benchmark numeric stats
+    are the median across all available native runs of save_prefix. The first
+    run is used as a structural template (machine_info, commit_info, etc.);
+    only the per-benchmark stats fields are replaced with cross-run medians.
+
+    The result represents the central tendency of save_prefix's perf rather
+    than the noise of any single run, and is suitable as a stable reference
+    for `make benchmark-compare`.
+    """
+    if output_path is None:
+        output_path = median_baseline_path(save_prefix)
+    by_prefix = discover_native_runs()
+    if save_prefix not in by_prefix:
+        sys.exit(
+            f"error: no runs found for save_prefix {save_prefix!r}; "
+            f"available: {sorted(by_prefix.keys())}"
+        )
+    run_paths = by_prefix[save_prefix]
+    runs = [json.loads(p.read_text()) for p in run_paths]
+    n = len(runs)
+
+    # Use the first run as a structural template.
+    baseline = json.loads(run_paths[0].read_text())
+
+    # Index per-benchmark stats by name across runs.
+    by_name: dict[str, list[dict]] = {}
+    for run in runs:
+        for b in run["benchmarks"]:
+            by_name.setdefault(b["name"], []).append(b)
+
+    # For each benchmark in the template, replace each numeric stats field
+    # with the cross-run median.
+    for bench in baseline["benchmarks"]:
+        same_name = by_name.get(bench["name"], [])
+        if not same_name:
+            continue
+        for field in list(bench["stats"]):
+            if not isinstance(bench["stats"][field], (int, float)):
+                continue
+            values = [b["stats"][field] for b in same_name
+                      if isinstance(b["stats"].get(field), (int, float))]
+            if values:
+                bench["stats"][field] = statistics.median(values)
+        # ops is 1/mean by convention; recompute for consistency.
+        if bench["stats"].get("mean", 0) > 0:
+            bench["stats"]["ops"] = 1.0 / bench["stats"]["mean"]
+
+    # Provenance marker so future readers know this isn't a raw single-run capture.
+    baseline["_synthesized"] = {
+        "from_save_prefix": save_prefix,
+        "n_runs":           n,
+        "method":           "per-stats-field median across runs",
+        "generated_at":     dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+        "source_runs":      [p.name for p in run_paths],
+    }
+
+    output_path.write_text(json.dumps(baseline, indent=2) + "\n")
+    print(f"wrote {output_path.relative_to(REPO_ROOT)} from {n} runs of {save_prefix!r}")
+    return output_path
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--phase", choices=["a", "b", "ab"], default="ab",
                    help="run phase A (raw → per-commit JSON), phase B (per-commit JSON → markdown), or both (default)")
+    p.add_argument("--build-baseline-from", metavar="SAVE_PREFIX",
+                   help="alternative mode: synthesize baseline.json from the median of <SAVE_PREFIX>'s runs (skips phases A/B)")
     args = p.parse_args()
+
+    if args.build_baseline_from:
+        build_baseline_from_state(args.build_baseline_from)
+        return 0
 
     if "a" in args.phase:
         phase_a()
