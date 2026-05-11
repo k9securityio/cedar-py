@@ -50,6 +50,11 @@ Documented in `docs/release-process.md`. Highlights:
 - **Commit messages and PR descriptions:** same rule — keep internal Jira keys out. Internal tracking is one-way (the Jira issue links out to GitHub PRs, not the other way).
 - **Cedar engine ↔ cedarpy mapping:** README has a table. Update the cedarpy column on every release.
 
+## Cedar API gotchas
+
+- **Annotations are inert in Cedar evaluation.** Per the [Cedar docs](https://docs.cedarpolicy.com/policies/syntax-policy.html#term-parc-annotations), "an annotation has no impact on policy evaluation" and "`@id` is not special in the Cedar language." The Cedar CLI applies `@id` as a labeling convention by renaming `PolicyId`s at load time; the `cedar-policy` Rust library does not. cedar-py is a library, not a CLI consumer — to surface `@id` in `diagnostics.reasons` or `ValidationError.policy_id`, post-process at response-serialization time. Do **not** rebuild the `PolicySet` to apply `@id` (that's `O(|PolicySet|)` cost per call for a labeling concern; see #66/#68/#74 history).
+- **Resolving `@id` cheaply.** `PolicySet::annotation(pid, "id")` parses `"id"` as a Cedar `Id` on every lookup — surprisingly expensive on batch workloads. Prefer `policy_set.policy(pid).and_then(|p| p.annotations().find(|(k, _)| *k == "id"))` which uses raw `&str` keys (see `resolve_display_id` in `src/lib.rs`).
+
 ## Follow-on work to be aware of
 
 - **GitHub Actions consolidation (GH issue #62):** 6 actions in `CI.yml` are on outdated major versions (e.g. `actions/upload-artifact@v4` when v7 is current). Planned approach: one consolidated PR pinning all actions to commit SHAs with tag comments. Defer until there's time to review the cross-major changelogs, and do not bundle with a release.
