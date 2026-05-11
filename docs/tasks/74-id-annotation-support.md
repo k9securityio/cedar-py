@@ -43,13 +43,29 @@ Switch from **Path A** (rebuild the `PolicySet` so renamed ids appear natively i
 
 1. **Response shape — replace or surface both?** Should `reasons` continue to carry only the display-resolved id (drop-in replacement for current Path A behavior), or should we add a parallel field (e.g., `reasons_raw` / `policy_ids`) so tooling can see both the parser-generated id and the `@id` annotation? Smallest API surface vs. preserving ground truth for callers that want it.
 
+Up through cedar-py 4.8.1, the authz_result.diagnostics.reasons has always been a list of the parser-generated policy ids. I don't think those policy ids are useful to users unless they also assume the policy ids are assigned in the same order in which they submitted their policies. Given the opacity of the current policy id generation process, I think it is reasonable to _replace_ the generated policy id, e.g. `policy0` with a policy's `@id` annotation if it exists and is populated with a string, e.g. `allow_view_photo`. 
+
+Of course, it's possible or even probable that someone depends on the current behavior because it is externally visible (Hyrum's Law).   
+
 2. **Duplicate `@id` semantics.** Treat as an error (current Path A behavior) or allow (Path B's natural behavior, with duplicated entries deduped by `HashSet`)? Tilt: allow, since Cedar itself permits it and the existing failure mode is a Path A artifact, not a user-protection feature.
+
+`cedar-py` shoudl allow duplicate `@id`s because:
+a. Cedar explicitly says that annotations are not used as part of policy evaluation. So enforcing non-duplicate `@id` annotations is not a 'Cedar' behavior, it would be a cedar-py specific behavior. And that may cause problems if an application's Cedar policies need to be used with `cedar-py` and other Cedar Policy binding implementations, including directly with the `cedar-policy` Rust library.   
+b. Up through cedar-py 4.8.1, the cedar-py has allowed duplicate `@id`s (because it also ignored them).
+
+ 
 
 3. **`resolve_policy_ids_from_annotations` parameter — remove or keep as deprecated no-op?** Removing is cleaner; the only users affected are anyone on `main` between #66 and this fix, since #66/#70 haven't shipped to PyPI.
 
+Remove `resolve_policy_ids_from_annotations`.
+
 4. **Annotation key — `id` only, or general?** The current Path A code only honors `@id`. Should we expose a more general API (e.g., let callers configure which annotation key drives display names), or keep `@id` hardcoded to match cedar-policy-cli convention? Tilt: keep `@id` hardcoded; expand if/when a real use case appears.
 
+Support `id` only.
+
 5. **Templates.** cedarpy doesn't yet expose a templates API (#29). Apply the same `@id`-on-templates resolution preemptively (symmetric with cedar-policy-cli) or wait until templates land?
+
+Support `@id` on templates.
 
 ## Detailed implementation steps
 
