@@ -566,9 +566,15 @@ class AuthorizeTestCase(unittest.TestCase):
         self.assertEqual(1, len(bob_result.diagnostics.reasons))
         self.assertNotEqual("alice_view", bob_result.diagnostics.reasons[0])
 
-    def test_id_annotation_duplicate_returns_no_decision(self):
-        # Two policies that resolve to the same @id are a configuration error;
-        # surface as NoDecision + diagnostic rather than silently dropping one.
+    def test_id_annotation_duplicates_are_allowed(self):
+        # Cedar treats annotations as inert during evaluation
+        # (https://docs.cedarpolicy.com/policies/syntax-policy.html#term-parc-annotations):
+        # "an annotation has no impact on policy evaluation" and "@id is not
+        # special in the Cedar language." cedar-py therefore accepts duplicate
+        # @id values rather than rejecting them as a configuration error —
+        # rejecting would be a cedar-py-specific behavior that diverges from
+        # Cedar's documented semantics and from cedar-py 4.8.1 (which silently
+        # ignored @id annotations entirely).
         policies = """
             @id("dup")
             permit(
@@ -592,9 +598,122 @@ class AuthorizeTestCase(unittest.TestCase):
         }
 
         authz_result: AuthzResult = is_authorized(request, policies, self.entities)
-        self.assertEqual(Decision.NoDecision, authz_result.decision)
-        self.assertEqual(1, len(authz_result.diagnostics.errors))
-        self.assertIn("duplicate policy id", authz_result.diagnostics.errors[0].lower())
+        self.assertEqual(Decision.Allow, authz_result.decision)
+        self.assertEqual([], authz_result.diagnostics.errors)
+        # Both policies carry @id("dup"); only the first matched alice's
+        # request. reasons is a set, so the entry appears once.
+        self.assertEqual(["dup"], authz_result.diagnostics.reasons)
+
+    def test_id_annotation_coexists_with_other_annotations(self):
+        # Per the docs, "multiple annotations allowed per policy." Verify
+        # @id resolution still works when the policy also carries unrelated
+        # annotations like @advice and @shadow_mode. cedar-py doesn't surface
+        # the non-@id annotations today; this test asserts they don't
+        # interfere with @id labeling.
+        policies = """
+            @advice("be careful")
+            @id("alice_view")
+            @shadow_mode
+            permit(
+                principal == User::"alice",
+                action == Action::"view",
+                resource
+            );
+        """.strip()
+
+        request = {
+            "principal": 'User::"alice"',
+            "action": 'Action::"view"',
+            "resource": 'Photo::"alice_w2.jpg"',
+            "context": {},
+        }
+
+        authz_result: AuthzResult = is_authorized(request, policies, self.entities)
+        self.assertEqual(Decision.Allow, authz_result.decision)
+        self.assertEqual(["alice_view"], authz_result.diagnostics.reasons)
+
+    def test_id_annotation_empty_value_falls_back_to_parser_id(self):
+        # Per the docs: "Values are optional; omitting a value means the
+        # annotation implicitly equals "", making @annotationname equivalent
+        # to @annotationname("")." Both `@id` and `@id("")` therefore carry an
+        # empty annotation value.
+        #
+        # @id is a labeling convention for identifying policies. An empty
+        # display id is unhelpful — callers can't log it, lookup against it,
+        # or differentiate it from a missing reason. cedar-py treats an
+        # empty @id value the same as a missing @id and falls back to the
+        # parser-generated id. This is a deliberate cedar-py choice and
+        # differs from cedar-policy-cli, which would rename the policy to "".
+        for policy_body in [
+            # @id with no parentheses — implicitly @id("")
+            '@id\npermit(principal == User::"alice", action == Action::"view", resource);',
+            # @id with explicit empty string
+            '@id("")\npermit(principal == User::"alice", action == Action::"view", resource);',
+        ]:
+            with self.subTest(policy_body=policy_body):
+                request = {
+                    "principal": 'User::"alice"',
+                    "action": 'Action::"view"',
+                    "resource": 'Photo::"alice_w2.jpg"',
+                    "context": {},
+                }
+
+                authz_result: AuthzResult = is_authorized(request, policy_body, self.entities)
+                self.assertEqual(Decision.Allow, authz_result.decision)
+                self.assertEqual(["policy0"], authz_result.diagnostics.reasons)
+
+    def test_id_annotation_does_not_affect_evaluation(self):
+        # Regression guard for the docs property "an annotation has no impact
+        # on policy evaluation." Two policies with the SAME @id but DIFFERENT
+        # principal == clauses must each still route correctly: alice's
+        # request matches the first policy, bob's matches the second, and
+        # neither bleeds into the other.
+        policies = """
+            @id("shared")
+            permit(
+                principal == User::"alice",
+                action == Action::"view",
+                resource
+            );
+            @id("shared")
+            permit(
+                principal == User::"bob",
+                action == Action::"view",
+                resource
+            );
+        """.strip()
+
+        alice_request = {
+            "principal": 'User::"alice"',
+            "action": 'Action::"view"',
+            "resource": 'Photo::"alice_w2.jpg"',
+            "context": {},
+        }
+        bob_request = {
+            "principal": 'User::"bob"',
+            "action": 'Action::"view"',
+            "resource": 'Photo::"bobs-photo-1"',
+            "context": {},
+        }
+        carol_request = {
+            "principal": 'User::"carol"',
+            "action": 'Action::"view"',
+            "resource": 'Photo::"alice_w2.jpg"',
+            "context": {},
+        }
+
+        alice_result: AuthzResult = is_authorized(alice_request, policies, self.entities)
+        self.assertEqual(Decision.Allow, alice_result.decision)
+        self.assertEqual(["shared"], alice_result.diagnostics.reasons)
+
+        bob_result: AuthzResult = is_authorized(bob_request, policies, self.entities)
+        self.assertEqual(Decision.Allow, bob_result.decision)
+        self.assertEqual(["shared"], bob_result.diagnostics.reasons)
+
+        # carol is named in neither policy: no @id matches, decision Deny.
+        carol_result: AuthzResult = is_authorized(carol_request, policies, self.entities)
+        self.assertEqual(Decision.Deny, carol_result.decision)
+        self.assertEqual([], carol_result.diagnostics.reasons)
 
     def test_authorized_batch_perf(self):
         import platform

@@ -10,12 +10,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- `@id("...")` annotations on a policy or template now override the auto-generated `policy0`/`policy1`/... id, so `AuthzResult.diagnostics.reasons` and `ValidationError.policy_id` carry the human-readable id the user wrote in their policies ([#66](https://github.com/k9securityio/cedar-py/pull/66))
+- `@id("...")` annotations on a policy now surface as the human-readable id in `AuthzResult.diagnostics.reasons` and `ValidationError.policy_id`, instead of the auto-generated `policy0`/`policy1`/... id. Annotations are inert in Cedar evaluation per the [Cedar docs](https://docs.cedarpolicy.com/policies/syntax-policy.html#term-parc-annotations); this is a labeling step on the response surface, not a rename of the underlying `PolicyId` ([#29](https://github.com/k9securityio/cedar-py/issues/29), [#74](https://github.com/k9securityio/cedar-py/issues/74))
 
 ### Changed
 
 - **Behavior change.** `is_authorized` / `is_authorized_batch` now return `Decision.NoDecision` with a diagnostic when given an invalid schema, instead of silently discarding the schema and returning a real `Allow` / `Deny`. The same path applies in `validate_policies` ([#65](https://github.com/k9securityio/cedar-py/pull/65))
-- **Behavior change.** Two policies with the same `@id` annotation now surface as `Decision.NoDecision` (in `is_authorized`) or `validation_passed=False` (in `validate_policies`) with a `"duplicate policy id"` diagnostic. Prior to [#66](https://github.com/k9securityio/cedar-py/pull/66), `@id` annotations were ignored entirely, so duplicates were inert ([#66](https://github.com/k9securityio/cedar-py/pull/66))
 
 ## [4.8.1] - 2026-04-22
 
