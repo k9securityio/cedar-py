@@ -632,34 +632,35 @@ class AuthorizeTestCase(unittest.TestCase):
         self.assertEqual(Decision.Allow, authz_result.decision)
         self.assertEqual(["alice_view"], authz_result.diagnostics.reasons)
 
-    def test_id_annotation_value_less_syntax(self):
+    def test_id_annotation_empty_value_falls_back_to_parser_id(self):
         # Per the docs: "Values are optional; omitting a value means the
         # annotation implicitly equals "", making @annotationname equivalent
-        # to @annotationname("")."
+        # to @annotationname("")." Both `@id` and `@id("")` therefore carry an
+        # empty annotation value.
         #
-        # cedar-py surfaces the resolved @id verbatim, so a value-less @id
-        # produces an empty-string display id rather than falling back to
-        # the parser-generated id. This is faithful to Cedar's documented
-        # syntax (the user wrote an empty annotation value on purpose).
-        policies = """
-            @id
-            permit(
-                principal == User::"alice",
-                action == Action::"view",
-                resource
-            );
-        """.strip()
+        # @id is a labeling convention for identifying policies. An empty
+        # display id is unhelpful — callers can't log it, lookup against it,
+        # or differentiate it from a missing reason. cedar-py treats an
+        # empty @id value the same as a missing @id and falls back to the
+        # parser-generated id. This is a deliberate cedar-py choice and
+        # differs from cedar-policy-cli, which would rename the policy to "".
+        for policy_body in [
+            # @id with no parentheses — implicitly @id("")
+            '@id\npermit(principal == User::"alice", action == Action::"view", resource);',
+            # @id with explicit empty string
+            '@id("")\npermit(principal == User::"alice", action == Action::"view", resource);',
+        ]:
+            with self.subTest(policy_body=policy_body):
+                request = {
+                    "principal": 'User::"alice"',
+                    "action": 'Action::"view"',
+                    "resource": 'Photo::"alice_w2.jpg"',
+                    "context": {},
+                }
 
-        request = {
-            "principal": 'User::"alice"',
-            "action": 'Action::"view"',
-            "resource": 'Photo::"alice_w2.jpg"',
-            "context": {},
-        }
-
-        authz_result: AuthzResult = is_authorized(request, policies, self.entities)
-        self.assertEqual(Decision.Allow, authz_result.decision)
-        self.assertEqual([""], authz_result.diagnostics.reasons)
+                authz_result: AuthzResult = is_authorized(request, policy_body, self.entities)
+                self.assertEqual(Decision.Allow, authz_result.decision)
+                self.assertEqual(["policy0"], authz_result.diagnostics.reasons)
 
     def test_id_annotation_does_not_affect_evaluation(self):
         # Regression guard for the docs property "an annotation has no impact

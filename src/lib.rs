@@ -419,7 +419,15 @@ fn load_entities(entities_str: String, schema: Option<&Schema>) -> Result<Entiti
 }
 
 /// Resolve a policy's display id: the value of its `@id` annotation if
-/// present, otherwise the parser-generated `PolicyId` as a string.
+/// present and non-empty, otherwise the parser-generated `PolicyId` as a
+/// string.
+///
+/// Per the Cedar docs, `@id` (no value) is equivalent to `@id("")` — a valid
+/// but empty string. cedar-py treats `@id` as a labeling concern, so an empty
+/// annotation value is unhelpful as a display id and falls through to the
+/// parser id. This is a deliberate cedar-py choice; it differs from
+/// cedar-policy-cli's `rename_from_id_annotation`, which would rename the
+/// policy to the empty string.
 ///
 /// `Policy::annotations()` returns raw `&str` keys, so we can match on `"id"`
 /// without paying Cedar's identifier-parse cost (which `PolicySet::annotation`
@@ -429,7 +437,9 @@ fn load_entities(entities_str: String, schema: Option<&Schema>) -> Result<Entiti
 fn resolve_display_id(policy_set: &PolicySet, pid: &PolicyId) -> String {
     if let Some(p) = policy_set.policy(pid) {
         if let Some((_, v)) = p.annotations().find(|(k, _)| *k == "id") {
-            return v.to_string();
+            if !v.is_empty() {
+                return v.to_string();
+            }
         }
     }
     pid.to_string()
