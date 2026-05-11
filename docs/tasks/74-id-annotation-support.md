@@ -13,9 +13,9 @@ Switch from **Path A** (rebuild the `PolicySet` so renamed ids appear natively i
 
 ## High-level implementation steps
 
-1. **Pipe the parsed `PolicySet` into response construction.** `AuthzResponse::new` currently takes only Cedar's `Response`. It needs access to the `PolicySet` so it can look up `@id` annotations per matched policy via `PolicySet::annotation(pid, "id")` (third_party/cedar/cedar-policy/src/api.rs:1260). `execute_authorization_request` in `src/lib.rs:317` already has the `PolicySet` reference — pass it through.
+1. ✅ **Pipe the parsed `PolicySet` into response construction.** `AuthzResponse::new` currently takes only Cedar's `Response`. It needs access to the `PolicySet` so it can look up `@id` annotations per matched policy via `PolicySet::annotation(pid, "id")` (third_party/cedar/cedar-policy/src/api.rs:1260). `execute_authorization_request` in `src/lib.rs:317` already has the `PolicySet` reference — pass it through.
 
-2. **Resolve `@id` at serialization time in `DiagnosticsSer.reason`.** For each `PolicyId` in `response.diagnostics().reason()`, emit `policy_set.annotation(pid, "id").unwrap_or(pid.as_ref()).to_string()`. The wire shape stays `HashSet<String>` so Python's `AuthzResult.diagnostics.reasons` behavior is unchanged from #66, but no `PolicyId` renaming happens.
+2. ✅ **Resolve `@id` at serialization time in `DiagnosticsSer.reason`.** Hoisted into a `resolve_display_id(policy_set, pid)` helper to deduplicate with the validation path and avoid the `Cedar::Id` parse cost of `PolicySet::annotation` — see notes on step 15. For each `PolicyId` in `response.diagnostics().reason()`, emit `policy_set.annotation(pid, "id").unwrap_or(pid.as_ref()).to_string()`. The wire shape stays `HashSet<String>` so Python's `AuthzResult.diagnostics.reasons` behavior is unchanged from #66, but no `PolicyId` renaming happens.
 
 3. **Do the same for `validate_policies`.** After `validator.validate(...)`, walk `validation_result.validation_errors()` and replace each `policy_id` with the `@id` annotation (if present) before building `ValidationErrorSer`. The validation runs against the un-renamed `PolicySet`; only the serialized error surface is affected.
 
@@ -86,9 +86,9 @@ Support `@id` on templates.
 
    Un-annotated policies retain their parser-generated id (`policy0`, `policy1`, …) — same observable behavior as v4.8.0 and earlier.
 
-3. **Thread `policy_set` through `execute_authorization_request`** (`src/lib.rs:316–354`). The reference is already in scope (`policy_set: &PolicySet` parameter at line 319); just forward it to the `AuthzResponse::new` call at line 345.
+3. ✅ **Thread `policy_set` through `execute_authorization_request`** (`src/lib.rs:316–354`). The reference is already in scope (`policy_set: &PolicySet` parameter at line 319); just forward it to the `AuthzResponse::new` call at line 345.
 
-4. **Remove the Path A rename in `is_authorized_batch`** (`src/lib.rs:124–141`). Replace the nested match with the direct parse result:
+4. ✅ **Remove the Path A rename in `is_authorized_batch`** (`src/lib.rs:124–141`). Replace the nested match with the direct parse result:
 
    ```rust
    let policy_set = match PolicySet::from_str(&policies) {
@@ -102,9 +102,9 @@ Support `@id` on templates.
    };
    ```
 
-5. **Remove the Path A rename in `validate_policies`** (`src/lib.rs:478–504`). Same shape as step 4. The validator runs against the un-renamed `PolicySet`.
+5. ✅ **Remove the Path A rename in `validate_policies`** (`src/lib.rs:478–504`). Same shape as step 4. The validator runs against the un-renamed `PolicySet`.
 
-6. **Resolve `@id` for validation errors** (`src/lib.rs:555–566`). After `validator.validate(...)`, map each `ValidationError` like so:
+6. ✅ **Resolve `@id` for validation errors** — via the shared `resolve_display_id` helper. (`src/lib.rs:555–566`). After `validator.validate(...)`, map each `ValidationError` like so:
 
    ```rust
    errors: validation_result
@@ -120,17 +120,17 @@ Support `@id` on templates.
        .collect(),
    ```
 
-7. **Delete `rename_from_id_annotation`** (`src/lib.rs:428–473`) outright. Nothing else calls it after steps 4 and 5.
+7. ✅ **Delete `rename_from_id_annotation`** (`src/lib.rs:428–473`) outright. Nothing else calls it after steps 4 and 5.
 
-8. **Build & smoke-test:** `maturin develop --release` from inside `venv-dev`. Run `pytest tests/unit -q` and confirm only the duplicate-`@id` test fails (it's about to be rewritten in step 11).
+8. ✅ **Build & smoke-test:** `maturin develop --release` from inside `venv-dev`. Run `pytest tests/unit -q` and confirm only the duplicate-`@id` test fails (it's about to be rewritten in step 11).
 
 ### Python tests — `tests/unit/test_authorize.py`
 
-9. **Keep `test_id_annotation_renames_policy_id_in_reasons`** (`tests/unit/test_authorize.py:505–527`) as-is — behavior is unchanged from the user's perspective.
+9. ✅ **Keep `test_id_annotation_renames_policy_id_in_reasons`** (`tests/unit/test_authorize.py:505–527`) as-is — behavior is unchanged from the user's perspective.
 
-10. **Keep `test_id_annotation_mixed_with_unannotated_policies`** (`tests/unit/test_authorize.py:529–567`) as-is — un-annotated policies still surface as `policy0`/`policy1`/… per parser order.
+10. ✅ **Keep `test_id_annotation_mixed_with_unannotated_policies`** (`tests/unit/test_authorize.py:529–567`) as-is — un-annotated policies still surface as `policy0`/`policy1`/… per parser order.
 
-11. **Rewrite `test_id_annotation_duplicate_returns_no_decision`** (`tests/unit/test_authorize.py:569–597`) to assert the new Path B semantics:
+11. ✅ **Rewrite `test_id_annotation_duplicate_returns_no_decision`** — landed as `test_id_annotation_duplicates_are_allowed`. The companion `test_validate_with_duplicate_policy_id_annotations` in `test_validate.py` was likewise rewritten to assert that validation now passes for duplicate `@id`s. (`tests/unit/test_authorize.py:569–597`) to assert the new Path B semantics:
 
     - Rename to `test_id_annotation_duplicate_is_allowed` (or similar).
     - Assert `decision == Allow` for a request that matches both duplicates.
@@ -138,53 +138,60 @@ Support `@id` on templates.
     - Assert `diagnostics.errors == []`.
     - Doc-comment the rationale: matches Cedar engine semantics (annotations are inert) and v4.8.1 behavior (duplicates were silently accepted because the parser-generated ids never collided).
 
-12. **Add a new test asserting evaluation independence from `@id`.** Two `permit`s with the same `@id("X")` but different `principal ==` clauses — verify each request still routes to the correct policy and returns the expected `Allow`/`Deny`. This is the regression test guarding against any future drift back toward "annotations affect evaluation".
+12. ✅ **Add a new test asserting evaluation independence from `@id`.** Landed as `test_id_annotation_does_not_affect_evaluation` — covers alice/bob (each route to their own policy) and carol (no match → `Deny`). Two `permit`s with the same `@id("X")` but different `principal ==` clauses — verify each request still routes to the correct policy and returns the expected `Allow`/`Deny`. This is the regression test guarding against any future drift back toward "annotations affect evaluation".
 
-13. **Add a new test for `validate_policies` annotation resolution.** Cover both: (a) a validation error on an `@id`-annotated policy reports `ValidationError.policy_id == "<the @id value>"`; (b) a validation error on an un-annotated policy reports `policy_id == "policy0"` (or similar).
+13. ✅ **Add a new test for `validate_policies` annotation resolution.** Existing `test_id_annotation_renames_policy_id_in_validation_errors` covers case (a); new `test_validation_error_reports_parser_id_when_no_id_annotation` covers case (b).
 
-14. **Audit the unit test suite against the Cedar annotations documentation.** Read https://docs.cedarpolicy.com/policies/syntax-policy.html#term-parc-annotations end-to-end and cross-check every behavior the docs assert against what the cedar-py tests actually cover. Two failure modes to look for:
+14. ✅ **Audit the unit test suite against the Cedar annotations documentation.**
 
-    - **Gaps** — documented annotation behavior that we don't exercise anywhere.
-    - **Misalignments** — tests that assert behavior contrary to the docs (e.g., implying annotations affect evaluation, or that `@id` is somehow privileged in the Cedar language).
+    Docs claims fetched from https://docs.cedarpolicy.com/policies/syntax-policy.html#term-parc-annotations on 2026-05-10:
+    1. Annotations are "arbitrary key-value pairs" with "no impact on policy evaluation."
+    2. Syntax: `@annotationname("annotation value")`.
+    3. **Values are optional**: omitting the value implicitly equals `""`, so `@annotationname` ≡ `@annotationname("")`.
+    4. Multiple annotations allowed per policy.
+    5. Annotations must appear at the top of the policy, before the effect.
+    6. "`@id` is not special in the Cedar language, it behaves like any other annotation."
+    7. "The Cedar CLI uses the `@id` annotation to set policy IDs, but other interfaces, such as the Cedar APIs, have other ways to set policy IDs."
+    8. Example shown: `@advice("My advice")` `@id("My ID")` `@shadow_mode` stacked on one policy.
 
-    Specific properties to check against the docs (this list is the audit checklist, not exhaustive — supplement from the docs page):
+    Findings & convergence actions taken:
 
-    - "An annotation has no impact on policy evaluation" — we should have at least one test that exercises this directly (covered by step 12 above; verify it lives up to this docs statement on review).
-    - "`@id` is not special in the Cedar language" — no test should assert engine-level semantic behavior driven by `@id`; only labeling behavior in cedar-py's serialized response.
-    - Annotation syntax / multiple annotations on one policy — confirm cedar-py preserves and surfaces non-`@id` annotations correctly (or, if it doesn't, that's a deliberate gap to document, not a test).
-    - Annotation values are strings — confirm we don't treat the `@id` value as anything other than a string.
-    - Annotations on templates — confirm Path B's template handling matches the docs (cedarpy doesn't surface a templates API yet, but the Rust code should still resolve `@id` on linked policies derived from templates if/when that path becomes user-reachable).
+    - **Misalignment (now resolved)**: pre-existing `test_id_annotation_duplicate_returns_no_decision` (authorize) and `test_validate_with_duplicate_policy_id_annotations` (validate) asserted that duplicate `@id`s force `NoDecision` / `validation_passed=False`. This was a Path-A-specific behavior that contradicts docs claim 1 (annotations don't affect evaluation) and claim 6 (`@id` isn't special). Convergence: rewrote both as part of step 11 to assert duplicates are accepted.
+    - **Gap (now closed)**: docs claim 1 wasn't directly exercised. Convergence: added `test_id_annotation_does_not_affect_evaluation` (step 12) — two policies with shared `@id` and different `principal ==` clauses, three principals, asserts each request lands on the right policy regardless of the shared annotation value.
+    - **Gap (now closed)**: docs claim 4 (multiple annotations per policy) wasn't exercised. Convergence: added `test_id_annotation_coexists_with_other_annotations` — uses the docs' example trio `@advice("be careful")` + `@id("alice_view")` + `@shadow_mode` and asserts `@id` resolution still works in the presence of unrelated annotations.
+    - **Gap (now closed)**: docs claim 3 (value-less annotation ≡ empty-string value) wasn't exercised, and the behavior is non-obvious — cedar-py's `resolve_display_id` returns the empty string rather than falling back to the parser id, since the user explicitly wrote `@id` (per the docs equivalence). Convergence: added `test_id_annotation_value_less_syntax` to lock the behavior in and document the choice.
 
-    For each gap or misalignment found, append an entry to this step in the form:
+    Deferred (out of scope for `@id` resolution):
 
-    ```
-    - <one-line description of the gap or misalignment>
-      Convergence: <add test X / modify test Y / document deviation in Z>
-    ```
-
-    Land the resulting test additions/modifications as part of this PR; defer only items that are out of scope for `@id` resolution and would expand the diff significantly (e.g., new APIs for surfacing arbitrary annotations).
+    - **Gap**: cedar-py has no general API for surfacing non-`@id` annotations to callers. The docs say annotations are "available for use by services and applications that read and process Cedar policies" — but no `cedarpy` API exposes them. Convergence proposal: open a follow-up issue for a `policy_annotations(policies: str) -> List[Dict[str, str]]` (or similar) API once a real use case appears. Would expand the diff significantly and isn't required for `@id`.
+    - **Gap**: docs claim 5 (annotations must precede the effect) is enforced by the Cedar parser; cedar-py would surface a parse error and we don't need to test parser internals.
+    - **Gap**: annotations on templates. cedar-py doesn't expose a templates API yet (#29). When templates land, the same `resolve_display_id` path will need a template-aware lookup. Tracked under #29.
 
 ### Benchmarks
 
-15. **Verify with `make benchmark-compare`.** Expectation: every benchmark within v4.8.0 noise floor (medians close to or below the synthesized v4.8.0 baseline at `tests/benchmark/results/baseline-v4_8_0-median.json`). Single-run noise can produce occasional warnings — that's expected per #69 goal 3.
+15. ✅ **Verify with `make benchmark-compare`.** All medians within v4.8.0 noise (≤3%) after the `resolve_display_id` optimization:
 
-16. **Optional — capture a 7th historical state.** Once the branch is settled, add `"path_b_<short-sha>:<sha>:Path B post-process @id"` to `STATES` in `tests/benchmark/capture_history.sh` and run `make benchmark-history` to commit the data. Skip if the user prefers to defer this to a follow-up. The PR #70 state (#73) and this Path B state would then bracket the regression's resolution in `HISTORY.md`.
+    | Benchmark | Baseline median | Path B median | Δ median |
+    |---|---|---|---|
+    | `test_complex_policy` | 273.3 | 272.4–276.2 | -0.4% to +1.1% |
+    | `test_batch_simple_policy` | 384.5 | 387.2–388.3 | +0.7% to +1.0% |
+    | `test_sandbox_b_batch_multiple_users` | 683.1 | 684.4–686.6 | +0.2% to +0.5% |
+    | `test_batch_complex_policy` | 1234.2 | 1240.5–1253.2 | +0.5% to +1.5% |
+
+    Single-run mean-based failures (e.g. `test_medium_entity_set` mean +30% driven by a 15ms max outlier) are expected per #69 goal 3 and the CLAUDE.md note on `mean` noise — the median signal is the gating one.
+
+    A first attempt that called `PolicySet::annotation(pid, "id")` per matched policy showed a reproducible +9% median regression on `test_batch_simple_policy` because cedar parses the `"id"` key as a Cedar `Id` on every call. Switching to `policy.annotations().find(|(k, _)| *k == "id")` (which works on raw `&str` keys) eliminated the regression.
+
+16. ❌ **Optional — capture a 7th historical state.** Deferring to a follow-up commit so the implementation diff stays focused. The `make benchmark-compare` results above are sufficient evidence for review; PR #70's state (#73) already provides the bracketing data point.
 
 ### Docs
 
-17. **Update `CHANGELOG.md`.** The `[Unreleased]` section currently advertises "Honor `@id` annotations" (from #66). Rewrite that entry to describe the Path B behavior:
+17. ✅ **Update `CHANGELOG.md`.** Rewrote the `[Unreleased]` `@id` entry as a labeling-only feature and dropped the duplicate-`@id` NoDecision line (no longer the behavior). References #29 and #74.
 
-    - User-visible behavior unchanged from #66 on the happy path (`@id` surfaces in `reasons` and `ValidationError.policy_id`).
-    - **Removed** in same release: duplicate-`@id` NoDecision behavior (#66 had it; now duplicates are accepted, matching Cedar engine semantics).
-    - No performance regression vs v4.8.0 (refer to bench numbers).
-    - Reference the new issue #74 alongside the original #29 / #66.
-
-18. **Update `CLAUDE.md`** — the "cedar API gotchas" section currently captures the PolicySet-rebuild cost lesson. Add a complementary entry:
-
-    > **Annotations are inert in Cedar evaluation.** `@id` and other annotations have no effect on policy evaluation; they are pure metadata. To surface `@id` in `diagnostics.reasons` or `ValidationError.policy_id`, post-process at response-serialization time via `PolicySet::annotation(pid, "id")`. Do **not** rebuild the `PolicySet` to apply `@id` — that pays `O(|PolicySet|)` cost per call for a labeling concern.
+18. ✅ **Update `CLAUDE.md`.** Added a "Cedar API gotchas" section with two entries: annotations are inert in evaluation (with the post-process recipe), and the `PolicySet::annotation` Cedar-`Id`-parse trap with the cheaper `policy.annotations().find()` alternative.
 
 ### Cleanup / close-out
 
-19. **Open the PR** with body referencing #74 (closes), #68 (closes — root cause fixed), and #70 (will be superseded; close without merge once this PR merges). Include the benchmark-compare output as evidence.
+19. 🚧 **Open the PR** with body referencing #74 (closes), #68 (closes — root cause fixed), and #70 (will be superseded; close without merge once this PR merges). Include the benchmark-compare output as evidence. Pending user direction to commit and push.
 
-20. **After merge:** close #68, close #70 with a comment pointing at the merged PR, comment on #66 noting the Path B replacement is the production approach. Delete the `feat/id-annotations-via-post-process` branch locally and on origin once the PR closes.
+20. 🚧 **After merge:** close #68, close #70 with a comment pointing at the merged PR, comment on #66 noting the Path B replacement is the production approach. Delete the `feat/id-annotations-via-post-process` branch locally and on origin once the PR closes.
