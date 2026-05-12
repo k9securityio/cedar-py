@@ -10,7 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- `@id("...")` annotations on a policy now surface as the human-readable id in `AuthzResult.diagnostics.reasons` and `ValidationError.policy_id`, instead of the auto-generated `policy0`/`policy1`/... id. Annotations are inert in Cedar evaluation per the [Cedar docs](https://docs.cedarpolicy.com/policies/syntax-policy.html#term-parc-annotations); this is a labeling step on the response surface, not a rename of the underlying `PolicyId` ([#29](https://github.com/k9securityio/cedar-py/issues/29), [#74](https://github.com/k9securityio/cedar-py/issues/74))
+- **Behavior change.** `@id("...")` annotations on a policy now surface as the human-readable id in `AuthzResult.diagnostics.reasons` and `ValidationError.policy_id`, instead of the auto-generated `policy0`/`policy1`/... id. Annotations are inert in Cedar evaluation per the [Cedar docs](https://docs.cedarpolicy.com/policies/syntax-policy.html#term-parc-annotations); this is a labeling step on the response surface, not a rename of the underlying `PolicyId`. An `@id` with an empty value — either `@id("")` or value-less `@id` (which per the Cedar docs is equivalent to `@id("")`) — falls back to the parser-generated id, since an empty display id is unhelpful for logs and lookups ([#29](https://github.com/k9securityio/cedar-py/issues/29), [#74](https://github.com/k9securityio/cedar-py/issues/74), [#75](https://github.com/k9securityio/cedar-py/pull/75))
 
 ### Changed
 
