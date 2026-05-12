@@ -1,0 +1,210 @@
+{
+  "commit": {
+    "sha": "faf92a418dabadfd021cb07d5dd6799c7e030df4",
+    "short_sha": "faf92a4",
+    "tag": null,
+    "label": "PR75 @id via post-process",
+    "date": "2026-05-11",
+    "subject": "Merge pull request #75 from k9securityio/feat/id-annotations-via-post-process",
+    "note": "PR75 @id via post-process"
+  },
+  "build": {
+    "mode": "release",
+    "python_implementation": "CPython",
+    "python_version": "3.11.1",
+    "platform": "Darwin-CPython-3.11-64bit"
+  },
+  "captured_at": "2026-05-12T20:43:34+00:00",
+  "save_prefix": "pr75_faf92a4",
+  "source_runs": [
+    "0028_pr75_faf92a4-run1.json",
+    "0029_pr75_faf92a4-run2.json",
+    "0030_pr75_faf92a4-run3.json",
+    "0031_pr75_faf92a4-run4.json",
+    "0032_pr75_faf92a4-run5.json"
+  ],
+  "benchmarks": {
+    "test_batch_complex_policy": {
+      "median_us": 1248.89,
+      "max_us": 1582.61,
+      "min_us": 1223.51,
+      "n_runs": 5,
+      "stdev_us": 151.84
+    },
+    "test_batch_simple_policy": {
+      "median_us": 404.15,
+      "max_us": 450.14,
+      "min_us": 388.46,
+      "n_runs": 5,
+      "stdev_us": 24.49
+    },
+    "test_batch_size_scaling[100]": {
+      "median_us": 4161.26,
+      "max_us": 4573.44,
+      "min_us": 4106.33,
+      "n_runs": 5,
+      "stdev_us": 195.39
+    },
+    "test_batch_size_scaling[10]": {
+      "median_us": 1105.68,
+      "max_us": 1270.41,
+      "min_us": 1099.99,
+      "n_runs": 5,
+      "stdev_us": 83.43
+    },
+    "test_batch_size_scaling[1]": {
+      "median_us": 828.4,
+      "max_us": 881.65,
+      "min_us": 803.93,
+      "n_runs": 5,
+      "stdev_us": 37.32
+    },
+    "test_batch_size_scaling[25]": {
+      "median_us": 1608.22,
+      "max_us": 1690.41,
+      "min_us": 1575.6,
+      "n_runs": 5,
+      "stdev_us": 45.96
+    },
+    "test_batch_size_scaling[50]": {
+      "median_us": 2516.67,
+      "max_us": 3051.72,
+      "min_us": 2437.32,
+      "n_runs": 5,
+      "stdev_us": 257.31
+    },
+    "test_batch_size_scaling[5]": {
+      "median_us": 957.05,
+      "max_us": 1102.87,
+      "min_us": 935.55,
+      "n_runs": 5,
+      "stdev_us": 69.49
+    },
+    "test_complex_policy": {
+      "median_us": 279.39,
+      "max_us": 342.5,
+      "min_us": 275.86,
+      "n_runs": 5,
+      "stdev_us": 28.73
+    },
+    "test_context_as_dict": {
+      "median_us": 813.05,
+      "max_us": 952.48,
+      "min_us": 793.06,
+      "n_runs": 5,
+      "stdev_us": 64.23
+    },
+    "test_context_as_json_string": {
+      "median_us": 830.15,
+      "max_us": 1032.23,
+      "min_us": 806.23,
+      "n_runs": 5,
+      "stdev_us": 94.04
+    },
+    "test_entities_as_json_string": {
+      "median_us": 756.28,
+      "max_us": 802.46,
+      "min_us": 717.87,
+      "n_runs": 5,
+      "stdev_us": 38.41
+    },
+    "test_entities_as_list": {
+      "median_us": 808.18,
+      "max_us": 852.19,
+      "min_us": 798.64,
+      "n_runs": 5,
+      "stdev_us": 21.43
+    },
+    "test_large_entity_set": {
+      "median_us": 3855.7,
+      "max_us": 3943.77,
+      "min_us": 3829.96,
+      "n_runs": 5,
+      "stdev_us": 49.41
+    },
+    "test_medium_entity_set": {
+      "median_us": 798.53,
+      "max_us": 1022.91,
+      "min_us": 795.66,
+      "n_runs": 5,
+      "stdev_us": 99.41
+    },
+    "test_medium_policy": {
+      "median_us": 193.57,
+      "max_us": 200.9,
+      "min_us": 189.41,
+      "n_runs": 5,
+      "stdev_us": 4.29
+    },
+    "test_sandbox_b_batch_mixed_actions": {
+      "median_us": 1155.07,
+      "max_us": 1285.32,
+      "min_us": 1104.35,
+      "n_runs": 5,
+      "stdev_us": 75.34
+    },
+    "test_sandbox_b_batch_multiple_users": {
+      "median_us": 708.65,
+      "max_us": 765.43,
+      "min_us": 687.93,
+      "n_runs": 5,
+      "stdev_us": 31.41
+    },
+    "test_sandbox_b_delete_with_auth": {
+      "median_us": 594.49,
+      "max_us": 931.04,
+      "min_us": 583.68,
+      "n_runs": 5,
+      "stdev_us": 150.2
+    },
+    "test_sandbox_b_view_own_photo": {
+      "median_us": 597.2,
+      "max_us": 817.43,
+      "min_us": 590.7,
+      "n_runs": 5,
+      "stdev_us": 99.86
+    },
+    "test_sandbox_b_view_public_photo": {
+      "median_us": 611.18,
+      "max_us": 628.56,
+      "min_us": 582.06,
+      "n_runs": 5,
+      "stdev_us": 16.73
+    },
+    "test_simple_policy_allow": {
+      "median_us": 146.68,
+      "max_us": 156.18,
+      "min_us": 144.83,
+      "n_runs": 5,
+      "stdev_us": 4.55
+    },
+    "test_simple_policy_deny": {
+      "median_us": 147.1,
+      "max_us": 163.74,
+      "min_us": 144.08,
+      "n_runs": 5,
+      "stdev_us": 7.89
+    },
+    "test_small_entity_set": {
+      "median_us": 193.06,
+      "max_us": 211.13,
+      "min_us": 186.8,
+      "n_runs": 5,
+      "stdev_us": 9.83
+    },
+    "test_ten_batch_call": {
+      "median_us": 1134.18,
+      "max_us": 1205.48,
+      "min_us": 1088.82,
+      "n_runs": 5,
+      "stdev_us": 48.51
+    },
+    "test_ten_single_calls": {
+      "median_us": 8110.01,
+      "max_us": 8844.79,
+      "min_us": 8022.44,
+      "n_runs": 5,
+      "stdev_us": 339.2
+    }
+  }
+}
