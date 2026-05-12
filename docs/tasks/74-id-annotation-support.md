@@ -192,6 +192,13 @@ Support `@id` on templates.
 
 ### Cleanup / close-out
 
-19. 🚧 **Open the PR** with body referencing #74 (closes), #68 (closes — root cause fixed), and #70 (will be superseded; close without merge once this PR merges). Include the benchmark-compare output as evidence. Pending user direction to commit and push.
+19. ✅ **Open the PR** — landed as #75 with `Resolves #74`; merged.
 
-20. 🚧 **After merge:** close #68, close #70 with a comment pointing at the merged PR, comment on #66 noting the Path B replacement is the production approach. Delete the `feat/id-annotations-via-post-process` branch locally and on origin once the PR closes.
+20. ✅ **After merge:**
+    - #74 auto-closed via `Resolves #74` in #75.
+    - #68 closed by the user.
+    - #70 closed by the user (superseded, not merged).
+    - Comment posted on #66 noting Path B replaces the rename-based implementation.
+    - `feat/id-annotations-via-post-process` deleted locally and on origin.
+
+    Side note (outside this task): `feat/issue-69-state-pr70` (PR #73, closed) and `fix/optional-resolve-policy-ids` (PR #70, closed) remain on origin and could be deleted as a follow-up housekeeping pass.
