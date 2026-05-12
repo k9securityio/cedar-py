@@ -40,7 +40,10 @@ integration-tests: submodules
 release:
 	@echo Building a release
 	set -e ;\
-	maturin build ;\
+	maturin build --release ;\
+	WHEEL=$$(ls -1t target/wheels/cedarpy-*.whl | head -1) ;\
+	echo "Installing $$WHEEL for test" ;\
+	python -m pip install --force-reinstall --no-deps "$$WHEEL" ;\
 	pytest
 
 # Performance benchmark targets
