@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [4.8.2] - 2026-05-12
+
 ### Added
 
 - **Behavior change.** `@id("...")` annotations on a policy now surface as the human-readable id in `AuthzResult.diagnostics.reasons` and `ValidationError.policy_id`, instead of the auto-generated `policy0`/`policy1`/... id. Annotations are inert in Cedar evaluation per the [Cedar docs](https://docs.cedarpolicy.com/policies/syntax-policy.html#term-parc-annotations); this is a labeling step on the response surface, not a rename of the underlying `PolicyId`. An `@id` with an empty value — either `@id("")` or value-less `@id` (which per the Cedar docs is equivalent to `@id("")`) — falls back to the parser-generated id, since an empty display id is unhelpful for logs and lookups ([#29](https://github.com/k9securityio/cedar-py/issues/29), [#74](https://github.com/k9securityio/cedar-py/issues/74), [#75](https://github.com/k9securityio/cedar-py/pull/75))
@@ -15,6 +17,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - **Behavior change.** `is_authorized` / `is_authorized_batch` now return `Decision.NoDecision` with a diagnostic when given an invalid schema, instead of silently discarding the schema and returning a real `Allow` / `Deny`. The same path applies in `validate_policies` ([#65](https://github.com/k9securityio/cedar-py/pull/65))
+
+### Fixed
+
+- `make release` now builds and tests a release-mode wheel. The target previously ran `maturin build` (which defaults to the dev/debug profile) and then ran pytest against whatever cedarpy was currently installed in the venv — neither half tested the wheel that would ship. PyPI artifacts were unaffected (CI already passed `--release`); this fixes locally-built wheels.
 
 ## [4.8.1] - 2026-04-22
 
@@ -47,6 +53,7 @@ Dependency update release. No functional or API changes — Cedar Policy engine 
 
 - Performance regression test suite built on `pytest-benchmark` ([#39](https://github.com/k9securityio/cedar-py/pull/39))
 
-[Unreleased]: https://github.com/k9securityio/cedar-py/compare/v4.8.1...HEAD
+[Unreleased]: https://github.com/k9securityio/cedar-py/compare/v4.8.2...HEAD
+[4.8.2]: https://github.com/k9securityio/cedar-py/compare/v4.8.1...v4.8.2
 [4.8.1]: https://github.com/k9securityio/cedar-py/compare/v4.8.0...v4.8.1
 [4.8.0]: https://github.com/k9securityio/cedar-py/compare/v4.7.2...v4.8.0
