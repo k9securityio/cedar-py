@@ -31,6 +31,15 @@ class Diagnostics:
         # (intentionally) map 'reason' key in diagnostics dict to 'reasons' property (plural)
         return self._diagnostics.get('reason', list())
 
+    @property
+    def id_annotations(self) -> dict:
+        """Map from each parser-generated policy id in ``reasons`` to its
+        ``@id`` annotation value, when the matched policy carries a non-empty
+        ``@id``. Policies without an ``@id`` annotation (or with an empty
+        value) are omitted from the map.
+        """
+        return self._diagnostics.get('id_annotations', dict())
+
 
 class AuthzResult:
     def __init__(self, authz_resp: dict) -> None:
@@ -103,6 +112,15 @@ class ValidationResult:
     def errors(self) -> List['ValidationError']:
         """List of validation errors (empty if validation passed)."""
         return self._errors
+
+    @property
+    def id_annotations(self) -> dict:
+        """Map from each parser-generated policy id appearing in ``errors``
+        to its ``@id`` annotation value, when the source policy carries a
+        non-empty ``@id``. Policies without an ``@id`` annotation (or with an
+        empty value) are omitted from the map.
+        """
+        return self._result.get('id_annotations', dict())
 
     def __bool__(self) -> bool:
         """Allows `if validation_result:` syntax."""
