@@ -645,16 +645,17 @@ class AuthorizeTestCase(unittest.TestCase):
         self.assertEqual({"policy0": "alice_view"},
                          authz_result.diagnostics.id_annotations)
 
-    def test_id_annotation_empty_value_is_omitted_from_annotations_map(self):
+    def test_id_annotation_empty_value_is_reported_verbatim(self):
         # Per the docs: "Values are optional; omitting a value means the
         # annotation implicitly equals "", making @annotationname equivalent
-        # to @annotationname("")." Both `@id` and `@id("")` therefore carry an
-        # empty annotation value.
+        # to @annotationname("")." Both `@id` and `@id("")` therefore carry
+        # an empty annotation value.
         #
-        # @id is a labeling convention for identifying policies. An empty
-        # display id is unhelpful — callers can't log it or look up against
-        # it — so cedar-py omits such policies from id_annotations
-        # entirely. reasons still surfaces the parser-generated id.
+        # id_annotations reports the literal annotation value the policy
+        # declared, including the empty string. The map's presence is the
+        # signal that an `@id` exists; the value is what the policy author
+        # wrote. (A policy with no `@id` at all is omitted from the map —
+        # see test_id_annotation_mixed_with_unannotated_policies.)
         for policy_body in [
             # @id with no parentheses — implicitly @id("")
             '@id\npermit(principal == User::"alice", action == Action::"view", resource);',
@@ -672,7 +673,8 @@ class AuthorizeTestCase(unittest.TestCase):
                 authz_result: AuthzResult = is_authorized(request, policy_body, self.entities)
                 self.assertEqual(Decision.Allow, authz_result.decision)
                 self.assertEqual(["policy0"], authz_result.diagnostics.reasons)
-                self.assertEqual({}, authz_result.diagnostics.id_annotations)
+                self.assertEqual({"policy0": ""},
+                                 authz_result.diagnostics.id_annotations)
 
     def test_id_annotation_does_not_affect_evaluation(self):
         # Regression guard for the docs property "an annotation has no impact

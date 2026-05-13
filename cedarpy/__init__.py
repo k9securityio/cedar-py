@@ -33,10 +33,12 @@ class Diagnostics:
 
     @property
     def id_annotations(self) -> dict:
-        """Map from each parser-generated policy id in ``reasons`` to its
-        ``@id`` annotation value, when the matched policy carries a non-empty
-        ``@id``. Policies without an ``@id`` annotation (or with an empty
-        value) are omitted from the map.
+        """Map from each parser-generated policy id in ``reasons`` to the
+        literal value of its ``@id`` annotation, when the matched policy
+        declares one. ``@id("foo")`` contributes ``"foo"``; ``@id("")`` /
+        bare ``@id`` (which the Cedar docs define as equivalent to
+        ``@id("")``) contributes ``""``. Policies with no ``@id`` annotation
+        are omitted from the map.
         """
         return self._diagnostics.get('id_annotations', dict())
 
@@ -116,9 +118,11 @@ class ValidationResult:
     @property
     def id_annotations(self) -> dict:
         """Map from each parser-generated policy id appearing in ``errors``
-        to its ``@id`` annotation value, when the source policy carries a
-        non-empty ``@id``. Policies without an ``@id`` annotation (or with an
-        empty value) are omitted from the map.
+        to the literal value of its ``@id`` annotation, when the source
+        policy declares one. ``@id("foo")`` contributes ``"foo"``;
+        ``@id("")`` / bare ``@id`` (which the Cedar docs define as equivalent
+        to ``@id("")``) contributes ``""``. Policies with no ``@id``
+        annotation are omitted from the map.
         """
         return self._result.get('id_annotations', dict())
 

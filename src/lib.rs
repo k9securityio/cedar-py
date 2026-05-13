@@ -244,10 +244,11 @@ pub struct DiagnosticsSer {
     /// same `@id` annotation. To recover the `@id` annotation value for any
     /// entry, look it up in `id_annotations`.
     reason: HashSet<PolicyId>,
-    /// Map from each parser-generated policy id in `reason` to its `@id`
-    /// annotation value, when the matched policy carries a non-empty `@id`.
-    /// Policies without an `@id` annotation (or with an empty value) are
-    /// omitted from the map.
+    /// Map from each parser-generated policy id in `reason` to the literal
+    /// value of its `@id` annotation, when the matched policy declares one.
+    /// `@id("foo")` contributes `"foo"`; `@id("")` / `@id` (which the Cedar
+    /// docs define as equivalent to `@id("")`) contributes `""`. Policies
+    /// with no `@id` annotation are omitted from the map.
     id_annotations: HashMap<String, String>,
     /// Errors that occurred during authorization. The errors should be
     /// treated as unordered, since policies may be evaluated in any order.
@@ -299,10 +300,11 @@ pub struct ValidationResultSer {
     validation_passed: bool,
     /// List of validation errors
     errors: Vec<ValidationErrorSer>,
-    /// Map from each parser-generated policy id appearing in `errors` to its
-    /// `@id` annotation value, when the source policy carries a non-empty
-    /// `@id`. Policies without an `@id` annotation (or with an empty value)
-    /// are omitted from the map.
+    /// Map from each parser-generated policy id appearing in `errors` to
+    /// the literal value of its `@id` annotation, when the source policy
+    /// declares one. `@id("foo")` contributes `"foo"`; `@id("")` / `@id`
+    /// (which the Cedar docs define as equivalent to `@id("")`) contributes
+    /// `""`. Policies with no `@id` annotation are omitted from the map.
     id_annotations: HashMap<String, String>,
 }
 
@@ -441,14 +443,11 @@ fn load_entities(entities_str: String, schema: Option<&Schema>) -> Result<Entiti
     );
 }
 
-/// Look up the `@id` annotation value for a policy, if it carries one with
-/// a non-empty value. Returns `None` when the policy has no `@id` annotation,
-/// when the annotation value is empty, or when no policy exists for `pid` in
-/// `policy_set`.
-///
-/// Per the Cedar docs, `@id` (no value) is equivalent to `@id("")` — a valid
-/// but empty string. cedar-py treats `@id` as a labeling concern, so an empty
-/// annotation value is unhelpful as a label and is treated as absent.
+/// Look up the `@id` annotation value for a policy, if the policy declares
+/// one. Returns `Some(value)` whenever `@id` is present — including the
+/// empty string for `@id` / `@id("")`, per the Cedar docs which treat the
+/// two as equivalent. Returns `None` only when the policy has no `@id`
+/// annotation at all, or when no policy exists for `pid` in `policy_set`.
 ///
 /// `Policy::annotations()` returns raw `&str` keys, so we can match on `"id"`
 /// without paying Cedar's identifier-parse cost (which `PolicySet::annotation`
@@ -457,7 +456,7 @@ fn load_entities(entities_str: String, schema: Option<&Schema>) -> Result<Entiti
 fn lookup_id_annotation(policy_set: &PolicySet, pid: &PolicyId) -> Option<String> {
     let p = policy_set.policy(pid)?;
     let (_, v) = p.annotations().find(|(k, _)| *k == "id")?;
-    if v.is_empty() { None } else { Some(v.to_string()) }
+    Some(v.to_string())
 }
 
 /// Validate Cedar policies against a schema and return a JSON result.
