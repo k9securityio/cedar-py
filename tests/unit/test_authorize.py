@@ -502,12 +502,12 @@ class AuthorizeTestCase(unittest.TestCase):
         self.assertEqual(1, len(authz_result.diagnostics.errors))
         self.assertIn("schema", authz_result.diagnostics.errors[0].lower())
 
-    def test_id_annotation_surfaces_in_id_annotations(self):
+    def test_id_annotation_surfaces_in_id_annotations_by_reason(self):
         # Feature from https://github.com/k9securityio/cedar-py/issues/29 (item 2),
         # revised per https://github.com/k9securityio/cedar-py/issues/77:
         # AuthzResult.diagnostics.reasons keeps the parser-generated policy id
         # (so duplicate @id values across tenants stay distinguishable), and
-        # the human-readable @id value is exposed via id_annotations.
+        # the human-readable @id value is exposed via id_annotations_by_reason.
         policies = """
             @id("alice_can_view")
             permit(
@@ -528,12 +528,12 @@ class AuthorizeTestCase(unittest.TestCase):
         self.assertEqual(Decision.Allow, authz_result.decision)
         self.assertEqual(["policy0"], authz_result.diagnostics.reasons)
         self.assertEqual({"policy0": "alice_can_view"},
-                         authz_result.diagnostics.id_annotations)
+                         authz_result.diagnostics.id_annotations_by_reason)
 
     def test_id_annotation_mixed_with_unannotated_policies(self):
         # Mix annotated + un-annotated policies. Both surface as parser
         # policy ids in reasons; only the annotated policy appears in
-        # id_annotations.
+        # id_annotations_by_reason.
         policies = """
             @id("alice_view")
             permit(
@@ -565,14 +565,14 @@ class AuthorizeTestCase(unittest.TestCase):
         self.assertEqual(Decision.Allow, alice_result.decision)
         self.assertEqual(["policy0"], alice_result.diagnostics.reasons)
         self.assertEqual({"policy0": "alice_view"},
-                         alice_result.diagnostics.id_annotations)
+                         alice_result.diagnostics.id_annotations_by_reason)
 
         bob_result: AuthzResult = is_authorized(bob_request, policies, self.entities)
         self.assertEqual(Decision.Allow, bob_result.decision)
         # un-annotated policy keeps cedar's parser id (some "policyN") and
-        # contributes no entry to id_annotations.
+        # contributes no entry to id_annotations_by_reason.
         self.assertEqual(["policy1"], bob_result.diagnostics.reasons)
-        self.assertEqual({}, bob_result.diagnostics.id_annotations)
+        self.assertEqual({}, bob_result.diagnostics.id_annotations_by_reason)
 
     def test_id_annotation_duplicates_are_allowed(self):
         # Cedar treats annotations as inert during evaluation
@@ -613,7 +613,7 @@ class AuthorizeTestCase(unittest.TestCase):
         # annotations map (without collapsing identity).
         self.assertEqual(["policy0"], authz_result.diagnostics.reasons)
         self.assertEqual({"policy0": "dup"},
-                         authz_result.diagnostics.id_annotations)
+                         authz_result.diagnostics.id_annotations_by_reason)
 
     def test_id_annotation_coexists_with_other_annotations(self):
         # Per the docs, "multiple annotations allowed per policy." Verify
@@ -643,7 +643,7 @@ class AuthorizeTestCase(unittest.TestCase):
         self.assertEqual(Decision.Allow, authz_result.decision)
         self.assertEqual(["policy0"], authz_result.diagnostics.reasons)
         self.assertEqual({"policy0": "alice_view"},
-                         authz_result.diagnostics.id_annotations)
+                         authz_result.diagnostics.id_annotations_by_reason)
 
     def test_id_annotation_empty_value_is_reported_verbatim(self):
         # Per the docs: "Values are optional; omitting a value means the
@@ -651,11 +651,11 @@ class AuthorizeTestCase(unittest.TestCase):
         # to @annotationname("")." Both `@id` and `@id("")` therefore carry
         # an empty annotation value.
         #
-        # id_annotations reports the literal annotation value the policy
-        # declared, including the empty string. The map's presence is the
-        # signal that an `@id` exists; the value is what the policy author
-        # wrote. (A policy with no `@id` at all is omitted from the map —
-        # see test_id_annotation_mixed_with_unannotated_policies.)
+        # id_annotations_by_reason reports the literal annotation value the
+        # policy declared, including the empty string. The map's presence
+        # is the signal that an `@id` exists; the value is what the policy
+        # author wrote. (A policy with no `@id` at all is omitted from the
+        # map — see test_id_annotation_mixed_with_unannotated_policies.)
         for policy_body in [
             # @id with no parentheses — implicitly @id("")
             '@id\npermit(principal == User::"alice", action == Action::"view", resource);',
@@ -674,7 +674,7 @@ class AuthorizeTestCase(unittest.TestCase):
                 self.assertEqual(Decision.Allow, authz_result.decision)
                 self.assertEqual(["policy0"], authz_result.diagnostics.reasons)
                 self.assertEqual({"policy0": ""},
-                                 authz_result.diagnostics.id_annotations)
+                                 authz_result.diagnostics.id_annotations_by_reason)
 
     def test_id_annotation_does_not_affect_evaluation(self):
         # Regression guard for the docs property "an annotation has no impact
@@ -722,19 +722,19 @@ class AuthorizeTestCase(unittest.TestCase):
         self.assertEqual(Decision.Allow, alice_result.decision)
         self.assertEqual(["policy0"], alice_result.diagnostics.reasons)
         self.assertEqual({"policy0": "shared"},
-                         alice_result.diagnostics.id_annotations)
+                         alice_result.diagnostics.id_annotations_by_reason)
 
         bob_result: AuthzResult = is_authorized(bob_request, policies, self.entities)
         self.assertEqual(Decision.Allow, bob_result.decision)
         self.assertEqual(["policy1"], bob_result.diagnostics.reasons)
         self.assertEqual({"policy1": "shared"},
-                         bob_result.diagnostics.id_annotations)
+                         bob_result.diagnostics.id_annotations_by_reason)
 
         # carol is named in neither policy: no policy matches, decision Deny.
         carol_result: AuthzResult = is_authorized(carol_request, policies, self.entities)
         self.assertEqual(Decision.Deny, carol_result.decision)
         self.assertEqual([], carol_result.diagnostics.reasons)
-        self.assertEqual({}, carol_result.diagnostics.id_annotations)
+        self.assertEqual({}, carol_result.diagnostics.id_annotations_by_reason)
 
     def test_issue_77_multi_tenant_baseline_permit_disambiguates(self):
         # Regression test for https://github.com/k9securityio/cedar-py/issues/77.
@@ -747,7 +747,7 @@ class AuthorizeTestCase(unittest.TestCase):
         # ("baseline-permit-all"), which is identical across tenants and
         # collapses tenant identity. This test asserts the post-77 contract:
         # reasons returns the parser id, and the @id label is recoverable
-        # via diagnostics.id_annotations.
+        # via diagnostics.id_annotations_by_reason.
         policies = """
             @id("baseline-permit-all")
             permit(principal, action, resource in App::"app-A");
@@ -773,18 +773,106 @@ class AuthorizeTestCase(unittest.TestCase):
         self.assertEqual(Decision.Allow, app_a_result.decision)
         self.assertEqual(["policy0"], app_a_result.diagnostics.reasons)
         self.assertEqual({"policy0": "baseline-permit-all"},
-                         app_a_result.diagnostics.id_annotations)
+                         app_a_result.diagnostics.id_annotations_by_reason)
 
         app_b_result: AuthzResult = is_authorized(app_b_request, policies, self.entities)
         self.assertEqual(Decision.Allow, app_b_result.decision)
         self.assertEqual(["policy1"], app_b_result.diagnostics.reasons)
         self.assertEqual({"policy1": "baseline-permit-all"},
-                         app_b_result.diagnostics.id_annotations)
+                         app_b_result.diagnostics.id_annotations_by_reason)
 
         # The two diagnostic identities are distinct, which is the property
         # issue #77 needs preserved.
         self.assertNotEqual(app_a_result.diagnostics.reasons,
                             app_b_result.diagnostics.reasons)
+
+    def test_id_annotations_by_reason_lookup_for_human_readable_diagnostics(self):
+        # Demonstrates the caller-side pattern for turning a diagnostic into
+        # human-readable output: iterate `reasons`, look each parser id up
+        # in `id_annotations_by_reason`, and format. This is what a CLI or
+        # higher-level library would do to surface `@id` labels in messages
+        # while keeping parser ids as the stable, unique lookup keys.
+        policies = """
+            @id("baseline-permit-all")
+            permit(principal, action, resource);
+
+            @id("alice-extra-permit")
+            permit(
+                principal == User::"alice",
+                action == Action::"view",
+                resource
+            );
+
+            permit(
+                principal == User::"bob",
+                action == Action::"view",
+                resource
+            );
+        """.strip()
+
+        def format_reasons(diagnostics) -> List[str]:
+            # `id_annotations_by_reason` is keyed by parser id; absent entries
+            # mean the policy has no `@id` annotation. `dict.get` returns
+            # None in that case. An empty-string label (from `@id("")` /
+            # bare `@id`) is falsy and falls through to the bare-pid
+            # branch — callers that need to distinguish "no @id" from
+            # "empty @id" should use `pid in id_annotations_by_reason`
+            # instead.
+            lines = []
+            for pid in diagnostics.reasons:
+                label = diagnostics.id_annotations_by_reason.get(pid)
+                if label:
+                    lines.append(f"{pid} ({label})")
+                else:
+                    lines.append(pid)
+            # reasons is set-valued and order is not guaranteed; sort
+            # for stable output.
+            return sorted(lines)
+
+
+        # alice's request matches both annotated permits — the baseline
+        # and the alice-specific one. The bob-only unannotated permit
+        # does not match.
+        alice_request = {
+            "principal": 'User::"alice"',
+            "action": 'Action::"view"',
+            "resource": 'Photo::"alice_w2.jpg"',
+            "context": {},
+        }
+        alice_result: AuthzResult = is_authorized(alice_request, policies, self.entities)
+        self.assertEqual(Decision.Allow, alice_result.decision)
+
+        alice_lines = format_reasons(alice_result.diagnostics)
+        # The kind of output a CLI might emit (captured by pytest unless
+        # run with -s; shown here so the pattern reads as a tutorial).
+        print("alice matched policies:")
+        for line in alice_lines:
+            print(f"  - {line}")
+        self.assertEqual(
+            ["policy0 (baseline-permit-all)", "policy1 (alice-extra-permit)"],
+            alice_lines,
+        )
+
+        # bob's request matches the baseline (annotated) and the bob-only
+        # permit (unannotated). The unannotated policy formats as the
+        # bare parser id — there's no label to surface.
+        bob_request = {
+            "principal": 'User::"bob"',
+            "action": 'Action::"view"',
+            "resource": 'Photo::"bobs-photo-1"',
+            "context": {},
+        }
+        bob_result: AuthzResult = is_authorized(bob_request, policies, self.entities)
+        self.assertEqual(Decision.Allow, bob_result.decision)
+
+        bob_lines = format_reasons(bob_result.diagnostics)
+        print("bob matched policies:")
+        for line in bob_lines:
+            print(f"  - {line}")
+        self.assertEqual(
+            ["policy0 (baseline-permit-all)", "policy2"],
+            bob_lines,
+        )
 
     def test_authorized_batch_perf(self):
         import platform

@@ -32,7 +32,7 @@ class Diagnostics:
         return self._diagnostics.get('reason', list())
 
     @property
-    def id_annotations(self) -> dict:
+    def id_annotations_by_reason(self) -> dict:
         """Map from each parser-generated policy id in ``reasons`` to the
         literal value of its ``@id`` annotation, when the matched policy
         declares one. ``@id("foo")`` contributes ``"foo"``; ``@id("")`` /
@@ -40,7 +40,7 @@ class Diagnostics:
         ``@id("")``) contributes ``""``. Policies with no ``@id`` annotation
         are omitted from the map.
         """
-        return self._diagnostics.get('id_annotations', dict())
+        return self._diagnostics.get('id_annotations_by_reason', dict())
 
 
 class AuthzResult:
@@ -116,7 +116,7 @@ class ValidationResult:
         return self._errors
 
     @property
-    def id_annotations(self) -> dict:
+    def id_annotations_by_policy_id(self) -> dict:
         """Map from each parser-generated policy id appearing in ``errors``
         to the literal value of its ``@id`` annotation, when the source
         policy declares one. ``@id("foo")`` contributes ``"foo"``;
@@ -124,7 +124,7 @@ class ValidationResult:
         to ``@id("")``) contributes ``""``. Policies with no ``@id``
         annotation are omitted from the map.
         """
-        return self._result.get('id_annotations', dict())
+        return self._result.get('id_annotations_by_policy_id', dict())
 
     def __bool__(self) -> bool:
         """Allows `if validation_result:` syntax."""

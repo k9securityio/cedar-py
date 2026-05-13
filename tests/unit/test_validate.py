@@ -152,12 +152,12 @@ class ValidatePoliciesTestCase(unittest.TestCase):
         self.assertIn("ValidationResult", repr_str)
         self.assertIn("validation_passed=True", repr_str)
 
-    def test_id_annotation_exposed_via_id_annotations(self):
+    def test_id_annotation_exposed_via_id_annotations_by_policy_id(self):
         """ValidationError.policy_id stays the parser-generated id; the
-        ``@id`` label is exposed via ``ValidationResult.id_annotations``
-        (mirrors the diagnostics change in issue #77 so duplicate ``@id``
-        values across policies do not collapse identity in validation
-        errors either).
+        ``@id`` label is exposed via
+        ``ValidationResult.id_annotations_by_policy_id`` (mirrors the
+        diagnostics change in issue #77 so duplicate ``@id`` values across
+        policies do not collapse identity in validation errors either).
         """
         policy_with_id = """
             @id("alice_view_bad_entity")
@@ -173,12 +173,12 @@ class ValidatePoliciesTestCase(unittest.TestCase):
         self.assertGreater(len(result.errors), 0)
         self.assertEqual("policy0", result.errors[0].policy_id)
         self.assertEqual({"policy0": "alice_view_bad_entity"},
-                         result.id_annotations)
+                         result.id_annotations_by_policy_id)
 
     def test_validation_error_reports_parser_id_when_no_id_annotation(self):
         """Un-annotated policies surface in validation errors with their
         parser-generated id (e.g. 'policy0'), and contribute no entry to
-        ``id_annotations``.
+        ``id_annotations_by_policy_id``.
         """
         policy_without_id = """
             permit(
@@ -192,7 +192,7 @@ class ValidatePoliciesTestCase(unittest.TestCase):
         self.assertFalse(result.validation_passed)
         self.assertGreater(len(result.errors), 0)
         self.assertEqual("policy0", result.errors[0].policy_id)
-        self.assertEqual({}, result.id_annotations)
+        self.assertEqual({}, result.id_annotations_by_policy_id)
 
     def test_validate_with_duplicate_policy_id_annotations(self):
         """Two policies sharing the same @id annotation do not fail validation.
