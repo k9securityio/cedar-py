@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Behavior change (partial revert of 4.8.2).** `AuthzResult.diagnostics.reasons` and `ValidationError.policy_id` once again surface the parser-generated `PolicyId` (e.g., `policy0`), restoring the 4.8.1 contract that was relied on for multi-tenant disambiguation. The `@id("...")` annotation value is now exposed in a parallel map keyed by the parser id: `Diagnostics.id_annotations_by_reason` and `ValidationResult.id_annotations_by_policy_id`. Entries are present whenever the policy declares an `@id` annotation, with the literal annotation value as the map value — so `@id("foo")` contributes `"foo"`, and `@id("")` / bare `@id` (which the Cedar docs define as equivalent to `@id("")`) contributes `""`. Policies with no `@id` annotation are omitted from the map. This keeps the 4.8.2 ergonomics gain (recover the `@id` label without rebuilding the policy set) while preventing identity collapse when two policies share the same `@id` ([#77](https://github.com/k9securityio/cedar-py/issues/77))
+
 ## [4.8.2] - 2026-05-12
 
 ### Added

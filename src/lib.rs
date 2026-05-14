@@ -235,11 +235,21 @@ fn to_request_args(request: &HashMap<String, String>) -> RequestArgs {
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct DiagnosticsSer {
-    /// Ids of the policies that contributed to the decision. Each entry is the
-    /// `@id` annotation value if the matched policy carries one, otherwise the
-    /// parser-generated id (e.g., `policy0`). If no policies applied to the
-    /// request, this set will be empty.
-    reason: HashSet<String>,
+    /// Ids of the policies that contributed to the decision, as the
+    /// parser-generated `PolicyId` (e.g., `policy0`). If no policies applied
+    /// to the request, this set will be empty.
+    ///
+    /// The parser id is stable per policy within a `PolicySet` and uniquely
+    /// identifies each matched policy even when multiple policies share the
+    /// same `@id` annotation. To recover the `@id` annotation value for any
+    /// entry, look it up in `id_annotations_by_reason`.
+    reason: HashSet<PolicyId>,
+    /// Map from each parser-generated policy id in `reason` to the literal
+    /// value of its `@id` annotation, when the matched policy declares one.
+    /// `@id("foo")` contributes `"foo"`; `@id("")` / `@id` (which the Cedar
+    /// docs define as equivalent to `@id("")`) contributes `""`. Policies
+    /// with no `@id` annotation are omitted from the map.
+    id_annotations_by_reason: HashMap<String, String>,
     /// Errors that occurred during authorization. The errors should be
     /// treated as unordered, since policies may be evaluated in any order.
     errors: Vec<String>,
@@ -275,7 +285,9 @@ struct AuthzResponse {
 /// Serializable validation error for Python
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ValidationErrorSer {
-    /// Policy ID where the error occurred
+    /// Parser-generated policy id (e.g., `policy0`) where the error occurred.
+    /// To recover the `@id` annotation value when present, look up this id in
+    /// `ValidationResultSer::id_annotations_by_policy_id`.
     policy_id: String,
     /// Human-readable error message
     error: String,
@@ -288,22 +300,34 @@ pub struct ValidationResultSer {
     validation_passed: bool,
     /// List of validation errors
     errors: Vec<ValidationErrorSer>,
+    /// Map from each parser-generated policy id appearing in `errors` to
+    /// the literal value of its `@id` annotation, when the source policy
+    /// declares one. `@id("foo")` contributes `"foo"`; `@id("")` / `@id`
+    /// (which the Cedar docs define as equivalent to `@id("")`) contributes
+    /// `""`. Policies with no `@id` annotation are omitted from the map.
+    id_annotations_by_policy_id: HashMap<String, String>,
 }
 
 impl AuthzResponse {
     /// Create a new `AuthzResponse`.
     ///
     /// `policy_set` is the parsed `PolicySet` that produced `response`; it is
-    /// used to resolve each matched `PolicyId` to its `@id` annotation (if
-    /// present) before serialization. Annotations are inert in Cedar policy
-    /// evaluation; this is a pure labeling step on the response.
+    /// used to look up the `@id` annotation (if any) for each matched
+    /// `PolicyId`. Annotations are inert in Cedar policy evaluation;
+    /// `reason` carries the parser-generated id and the optional
+    /// `id_annotations_by_reason` map carries the labels.
     pub fn new(response: Response,
                policy_set: &PolicySet,
                metrics: HashMap<String, u128>,
                correlation_id: Option<String>) -> Self {
-        let reason = response.diagnostics().reason()
-            .map(|pid| resolve_display_id(policy_set, pid))
-            .collect();
+        let mut reason: HashSet<PolicyId> = HashSet::new();
+        let mut id_annotations_by_reason: HashMap<String, String> = HashMap::new();
+        for pid in response.diagnostics().reason() {
+            if let Some(annotation) = lookup_id_annotation(policy_set, pid) {
+                id_annotations_by_reason.insert(pid.to_string(), annotation);
+            }
+            reason.insert(pid.clone());
+        }
         Self {
             decision: match response.decision() {
                 Decision::Allow => DecisionSer::Allow,
@@ -312,6 +336,7 @@ impl AuthzResponse {
             correlation_id,
             diagnostics: DiagnosticsSer{
                 reason,
+                id_annotations_by_reason,
                 errors: response.diagnostics().errors().cloned().map(|e|e.to_string()).collect(),
             },
             metrics,
@@ -418,31 +443,20 @@ fn load_entities(entities_str: String, schema: Option<&Schema>) -> Result<Entiti
     );
 }
 
-/// Resolve a policy's display id: the value of its `@id` annotation if
-/// present and non-empty, otherwise the parser-generated `PolicyId` as a
-/// string.
-///
-/// Per the Cedar docs, `@id` (no value) is equivalent to `@id("")` — a valid
-/// but empty string. cedar-py treats `@id` as a labeling concern, so an empty
-/// annotation value is unhelpful as a display id and falls through to the
-/// parser id. This is a deliberate cedar-py choice; it differs from
-/// cedar-policy-cli's `rename_from_id_annotation`, which would rename the
-/// policy to the empty string.
+/// Look up the `@id` annotation value for a policy, if the policy declares
+/// one. Returns `Some(value)` whenever `@id` is present — including the
+/// empty string for `@id` / `@id("")`, per the Cedar docs which treat the
+/// two as equivalent. Returns `None` only when the policy has no `@id`
+/// annotation at all, or when no policy exists for `pid` in `policy_set`.
 ///
 /// `Policy::annotations()` returns raw `&str` keys, so we can match on `"id"`
 /// without paying Cedar's identifier-parse cost (which `PolicySet::annotation`
 /// would incur per lookup). Static policies and template-linked policies both
-/// resolve via `policy_set.policy(pid)`; if neither exists for `pid`, the
-/// caller-supplied `PolicyId` is rendered verbatim.
-fn resolve_display_id(policy_set: &PolicySet, pid: &PolicyId) -> String {
-    if let Some(p) = policy_set.policy(pid) {
-        if let Some((_, v)) = p.annotations().find(|(k, _)| *k == "id") {
-            if !v.is_empty() {
-                return v.to_string();
-            }
-        }
-    }
-    pid.to_string()
+/// resolve via `policy_set.policy(pid)`.
+fn lookup_id_annotation(policy_set: &PolicySet, pid: &PolicyId) -> Option<String> {
+    let p = policy_set.policy(pid)?;
+    let (_, v) = p.annotations().find(|(k, _)| *k == "id")?;
+    Some(v.to_string())
 }
 
 /// Validate Cedar policies against a schema and return a JSON result.
@@ -459,6 +473,7 @@ fn validate_policies(policies: String, schema: String) -> String {
                     policy_id: String::new(),
                     error: format!("Policy parse error: {}", parse_errors),
                 }],
+                id_annotations_by_policy_id: HashMap::new(),
             };
             return serde_json::to_string(&result).unwrap();
         }
@@ -473,6 +488,7 @@ fn validate_policies(policies: String, schema: String) -> String {
                 policy_id: String::new(),
                 error: "Schema is required for validation".to_string(),
             }],
+            id_annotations_by_policy_id: HashMap::new(),
         };
         return serde_json::to_string(&result).unwrap();
     }
@@ -488,6 +504,7 @@ fn validate_policies(policies: String, schema: String) -> String {
                         policy_id: String::new(),
                         error: format!("Schema parse error: {}", e),
                     }],
+                    id_annotations_by_policy_id: HashMap::new(),
                 };
                 return serde_json::to_string(&result).unwrap();
             }
@@ -502,6 +519,7 @@ fn validate_policies(policies: String, schema: String) -> String {
                         policy_id: String::new(),
                         error: format!("Schema parse error: {}", e),
                     }],
+                    id_annotations_by_policy_id: HashMap::new(),
                 };
                 return serde_json::to_string(&result).unwrap();
             }
@@ -512,18 +530,30 @@ fn validate_policies(policies: String, schema: String) -> String {
     let validator = Validator::new(cedar_schema);
     let validation_result = validator.validate(&policy_set, ValidationMode::default());
 
-    // Convert to serializable result, resolving each policy id to its `@id`
-    // annotation if present. Validation runs against parser-generated ids;
-    // this is a labeling step on the error surface.
+    // Validation runs against parser-generated PolicyIds; we surface those
+    // verbatim on each error and provide a side map of `@id` annotation
+    // labels for the same ids. Reverted from the 4.8.2 behavior of renaming
+    // policy_id to the `@id` annotation value at response time, which
+    // collapsed identity when multiple policies shared the same `@id` —
+    // see https://github.com/k9securityio/cedar-py/issues/77.
+    let mut id_annotations_by_policy_id: HashMap<String, String> = HashMap::new();
+    let errors: Vec<ValidationErrorSer> = validation_result
+        .validation_errors()
+        .map(|e| {
+            let pid_str = e.policy_id().to_string();
+            if let Some(annotation) = lookup_id_annotation(&policy_set, e.policy_id()) {
+                id_annotations_by_policy_id.insert(pid_str.clone(), annotation);
+            }
+            ValidationErrorSer {
+                policy_id: pid_str,
+                error: e.to_string(),
+            }
+        })
+        .collect();
     let result = ValidationResultSer {
         validation_passed: validation_result.validation_passed(),
-        errors: validation_result
-            .validation_errors()
-            .map(|e| ValidationErrorSer {
-                policy_id: resolve_display_id(&policy_set, e.policy_id()),
-                error: e.to_string(),
-            })
-            .collect(),
+        errors,
+        id_annotations_by_policy_id,
     };
 
     serde_json::to_string(&result).unwrap()

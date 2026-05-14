@@ -28,5 +28,10 @@
     "save_prefix": "pr75_faf92a4",
     "ref": "faf92a4",
     "description": "PR75 @id via post-process"
+  },
+  {
+    "save_prefix": "v4_8_2",
+    "ref": "v4.8.2",
+    "description": "v4.8.2"
   }
 ]

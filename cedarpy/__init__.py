@@ -31,6 +31,17 @@ class Diagnostics:
         # (intentionally) map 'reason' key in diagnostics dict to 'reasons' property (plural)
         return self._diagnostics.get('reason', list())
 
+    @property
+    def id_annotations_by_reason(self) -> dict:
+        """Map from each parser-generated policy id in ``reasons`` to the
+        literal value of its ``@id`` annotation, when the matched policy
+        declares one. ``@id("foo")`` contributes ``"foo"``; ``@id("")`` /
+        bare ``@id`` (which the Cedar docs define as equivalent to
+        ``@id("")``) contributes ``""``. Policies with no ``@id`` annotation
+        are omitted from the map.
+        """
+        return self._diagnostics.get('id_annotations_by_reason', dict())
+
 
 class AuthzResult:
     def __init__(self, authz_resp: dict) -> None:
@@ -103,6 +114,17 @@ class ValidationResult:
     def errors(self) -> List['ValidationError']:
         """List of validation errors (empty if validation passed)."""
         return self._errors
+
+    @property
+    def id_annotations_by_policy_id(self) -> dict:
+        """Map from each parser-generated policy id appearing in ``errors``
+        to the literal value of its ``@id`` annotation, when the source
+        policy declares one. ``@id("foo")`` contributes ``"foo"``;
+        ``@id("")`` / bare ``@id`` (which the Cedar docs define as equivalent
+        to ``@id("")``) contributes ``""``. Policies with no ``@id``
+        annotation are omitted from the map.
+        """
+        return self._result.get('id_annotations_by_policy_id', dict())
 
     def __bool__(self) -> bool:
         """Allows `if validation_result:` syntax."""
