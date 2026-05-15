@@ -369,24 +369,50 @@ class AnalysisResult:
         return f"AnalysisResult(request_type_findings={len(self._request_type_findings)}, policy_findings={len(self._policy_findings)})"
 
 
-class CompareResult:
-    """Result of comparing two Cedar policy sets."""
+class RequestTypeComparison:
+    """Comparison result for a specific request type (action)."""
 
-    def __init__(self, result_dict: dict) -> None:
-        self._result = result_dict
+    def __init__(self, comparison_dict: dict) -> None:
+        self._comparison = comparison_dict
 
     @property
-    def equivalent(self) -> bool:
-        """True if the two policy sets are equivalent."""
-        return self._result.get('equivalent', False)
+    def action(self) -> str:
+        """The action this comparison applies to."""
+        return self._comparison.get('action', '')
+
+    @property
+    def result(self) -> str:
+        """One of: 'equivalent', 'less_permissive', 'more_permissive', 'incomparable'."""
+        return self._comparison.get('result', '')
 
     @property
     def counterexample(self) -> Union[str, None]:
-        """A concrete request that demonstrates a difference between the two policy sets, or None if equivalent."""
-        return self._result.get('counterexample')
+        """A concrete request demonstrating the difference, or None if equivalent."""
+        return self._comparison.get('counterexample')
 
     def __repr__(self) -> str:
-        return f"CompareResult(equivalent={self.equivalent}, counterexample={self.counterexample!r})"
+        return f"RequestTypeComparison(action={self.action!r}, result={self.result!r})"
+
+
+class CompareResult:
+    """Result of comparing two Cedar policy sets, per request type."""
+
+    def __init__(self, result_dict: dict) -> None:
+        self._result = result_dict
+        self._comparisons = [RequestTypeComparison(c) for c in result_dict.get('request_type_comparisons', [])]
+
+    @property
+    def request_type_comparisons(self) -> List['RequestTypeComparison']:
+        """Per request type comparison results."""
+        return self._comparisons
+
+    @property
+    def all_equivalent(self) -> bool:
+        """True if all request types are equivalent."""
+        return all(c.result == 'equivalent' for c in self._comparisons)
+
+    def __repr__(self) -> str:
+        return f"CompareResult(comparisons={len(self._comparisons)}, all_equivalent={self.all_equivalent})"
 
 
 def analyze_policies(policies: str,

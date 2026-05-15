@@ -568,7 +568,17 @@ use cedar_policy_symcc::{CedarSymCompiler, CompiledPolicy, CompiledPolicySet, En
 
 #[derive(Serialize)]
 struct AnalysisCompareResult {
-    equivalent: bool,
+    /// Per request type comparison findings.
+    request_type_comparisons: Vec<RequestTypeComparison>,
+}
+
+#[derive(Serialize)]
+struct RequestTypeComparison {
+    /// The action this comparison applies to.
+    action: String,
+    /// One of: "equivalent", "less_permissive", "more_permissive", "incomparable".
+    result: String,
+    /// A concrete counterexample request if the policy sets differ.
     counterexample: Option<String>,
 }
 
@@ -628,8 +638,12 @@ fn format_counterexample(env: &Env) -> String {
     format!("principal: {principal}, action: {action}, resource: {resource}")
 }
 
-/// Compare two Cedar policy sets and determine if they are equivalent.
-/// Returns a JSON string with keys: equivalent (bool), counterexample (str | null).
+/// Compare two Cedar policy sets per request type, matching cedar-lean-cli `analyze compare`.
+///
+/// For each action in the schema, classifies the relationship as:
+/// equivalent, less_permissive, more_permissive, or incomparable.
+///
+/// Returns a JSON string with request_type_comparisons array.
 #[pyfunction]
 #[pyo3(signature = (baseline_policies, new_policies, schema))]
 fn compare_policy_sets(baseline_policies: String, new_policies: String, schema: String) -> PyResult<String> {
@@ -640,6 +654,8 @@ fn compare_policy_sets(baseline_policies: String, new_policies: String, schema: 
     let schema = Schema::from_str(schema.trim())
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("Failed to parse schema: {e}")))?;
 
+    let py_rt_err = |e: cedar_policy_symcc::err::Error| pyo3::exceptions::PyRuntimeError::new_err(e.to_string());
+
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
     rt.block_on(async {
@@ -648,35 +664,59 @@ fn compare_policy_sets(baseline_policies: String, new_policies: String, schema: 
         let mut compiler = CedarSymCompiler::new(solver)
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
+        let mut request_type_comparisons = Vec::new();
+
         for req_env in schema.request_envs() {
-            let compiled_baseline = CompiledPolicySet::compile(&baseline_pset, &req_env, &schema)
-                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-            let compiled_new = CompiledPolicySet::compile(&new_pset, &req_env, &schema)
-                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+            let action = req_env.action().to_string();
 
-            let result = compiler
+            let compiled_baseline = CompiledPolicySet::compile(&baseline_pset, &req_env, &schema).map_err(py_rt_err)?;
+            let compiled_new = CompiledPolicySet::compile(&new_pset, &req_env, &schema).map_err(py_rt_err)?;
+
+            // Check equivalence first (with counterexample)
+            let equiv_result = compiler
                 .check_equivalent_with_counterexample_opt(&compiled_baseline, &compiled_new)
-                .await
-                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+                .await.map_err(py_rt_err)?;
 
-            if let Some(env) = result {
-                let compare_result = AnalysisCompareResult {
-                    equivalent: false,
-                    counterexample: Some(format_counterexample(&env)),
-                };
-                compiler.solver_mut().clean_up().await
-                    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-                return serde_json::to_string(&compare_result)
-                    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()));
+            if equiv_result.is_none() {
+                request_type_comparisons.push(RequestTypeComparison {
+                    action,
+                    result: "equivalent".to_string(),
+                    counterexample: None,
+                });
+                continue;
             }
+
+            let counterexample = equiv_result.map(|env| format_counterexample(&env));
+
+            // Not equivalent — determine direction.
+            // baseline implies new = every request allowed by baseline is also allowed by new
+            //   → new is at least as permissive as baseline (baseline ⊆ new)
+            let baseline_implies_new = compiler
+                .check_implies_opt(&compiled_baseline, &compiled_new)
+                .await.map_err(py_rt_err)?;
+            // new implies baseline = every request allowed by new is also allowed by baseline
+            //   → baseline is at least as permissive as new (new ⊆ baseline)
+            let new_implies_baseline = compiler
+                .check_implies_opt(&compiled_new, &compiled_baseline)
+                .await.map_err(py_rt_err)?;
+
+            let result = match (baseline_implies_new, new_implies_baseline) {
+                (true, false) => "more_permissive",    // baseline ⊆ new, new allows more
+                (false, true) => "less_permissive",    // new ⊆ baseline, new allows less
+                (false, false) => "incomparable",      // neither is a subset
+                (true, true) => "equivalent",          // shouldn't happen (caught above)
+            };
+
+            request_type_comparisons.push(RequestTypeComparison {
+                action,
+                result: result.to_string(),
+                counterexample,
+            });
         }
 
         compiler.solver_mut().clean_up().await
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-        let compare_result = AnalysisCompareResult {
-            equivalent: true,
-            counterexample: None,
-        };
+        let compare_result = AnalysisCompareResult { request_type_comparisons };
         serde_json::to_string(&compare_result)
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     })
