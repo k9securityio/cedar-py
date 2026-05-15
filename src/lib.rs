@@ -562,45 +562,82 @@ fn validate_policies(policies: String, schema: String) -> String {
 //
 // ANALYSIS
 // ----------------------------------------
+// Matches the behavior of cedar-lean-cli's `analyze policies` and `analyze compare` commands.
+// See: cedar-spec/cedar-lean-cli/src/analysis.rs
 
 use cedar_policy_symcc::solver::LocalSolver;
 use cedar_policy_symcc::{CedarSymCompiler, CompiledPolicy, CompiledPolicySet, Env};
 
+fn format_counterexample(env: &Env) -> String {
+    let principal = env.request.principal().map_or_else(|| "unknown".to_string(), |p| p.to_string());
+    let action = env.request.action().map_or_else(|| "unknown".to_string(), |a| a.to_string());
+    let resource = env.request.resource().map_or_else(|| "unknown".to_string(), |r| r.to_string());
+    format!("principal: {principal}, action: {action}, resource: {resource}")
+}
+
+// -- Compare types --
+
 #[derive(Serialize)]
-struct AnalysisCompareResult {
-    /// Per request type comparison findings.
-    request_type_comparisons: Vec<RequestTypeComparison>,
+struct CompareResultSer {
+    request_type_comparisons: Vec<RequestTypeComparisonSer>,
 }
 
 #[derive(Serialize)]
-struct RequestTypeComparison {
-    /// The action this comparison applies to.
+struct RequestTypeComparisonSer {
     action: String,
-    /// One of: "equivalent", "less_permissive", "more_permissive", "incomparable".
+    /// "equivalent", "less_permissive", "more_permissive", "incomparable"
     result: String,
-    /// A concrete counterexample request if the policy sets differ.
-    counterexample: Option<String>,
+    /// Counterexample where pset1 is more permissive (allows but pset2 denies)
+    more_permissive_example: Option<String>,
+    /// Counterexample where pset1 is less permissive (denies but pset2 allows)
+    less_permissive_example: Option<String>,
+}
+
+// -- Analyze types --
+
+/// Vacuity of a policy or policyset for a single request environment.
+#[derive(Clone, Copy, PartialEq)]
+enum VacuityResult {
+    MatchesAll,
+    MatchesSome,
+    MatchesNone,
+}
+
+/// Aggregate vacuity across all request environments.
+fn vacuity_across_envs(results: &[VacuityResult]) -> VacuityResult {
+    if results.iter().all(|r| *r == VacuityResult::MatchesAll) {
+        VacuityResult::MatchesAll
+    } else if results.iter().all(|r| *r == VacuityResult::MatchesNone) {
+        VacuityResult::MatchesNone
+    } else {
+        VacuityResult::MatchesSome
+    }
 }
 
 #[derive(Serialize)]
-struct AnalysisResult {
-    /// Findings reported per request type (action) in the schema.
-    request_type_findings: Vec<RequestTypeFindings>,
-    /// Per-policy vacuousness checks (applies across all request types).
-    policy_findings: Vec<AnalysisPolicyFinding>,
+struct AnalyzeResultSer {
+    /// Policyset-level vacuity: "matches_all", "matches_some", "matches_none"
+    policyset_vacuity: String,
+    /// Per-policy findings (only vacuous policies included, matching CLI behavior)
+    vacuous_policies: Vec<VacuousPolicySer>,
+    /// Per request type findings (redundancy, shadowing, overriding)
+    per_request_type_findings: Vec<PerRequestTypeFindings>,
 }
 
 #[derive(Serialize)]
-struct RequestTypeFindings {
-    /// The action this analysis applies to, e.g. Peregrine::Action::"login".
+struct VacuousPolicySer {
+    policy_id: String,
+    effect: String,
+    /// "matches_all" or "matches_none"
+    vacuity: String,
+}
+
+#[derive(Serialize)]
+struct PerRequestTypeFindings {
     action: String,
-    /// Groups of policies that are redundant (equivalent to each other).
     redundant_groups: Vec<Vec<String>>,
-    /// Permit policies shadowed by another permit policy (policy_id, shadowed_by).
     permit_shadowed_by_permit: Vec<ShadowedFinding>,
-    /// Permit policies overridden by a forbid policy (policy_id, overridden_by).
     permit_overridden_by_forbid: Vec<ShadowedFinding>,
-    /// Forbid policies shadowed by another forbid policy (policy_id, shadowed_by).
     forbid_shadowed_by_forbid: Vec<ShadowedFinding>,
 }
 
@@ -610,46 +647,16 @@ struct ShadowedFinding {
     by_policy_id: String,
 }
 
-#[derive(Serialize)]
-struct AnalysisPolicyFinding {
-    policy_id: String,
-    effect: String,
-    /// True if this policy can never match any request (vacuous - allows none).
-    vacuous_never_matches: bool,
-    /// True if this policy matches all requests (vacuous - allows/denies all).
-    vacuous_always_matches: bool,
-    /// True if this policy never produces evaluation errors.
-    never_errors: bool,
-}
-
-fn format_counterexample(env: &Env) -> String {
-    let principal = env
-        .request
-        .principal()
-        .map_or_else(|| "unknown".to_string(), |p| p.to_string());
-    let action = env
-        .request
-        .action()
-        .map_or_else(|| "unknown".to_string(), |a| a.to_string());
-    let resource = env
-        .request
-        .resource()
-        .map_or_else(|| "unknown".to_string(), |r| r.to_string());
-    format!("principal: {principal}, action: {action}, resource: {resource}")
-}
-
 /// Compare two Cedar policy sets per request type, matching cedar-lean-cli `analyze compare`.
 ///
-/// For each action in the schema, classifies the relationship as:
-/// equivalent, less_permissive, more_permissive, or incomparable.
-///
-/// Returns a JSON string with request_type_comparisons array.
+/// Uses check_implies_with_counterexample in both directions (matching the CLI)
+/// to classify as equivalent/less_permissive/more_permissive/incomparable per action.
 #[pyfunction]
 #[pyo3(signature = (baseline_policies, new_policies, schema))]
 fn compare_policy_sets(baseline_policies: String, new_policies: String, schema: String) -> PyResult<String> {
-    let baseline_pset = PolicySet::from_str(&baseline_policies)
+    let pset1 = PolicySet::from_str(&baseline_policies)
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("Failed to parse baseline policies: {e}")))?;
-    let new_pset = PolicySet::from_str(&new_policies)
+    let pset2 = PolicySet::from_str(&new_policies)
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("Failed to parse new policies: {e}")))?;
     let schema = Schema::from_str(schema.trim())
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("Failed to parse schema: {e}")))?;
@@ -664,70 +671,52 @@ fn compare_policy_sets(baseline_policies: String, new_policies: String, schema: 
         let mut compiler = CedarSymCompiler::new(solver)
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
-        let mut request_type_comparisons = Vec::new();
+        let mut comparisons = Vec::new();
 
         for req_env in schema.request_envs() {
             let action = req_env.action().to_string();
+            let compiled1 = CompiledPolicySet::compile(&pset1, &req_env, &schema).map_err(py_rt_err)?;
+            let compiled2 = CompiledPolicySet::compile(&pset2, &req_env, &schema).map_err(py_rt_err)?;
 
-            let compiled_baseline = CompiledPolicySet::compile(&baseline_pset, &req_env, &schema).map_err(py_rt_err)?;
-            let compiled_new = CompiledPolicySet::compile(&new_pset, &req_env, &schema).map_err(py_rt_err)?;
+            // CLI approach: check implies with counterexample in both directions
+            // fwd: does pset1 imply pset2? If not, counterexample is where pset1 allows but pset2 denies
+            let fwd = compiler.check_implies_with_counterexample_opt(&compiled1, &compiled2).await.map_err(py_rt_err)?;
+            // bwd: does pset2 imply pset1? If not, counterexample is where pset2 allows but pset1 denies
+            let bwd = compiler.check_implies_with_counterexample_opt(&compiled2, &compiled1).await.map_err(py_rt_err)?;
 
-            // Check equivalence first (with counterexample)
-            let equiv_result = compiler
-                .check_equivalent_with_counterexample_opt(&compiled_baseline, &compiled_new)
-                .await.map_err(py_rt_err)?;
-
-            if equiv_result.is_none() {
-                request_type_comparisons.push(RequestTypeComparison {
-                    action,
-                    result: "equivalent".to_string(),
-                    counterexample: None,
-                });
-                continue;
-            }
-
-            let counterexample = equiv_result.map(|env| format_counterexample(&env));
-
-            // Not equivalent — determine direction.
-            // baseline implies new = every request allowed by baseline is also allowed by new
-            //   → new is at least as permissive as baseline (baseline ⊆ new)
-            let baseline_implies_new = compiler
-                .check_implies_opt(&compiled_baseline, &compiled_new)
-                .await.map_err(py_rt_err)?;
-            // new implies baseline = every request allowed by new is also allowed by baseline
-            //   → baseline is at least as permissive as new (new ⊆ baseline)
-            let new_implies_baseline = compiler
-                .check_implies_opt(&compiled_new, &compiled_baseline)
-                .await.map_err(py_rt_err)?;
-
-            let result = match (baseline_implies_new, new_implies_baseline) {
-                (true, false) => "more_permissive",    // baseline ⊆ new, new allows more
-                (false, true) => "less_permissive",    // new ⊆ baseline, new allows less
-                (false, false) => "incomparable",      // neither is a subset
-                (true, true) => "equivalent",          // shouldn't happen (caught above)
+            let (result, more_ex, less_ex) = match (&fwd, &bwd) {
+                (None, None) => ("equivalent", None, None),
+                (None, Some(cex)) => ("less_permissive", None, Some(format_counterexample(cex))),
+                (Some(cex), None) => ("more_permissive", Some(format_counterexample(cex)), None),
+                (Some(more_cex), Some(less_cex)) => (
+                    "incomparable",
+                    Some(format_counterexample(more_cex)),
+                    Some(format_counterexample(less_cex)),
+                ),
             };
 
-            request_type_comparisons.push(RequestTypeComparison {
+            comparisons.push(RequestTypeComparisonSer {
                 action,
                 result: result.to_string(),
-                counterexample,
+                more_permissive_example: more_ex,
+                less_permissive_example: less_ex,
             });
         }
 
         compiler.solver_mut().clean_up().await
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-        let compare_result = AnalysisCompareResult { request_type_comparisons };
-        serde_json::to_string(&compare_result)
+        serde_json::to_string(&CompareResultSer { request_type_comparisons: comparisons })
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     })
 }
 
-/// Analyze a Cedar policy set for logical issues matching the cedar-lean-cli `analyze policies` output.
+/// Analyze a Cedar policy set matching cedar-lean-cli `analyze policies`.
 ///
-/// Checks for: vacuous policies (always/never matches), redundant policy groups,
-/// permit-shadowed-by-permit, permit-overridden-by-forbid, forbid-shadowed-by-forbid.
-///
-/// Returns a JSON string with request_type_findings (per action) and policy_findings (per policy).
+/// 1. Computes per-policy vacuity across all request envs (matches_all / matches_none / matches_some)
+/// 2. Computes policyset-level vacuity (always allows / always denies)
+/// 3. Uses vacuity to short-circuit pairwise checks (matching CLI optimization)
+/// 4. For permit pairs: uses check_implies on singleton policysets
+/// 5. For forbid pairs and overrides: uses check_matches_implies on individual policies
 #[pyfunction]
 #[pyo3(signature = (policies, schema))]
 fn analyze_policies(policies: String, schema: String) -> PyResult<String> {
@@ -736,11 +725,10 @@ fn analyze_policies(policies: String, schema: String) -> PyResult<String> {
     let schema = Schema::from_str(schema.trim())
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("Failed to parse schema: {e}")))?;
 
-    let rt = tokio::runtime::Runtime::new()
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-
     let py_rt_err = |e: cedar_policy_symcc::err::Error| pyo3::exceptions::PyRuntimeError::new_err(e.to_string());
 
+    let rt = tokio::runtime::Runtime::new()
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
     rt.block_on(async {
         let solver = LocalSolver::cvc5()
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to start CVC5 solver: {e}")))?;
@@ -748,124 +736,290 @@ fn analyze_policies(policies: String, schema: String) -> PyResult<String> {
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
         let all_policies: Vec<&Policy> = pset.policies().collect();
+        let req_envs: Vec<RequestEnv> = schema.request_envs().collect();
 
-        // Per-policy findings: vacuousness and error checks (using first request env)
-        let mut policy_findings = Vec::new();
-        if let Some(req_env) = schema.request_envs().next() {
-            for policy in &all_policies {
-                let compiled = CompiledPolicy::compile(policy, &req_env, &schema).map_err(py_rt_err)?;
-                let never_matches = compiler.check_never_matches_opt(&compiled).await.map_err(py_rt_err)?;
-                let always_matches = compiler.check_always_matches_opt(&compiled).await.map_err(py_rt_err)?;
-                let never_errors = compiler.check_never_errors_opt(&compiled).await.map_err(py_rt_err)?;
-                let effect = match compiled.effect() {
+        // Step 1: Compute per-policy vacuity across all request envs
+        // policy_vacuity[i][j] = vacuity of policy i for request env j
+        let mut policy_vacuity: Vec<Vec<VacuityResult>> = Vec::new();
+        for policy in &all_policies {
+            let mut per_env = Vec::new();
+            for req_env in &req_envs {
+                let compiled = CompiledPolicy::compile(policy, req_env, &schema).map_err(py_rt_err)?;
+                if compiler.check_always_matches_opt(&compiled).await.map_err(py_rt_err)? {
+                    per_env.push(VacuityResult::MatchesAll);
+                } else if compiler.check_never_matches_opt(&compiled).await.map_err(py_rt_err)? {
+                    per_env.push(VacuityResult::MatchesNone);
+                } else {
+                    per_env.push(VacuityResult::MatchesSome);
+                }
+            }
+            policy_vacuity.push(per_env);
+        }
+
+        // Step 2: Compute policyset-level vacuity
+        let mut pset_vacuity_per_env = Vec::new();
+        for req_env in &req_envs {
+            let compiled_pset = CompiledPolicySet::compile(&pset, req_env, &schema).map_err(py_rt_err)?;
+            if compiler.check_always_allows_opt(&compiled_pset).await.map_err(py_rt_err)? {
+                pset_vacuity_per_env.push(VacuityResult::MatchesAll);
+            } else if compiler.check_always_denies_opt(&compiled_pset).await.map_err(py_rt_err)? {
+                pset_vacuity_per_env.push(VacuityResult::MatchesNone);
+            } else {
+                pset_vacuity_per_env.push(VacuityResult::MatchesSome);
+            }
+        }
+        let policyset_vacuity = vacuity_across_envs(&pset_vacuity_per_env);
+
+        // Step 3: Build vacuous_policies (only non-MatchesSome, matching CLI)
+        let mut vacuous_policies = Vec::new();
+        for (i, policy) in all_policies.iter().enumerate() {
+            let agg = vacuity_across_envs(&policy_vacuity[i]);
+            if agg != VacuityResult::MatchesSome {
+                let effect = match policy.effect() {
                     Effect::Permit => "permit",
                     Effect::Forbid => "forbid",
                 };
-                policy_findings.push(AnalysisPolicyFinding {
+                vacuous_policies.push(VacuousPolicySer {
                     policy_id: policy.id().to_string(),
                     effect: effect.to_string(),
-                    vacuous_never_matches: never_matches,
-                    vacuous_always_matches: always_matches,
-                    never_errors,
+                    vacuity: match agg {
+                        VacuityResult::MatchesAll => "matches_all".to_string(),
+                        VacuityResult::MatchesNone => "matches_none".to_string(),
+                        VacuityResult::MatchesSome => unreachable!(),
+                    },
                 });
             }
         }
 
-        // Per request type findings: redundancy, shadowing, overriding
-        let mut request_type_findings = Vec::new();
-        for req_env in schema.request_envs() {
+        // Step 4: Per request type pairwise findings (using vacuity to short-circuit)
+        let mut per_request_type_findings = Vec::new();
+        for (env_idx, req_env) in req_envs.iter().enumerate() {
             let action = req_env.action().to_string();
 
-            // Compile all policies for this request env
-            let mut compiled_policies: Vec<(&Policy, CompiledPolicy)> = Vec::new();
-            for policy in &all_policies {
-                let compiled = CompiledPolicy::compile(policy, &req_env, &schema).map_err(py_rt_err)?;
-                compiled_policies.push((policy, compiled));
+            let mut redundant_map: HashMap<usize, HashSet<usize>> = HashMap::new();
+            let mut permit_shadowed: Vec<ShadowedFinding> = Vec::new();
+            let mut permit_overridden: Vec<ShadowedFinding> = Vec::new();
+            let mut forbid_shadowed: Vec<ShadowedFinding> = Vec::new();
+
+            for i in 0..all_policies.len() {
+                for j in (i + 1)..all_policies.len() {
+                    let vr_i = policy_vacuity[i][env_idx];
+                    let vr_j = policy_vacuity[j][env_idx];
+                    let eff_i = all_policies[i].effect();
+                    let eff_j = all_policies[j].effect();
+
+                    match (eff_i, eff_j) {
+                        (Effect::Permit, Effect::Permit) => {
+                            // Permit shadowing: use check_implies on singleton policysets (matching CLI)
+                            let sr = compute_permit_shadowing(
+                                &mut compiler, all_policies[i], vr_i, all_policies[j], vr_j, req_env, &schema,
+                            ).await.map_err(py_rt_err)?;
+                            match sr {
+                                ShadowingResult::Equivalent => {
+                                    redundant_map.entry(i).or_default().insert(j);
+                                    redundant_map.entry(j).or_default().insert(i);
+                                }
+                                ShadowingResult::Policy1Shadows2 => {
+                                    permit_shadowed.push(ShadowedFinding {
+                                        policy_id: all_policies[j].id().to_string(),
+                                        by_policy_id: all_policies[i].id().to_string(),
+                                    });
+                                }
+                                ShadowingResult::Policy2Shadows1 => {
+                                    permit_shadowed.push(ShadowedFinding {
+                                        policy_id: all_policies[i].id().to_string(),
+                                        by_policy_id: all_policies[j].id().to_string(),
+                                    });
+                                }
+                                ShadowingResult::NoResult => {}
+                            }
+                        }
+                        (Effect::Permit, Effect::Forbid) => {
+                            let or = compute_override(
+                                &mut compiler, all_policies[j], vr_j, all_policies[i], vr_i, req_env, &schema,
+                            ).await.map_err(py_rt_err)?;
+                            if or == OverrideResult::Overrides {
+                                permit_overridden.push(ShadowedFinding {
+                                    policy_id: all_policies[i].id().to_string(),
+                                    by_policy_id: all_policies[j].id().to_string(),
+                                });
+                            }
+                        }
+                        (Effect::Forbid, Effect::Permit) => {
+                            let or = compute_override(
+                                &mut compiler, all_policies[i], vr_i, all_policies[j], vr_j, req_env, &schema,
+                            ).await.map_err(py_rt_err)?;
+                            if or == OverrideResult::Overrides {
+                                permit_overridden.push(ShadowedFinding {
+                                    policy_id: all_policies[j].id().to_string(),
+                                    by_policy_id: all_policies[i].id().to_string(),
+                                });
+                            }
+                        }
+                        (Effect::Forbid, Effect::Forbid) => {
+                            let sr = compute_forbid_shadowing(
+                                &mut compiler, all_policies[i], vr_i, all_policies[j], vr_j, req_env, &schema,
+                            ).await.map_err(py_rt_err)?;
+                            match sr {
+                                ShadowingResult::Equivalent => {
+                                    redundant_map.entry(i).or_default().insert(j);
+                                    redundant_map.entry(j).or_default().insert(i);
+                                }
+                                ShadowingResult::Policy1Shadows2 => {
+                                    forbid_shadowed.push(ShadowedFinding {
+                                        policy_id: all_policies[j].id().to_string(),
+                                        by_policy_id: all_policies[i].id().to_string(),
+                                    });
+                                }
+                                ShadowingResult::Policy2Shadows1 => {
+                                    forbid_shadowed.push(ShadowedFinding {
+                                        policy_id: all_policies[i].id().to_string(),
+                                        by_policy_id: all_policies[j].id().to_string(),
+                                    });
+                                }
+                                ShadowingResult::NoResult => {}
+                            }
+                        }
+                    }
+                }
             }
 
-            // Redundant groups: find sets of policies that are equivalent to each other
+            // Build equivalence classes from redundant_map (matching CLI logic)
             let mut redundant_groups: Vec<Vec<String>> = Vec::new();
-            let mut in_redundant_group: Vec<bool> = vec![false; compiled_policies.len()];
-            for i in 0..compiled_policies.len() {
-                if in_redundant_group[i] { continue; }
-                let mut group = vec![compiled_policies[i].0.id().to_string()];
-                for j in (i + 1)..compiled_policies.len() {
-                    if in_redundant_group[j] { continue; }
-                    let equivalent = compiler.check_matches_equivalent_opt(
-                        &compiled_policies[i].1, &compiled_policies[j].1
-                    ).await.map_err(py_rt_err)?;
-                    if equivalent {
-                        group.push(compiled_policies[j].0.id().to_string());
-                        in_redundant_group[j] = true;
-                    }
-                }
-                if group.len() > 1 {
-                    in_redundant_group[i] = true;
-                    redundant_groups.push(group);
-                }
-            }
-
-            // Shadowing and overriding checks (pairwise)
-            let mut permit_shadowed_by_permit = Vec::new();
-            let mut permit_overridden_by_forbid = Vec::new();
-            let mut forbid_shadowed_by_forbid = Vec::new();
-
-            for i in 0..compiled_policies.len() {
-                for j in 0..compiled_policies.len() {
-                    if i == j { continue; }
-                    // Skip if they're in the same redundant group (equivalent, not shadowed)
-                    if in_redundant_group[i] && in_redundant_group[j] {
-                        let same_group = redundant_groups.iter().any(|g| {
-                            g.contains(&compiled_policies[i].0.id().to_string())
-                                && g.contains(&compiled_policies[j].0.id().to_string())
-                        });
-                        if same_group { continue; }
-                    }
-
-                    let i_effect = compiled_policies[i].1.effect();
-                    let j_effect = compiled_policies[j].1.effect();
-
-                    // Check if policy j's matches imply policy i's matches
-                    // (i.e., everything i matches, j also matches → j shadows i)
-                    let i_implied_by_j = compiler.check_matches_implies_opt(
-                        &compiled_policies[i].1, &compiled_policies[j].1
-                    ).await.map_err(py_rt_err)?;
-
-                    if !i_implied_by_j { continue; }
-
-                    let finding = ShadowedFinding {
-                        policy_id: compiled_policies[i].0.id().to_string(),
-                        by_policy_id: compiled_policies[j].0.id().to_string(),
-                    };
-
-                    match (i_effect, j_effect) {
-                        (Effect::Permit, Effect::Permit) => permit_shadowed_by_permit.push(finding),
-                        (Effect::Permit, Effect::Forbid) => permit_overridden_by_forbid.push(finding),
-                        (Effect::Forbid, Effect::Forbid) => forbid_shadowed_by_forbid.push(finding),
-                        _ => {} // forbid shadowed by permit is not a finding
+            let mut visited: HashSet<usize> = HashSet::new();
+            for i in 0..all_policies.len() {
+                if visited.contains(&i) { continue; }
+                if let Some(peers) = redundant_map.get(&i) {
+                    let mut group: HashSet<usize> = peers.clone();
+                    group.insert(i);
+                    if group.len() >= 2 {
+                        for &idx in &group { visited.insert(idx); }
+                        redundant_groups.push(group.iter().map(|&idx| all_policies[idx].id().to_string()).collect());
                     }
                 }
             }
 
-            request_type_findings.push(RequestTypeFindings {
-                action,
-                redundant_groups,
-                permit_shadowed_by_permit,
-                permit_overridden_by_forbid,
-                forbid_shadowed_by_forbid,
-            });
+            // Only include this request type if there are findings (matching CLI)
+            if !redundant_groups.is_empty() || !permit_shadowed.is_empty() || !permit_overridden.is_empty() || !forbid_shadowed.is_empty() {
+                per_request_type_findings.push(PerRequestTypeFindings {
+                    action,
+                    redundant_groups,
+                    permit_shadowed_by_permit: permit_shadowed,
+                    permit_overridden_by_forbid: permit_overridden,
+                    forbid_shadowed_by_forbid: forbid_shadowed,
+                });
+            }
         }
 
-        let analyze_result = AnalysisResult {
-            request_type_findings,
-            policy_findings,
+        let result = AnalyzeResultSer {
+            policyset_vacuity: match policyset_vacuity {
+                VacuityResult::MatchesAll => "matches_all".to_string(),
+                VacuityResult::MatchesSome => "matches_some".to_string(),
+                VacuityResult::MatchesNone => "matches_none".to_string(),
+            },
+            vacuous_policies,
+            per_request_type_findings,
         };
 
         compiler.solver_mut().clean_up().await
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-        serde_json::to_string(&analyze_result)
+        serde_json::to_string(&result)
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     })
+}
+
+// HashMap already imported at the top of the file
+
+#[derive(Clone, Copy, PartialEq)]
+enum ShadowingResult {
+    Equivalent,
+    Policy1Shadows2,
+    Policy2Shadows1,
+    NoResult,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum OverrideResult {
+    Overrides,
+    NoResult,
+}
+
+/// Permit shadowing: uses check_implies on singleton PolicySets (matching CLI).
+async fn compute_permit_shadowing<S: cedar_policy_symcc::solver::Solver + Send>(
+    compiler: &mut CedarSymCompiler<S>,
+    policy1: &Policy, vr1: VacuityResult,
+    policy2: &Policy, vr2: VacuityResult,
+    req_env: &RequestEnv, schema: &Schema,
+) -> Result<ShadowingResult, cedar_policy_symcc::err::Error> {
+    match (vr1, vr2) {
+        (VacuityResult::MatchesNone, _) | (_, VacuityResult::MatchesNone) => Ok(ShadowingResult::NoResult),
+        (VacuityResult::MatchesAll, VacuityResult::MatchesAll) => Ok(ShadowingResult::Equivalent),
+        (VacuityResult::MatchesAll, VacuityResult::MatchesSome) => Ok(ShadowingResult::Policy1Shadows2),
+        (VacuityResult::MatchesSome, VacuityResult::MatchesAll) => Ok(ShadowingResult::Policy2Shadows1),
+        (VacuityResult::MatchesSome, VacuityResult::MatchesSome) => {
+            let pset1 = PolicySet::from_policies([policy1.to_owned()]).unwrap();
+            let pset2 = PolicySet::from_policies([policy2.to_owned()]).unwrap();
+            let cpset1 = CompiledPolicySet::compile(&pset1, req_env, schema)?;
+            let cpset2 = CompiledPolicySet::compile(&pset2, req_env, schema)?;
+            let p1_implies_p2 = compiler.check_implies_opt(&cpset1, &cpset2).await?;
+            let p2_implies_p1 = compiler.check_implies_opt(&cpset2, &cpset1).await?;
+            Ok(match (p1_implies_p2, p2_implies_p1) {
+                (true, true) => ShadowingResult::Equivalent,
+                (true, false) => ShadowingResult::Policy2Shadows1,
+                (false, true) => ShadowingResult::Policy1Shadows2,
+                (false, false) => ShadowingResult::NoResult,
+            })
+        }
+    }
+}
+
+/// Forbid overrides permit: uses check_matches_implies (matching CLI).
+async fn compute_override<S: cedar_policy_symcc::solver::Solver + Send>(
+    compiler: &mut CedarSymCompiler<S>,
+    forbid_policy: &Policy, forbid_vr: VacuityResult,
+    permit_policy: &Policy, permit_vr: VacuityResult,
+    req_env: &RequestEnv, schema: &Schema,
+) -> Result<OverrideResult, cedar_policy_symcc::err::Error> {
+    match (forbid_vr, permit_vr) {
+        (VacuityResult::MatchesNone, _) | (VacuityResult::MatchesAll, _) |
+        (_, VacuityResult::MatchesNone) | (_, VacuityResult::MatchesAll) => Ok(OverrideResult::NoResult),
+        _ => {
+            let cp = CompiledPolicy::compile(permit_policy, req_env, schema)?;
+            let cf = CompiledPolicy::compile(forbid_policy, req_env, schema)?;
+            if compiler.check_matches_implies_opt(&cp, &cf).await? {
+                Ok(OverrideResult::Overrides)
+            } else {
+                Ok(OverrideResult::NoResult)
+            }
+        }
+    }
+}
+
+/// Forbid shadowing: uses check_matches_implies (matching CLI).
+async fn compute_forbid_shadowing<S: cedar_policy_symcc::solver::Solver + Send>(
+    compiler: &mut CedarSymCompiler<S>,
+    policy1: &Policy, vr1: VacuityResult,
+    policy2: &Policy, vr2: VacuityResult,
+    req_env: &RequestEnv, schema: &Schema,
+) -> Result<ShadowingResult, cedar_policy_symcc::err::Error> {
+    match (vr1, vr2) {
+        (VacuityResult::MatchesNone, _) | (_, VacuityResult::MatchesNone) => Ok(ShadowingResult::NoResult),
+        (VacuityResult::MatchesAll, VacuityResult::MatchesAll) => Ok(ShadowingResult::Equivalent),
+        (VacuityResult::MatchesAll, VacuityResult::MatchesSome) => Ok(ShadowingResult::Policy1Shadows2),
+        (VacuityResult::MatchesSome, VacuityResult::MatchesAll) => Ok(ShadowingResult::Policy2Shadows1),
+        (VacuityResult::MatchesSome, VacuityResult::MatchesSome) => {
+            let cp1 = CompiledPolicy::compile(policy1, req_env, schema)?;
+            let cp2 = CompiledPolicy::compile(policy2, req_env, schema)?;
+            let p1_implies_p2 = compiler.check_matches_implies_opt(&cp1, &cp2).await?;
+            let p2_implies_p1 = compiler.check_matches_implies_opt(&cp2, &cp1).await?;
+            Ok(match (p1_implies_p2, p2_implies_p1) {
+                (true, true) => ShadowingResult::Equivalent,
+                (true, false) => ShadowingResult::Policy2Shadows1,
+                (false, true) => ShadowingResult::Policy1Shadows2,
+                (false, false) => ShadowingResult::NoResult,
+            })
+        }
+    }
 }
 
 /// A Python module implemented in Rust.

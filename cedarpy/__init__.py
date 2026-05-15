@@ -342,31 +342,60 @@ class PolicyFinding:
         return f"PolicyFinding(policy_id={self.policy_id!r}, effect={self.effect!r}, vacuous_never_matches={self.vacuous_never_matches}, vacuous_always_matches={self.vacuous_always_matches})"
 
 
+class VacuousPolicy:
+    """A policy that is vacuous (matches all or no requests)."""
+
+    def __init__(self, result_dict: dict) -> None:
+        self._result = result_dict
+
+    @property
+    def policy_id(self) -> str:
+        return self._result.get('policy_id', '')
+
+    @property
+    def effect(self) -> str:
+        """'permit' or 'forbid'."""
+        return self._result.get('effect', '')
+
+    @property
+    def vacuity(self) -> str:
+        """'matches_all' or 'matches_none'."""
+        return self._result.get('vacuity', '')
+
+    def __repr__(self) -> str:
+        return f"VacuousPolicy(policy_id={self.policy_id!r}, effect={self.effect!r}, vacuity={self.vacuity!r})"
+
+
 class AnalysisResult:
     """Result of analyzing a Cedar policy set for logical issues.
 
     Matches the findings from cedar-lean-cli's ``analyze policies`` command:
-    vacuous policies, redundant groups, permit-shadowed-by-permit,
+    policyset vacuity, vacuous policies, redundant groups, permit-shadowed-by-permit,
     permit-overridden-by-forbid, forbid-shadowed-by-forbid.
     """
 
     def __init__(self, result_dict: dict) -> None:
         self._result = result_dict
-        self._request_type_findings = [RequestTypeFindings(f) for f in result_dict.get('request_type_findings', [])]
-        self._policy_findings = [PolicyFinding(f) for f in result_dict.get('policy_findings', [])]
+        self._per_request_type_findings = [RequestTypeFindings(f) for f in result_dict.get('per_request_type_findings', [])]
+        self._vacuous_policies = [VacuousPolicy(p) for p in result_dict.get('vacuous_policies', [])]
 
     @property
-    def request_type_findings(self) -> List['RequestTypeFindings']:
-        """Findings per request type (action): redundancy, shadowing, overriding."""
-        return self._request_type_findings
+    def policyset_vacuity(self) -> str:
+        """Policyset-level vacuity: 'matches_all', 'matches_some', or 'matches_none'."""
+        return self._result.get('policyset_vacuity', 'matches_some')
 
     @property
-    def policy_findings(self) -> List['PolicyFinding']:
-        """Per-policy findings: vacuousness and error checks."""
-        return self._policy_findings
+    def vacuous_policies(self) -> List['VacuousPolicy']:
+        """Policies that are vacuous (only non-matches_some included)."""
+        return self._vacuous_policies
+
+    @property
+    def per_request_type_findings(self) -> List['RequestTypeFindings']:
+        """Findings per request type (action): redundancy, shadowing, overriding. Only includes request types with findings."""
+        return self._per_request_type_findings
 
     def __repr__(self) -> str:
-        return f"AnalysisResult(request_type_findings={len(self._request_type_findings)}, policy_findings={len(self._policy_findings)})"
+        return f"AnalysisResult(policyset_vacuity={self.policyset_vacuity!r}, vacuous_policies={len(self._vacuous_policies)}, per_request_type_findings={len(self._per_request_type_findings)})"
 
 
 class RequestTypeComparison:
@@ -386,9 +415,14 @@ class RequestTypeComparison:
         return self._comparison.get('result', '')
 
     @property
-    def counterexample(self) -> Union[str, None]:
-        """A concrete request demonstrating the difference, or None if equivalent."""
-        return self._comparison.get('counterexample')
+    def more_permissive_example(self) -> Union[str, None]:
+        """Counterexample where pset1 allows but pset2 denies."""
+        return self._comparison.get('more_permissive_example')
+
+    @property
+    def less_permissive_example(self) -> Union[str, None]:
+        """Counterexample where pset1 denies but pset2 allows."""
+        return self._comparison.get('less_permissive_example')
 
     def __repr__(self) -> str:
         return f"RequestTypeComparison(action={self.action!r}, result={self.result!r})"
