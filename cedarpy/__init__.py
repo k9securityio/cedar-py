@@ -253,54 +253,120 @@ def policies_from_json_str(policies: str) -> str:
     return _internal.policies_from_json_str(policies)
 
 
-class AnalysisPolicyDiagnostic:
-    """Diagnostic result for a single policy within an analysis."""
+class ShadowedFinding:
+    """A finding where one policy is shadowed or overridden by another."""
 
-    def __init__(self, diag_dict: dict) -> None:
-        self._diag = diag_dict
+    def __init__(self, finding_dict: dict) -> None:
+        self._finding = finding_dict
 
     @property
     def policy_id(self) -> str:
-        return self._diag.get('policy_id', '')
+        """The policy that is shadowed/overridden."""
+        return self._finding.get('policy_id', '')
 
     @property
-    def never_matches(self) -> bool:
+    def by_policy_id(self) -> str:
+        """The policy that does the shadowing/overriding."""
+        return self._finding.get('by_policy_id', '')
+
+    def __repr__(self) -> str:
+        return f"ShadowedFinding(policy_id={self.policy_id!r}, by_policy_id={self.by_policy_id!r})"
+
+
+class RequestTypeFindings:
+    """Analysis findings for a specific request type (action) in the schema."""
+
+    def __init__(self, findings_dict: dict) -> None:
+        self._findings = findings_dict
+
+    @property
+    def action(self) -> str:
+        """The action this analysis applies to."""
+        return self._findings.get('action', '')
+
+    @property
+    def redundant_groups(self) -> List[List[str]]:
+        """Groups of policies that are equivalent to each other."""
+        return self._findings.get('redundant_groups', [])
+
+    @property
+    def permit_shadowed_by_permit(self) -> List['ShadowedFinding']:
+        """Permit policies fully covered by another permit policy."""
+        return [ShadowedFinding(f) for f in self._findings.get('permit_shadowed_by_permit', [])]
+
+    @property
+    def permit_overridden_by_forbid(self) -> List['ShadowedFinding']:
+        """Permit policies fully overridden by a forbid policy."""
+        return [ShadowedFinding(f) for f in self._findings.get('permit_overridden_by_forbid', [])]
+
+    @property
+    def forbid_shadowed_by_forbid(self) -> List['ShadowedFinding']:
+        """Forbid policies fully covered by another forbid policy."""
+        return [ShadowedFinding(f) for f in self._findings.get('forbid_shadowed_by_forbid', [])]
+
+    def __repr__(self) -> str:
+        return f"RequestTypeFindings(action={self.action!r})"
+
+
+class PolicyFinding:
+    """Per-policy vacuousness and error findings."""
+
+    def __init__(self, finding_dict: dict) -> None:
+        self._finding = finding_dict
+
+    @property
+    def policy_id(self) -> str:
+        return self._finding.get('policy_id', '')
+
+    @property
+    def effect(self) -> str:
+        """'permit' or 'forbid'."""
+        return self._finding.get('effect', '')
+
+    @property
+    def vacuous_never_matches(self) -> bool:
         """True if this policy can never match any request."""
-        return self._diag.get('never_matches', False)
+        return self._finding.get('vacuous_never_matches', False)
+
+    @property
+    def vacuous_always_matches(self) -> bool:
+        """True if this policy matches all requests."""
+        return self._finding.get('vacuous_always_matches', False)
 
     @property
     def never_errors(self) -> bool:
         """True if this policy never produces evaluation errors."""
-        return self._diag.get('never_errors', False)
+        return self._finding.get('never_errors', False)
 
     def __repr__(self) -> str:
-        return f"AnalysisPolicyDiagnostic(policy_id={self.policy_id!r}, never_matches={self.never_matches}, never_errors={self.never_errors})"
+        return f"PolicyFinding(policy_id={self.policy_id!r}, effect={self.effect!r}, vacuous_never_matches={self.vacuous_never_matches}, vacuous_always_matches={self.vacuous_always_matches})"
 
 
 class AnalysisResult:
-    """Result of analyzing a Cedar policy set for logical issues."""
+    """Result of analyzing a Cedar policy set for logical issues.
+
+    Matches the findings from cedar-lean-cli's ``analyze policies`` command:
+    vacuous policies, redundant groups, permit-shadowed-by-permit,
+    permit-overridden-by-forbid, forbid-shadowed-by-forbid.
+    """
 
     def __init__(self, result_dict: dict) -> None:
         self._result = result_dict
-        self._diagnostics = [AnalysisPolicyDiagnostic(d) for d in result_dict.get('diagnostics', [])]
+        self._request_type_findings = [RequestTypeFindings(f) for f in result_dict.get('request_type_findings', [])]
+        self._policy_findings = [PolicyFinding(f) for f in result_dict.get('policy_findings', [])]
 
     @property
-    def always_allows(self) -> bool:
-        """True if the policy set allows all requests."""
-        return self._result.get('always_allows', False)
+    def request_type_findings(self) -> List['RequestTypeFindings']:
+        """Findings per request type (action): redundancy, shadowing, overriding."""
+        return self._request_type_findings
 
     @property
-    def always_denies(self) -> bool:
-        """True if the policy set denies all requests."""
-        return self._result.get('always_denies', False)
-
-    @property
-    def diagnostics(self) -> List['AnalysisPolicyDiagnostic']:
-        """Per-policy diagnostic results."""
-        return self._diagnostics
+    def policy_findings(self) -> List['PolicyFinding']:
+        """Per-policy findings: vacuousness and error checks."""
+        return self._policy_findings
 
     def __repr__(self) -> str:
-        return f"AnalysisResult(always_allows={self.always_allows}, always_denies={self.always_denies}, diagnostics={len(self._diagnostics)})"
+        return f"AnalysisResult(request_type_findings={len(self._request_type_findings)}, policy_findings={len(self._policy_findings)})"
 
 
 class CompareResult:
