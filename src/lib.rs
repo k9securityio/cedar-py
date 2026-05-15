@@ -734,7 +734,7 @@ fn analyze_policies(policies: String, schema: String) -> PyResult<String> {
         // Per request type findings: redundancy, shadowing, overriding
         let mut request_type_findings = Vec::new();
         for req_env in schema.request_envs() {
-            let action = format!("{req_env}");
+            let action = req_env.action().to_string();
 
             // Compile all policies for this request env
             let mut compiled_policies: Vec<(&Policy, CompiledPolicy)> = Vec::new();
