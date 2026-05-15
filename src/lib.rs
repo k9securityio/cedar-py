@@ -559,6 +559,169 @@ fn validate_policies(policies: String, schema: String) -> String {
     serde_json::to_string(&result).unwrap()
 }
 
+//
+// ANALYSIS
+// ----------------------------------------
+
+use cedar_policy_symcc::solver::LocalSolver;
+use cedar_policy_symcc::{CedarSymCompiler, CompiledPolicy, CompiledPolicySet, Env};
+
+#[derive(Serialize)]
+struct AnalysisCompareResult {
+    equivalent: bool,
+    counterexample: Option<String>,
+}
+
+#[derive(Serialize)]
+struct AnalysisResult {
+    always_allows: bool,
+    always_denies: bool,
+    diagnostics: Vec<AnalysisPolicyDiagnostic>,
+}
+
+#[derive(Serialize)]
+struct AnalysisPolicyDiagnostic {
+    policy_id: String,
+    never_matches: bool,
+    never_errors: bool,
+}
+
+fn format_counterexample(env: &Env) -> String {
+    let principal = env
+        .request
+        .principal()
+        .map_or_else(|| "unknown".to_string(), |p| p.to_string());
+    let action = env
+        .request
+        .action()
+        .map_or_else(|| "unknown".to_string(), |a| a.to_string());
+    let resource = env
+        .request
+        .resource()
+        .map_or_else(|| "unknown".to_string(), |r| r.to_string());
+    format!("principal: {principal}, action: {action}, resource: {resource}")
+}
+
+/// Compare two Cedar policy sets and determine if they are equivalent.
+/// Returns a JSON string with keys: equivalent (bool), counterexample (str | null).
+#[pyfunction]
+#[pyo3(signature = (baseline_policies, new_policies, schema))]
+fn compare_policy_sets(baseline_policies: String, new_policies: String, schema: String) -> PyResult<String> {
+    let baseline_pset = PolicySet::from_str(&baseline_policies)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("Failed to parse baseline policies: {e}")))?;
+    let new_pset = PolicySet::from_str(&new_policies)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("Failed to parse new policies: {e}")))?;
+    let schema = Schema::from_str(schema.trim())
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("Failed to parse schema: {e}")))?;
+
+    let rt = tokio::runtime::Runtime::new()
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+    rt.block_on(async {
+        let solver = LocalSolver::cvc5()
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to start CVC5 solver: {e}")))?;
+        let mut compiler = CedarSymCompiler::new(solver)
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+        for req_env in schema.request_envs() {
+            let compiled_baseline = CompiledPolicySet::compile(&baseline_pset, &req_env, &schema)
+                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+            let compiled_new = CompiledPolicySet::compile(&new_pset, &req_env, &schema)
+                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+            let result = compiler
+                .check_equivalent_with_counterexample_opt(&compiled_baseline, &compiled_new)
+                .await
+                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+            if let Some(env) = result {
+                let compare_result = AnalysisCompareResult {
+                    equivalent: false,
+                    counterexample: Some(format_counterexample(&env)),
+                };
+                compiler.solver_mut().clean_up().await
+                    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+                return serde_json::to_string(&compare_result)
+                    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()));
+            }
+        }
+
+        compiler.solver_mut().clean_up().await
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        let compare_result = AnalysisCompareResult {
+            equivalent: true,
+            counterexample: None,
+        };
+        serde_json::to_string(&compare_result)
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
+    })
+}
+
+/// Analyze a Cedar policy set for logical issues.
+/// Returns a JSON string with keys: always_allows (bool), always_denies (bool),
+/// diagnostics (array of {policy_id, never_matches, never_errors}).
+#[pyfunction]
+#[pyo3(signature = (policies, schema))]
+fn analyze_policies(policies: String, schema: String) -> PyResult<String> {
+    let pset = PolicySet::from_str(&policies)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("Failed to parse policies: {e}")))?;
+    let schema = Schema::from_str(schema.trim())
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("Failed to parse schema: {e}")))?;
+
+    let rt = tokio::runtime::Runtime::new()
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+    rt.block_on(async {
+        let solver = LocalSolver::cvc5()
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to start CVC5 solver: {e}")))?;
+        let mut compiler = CedarSymCompiler::new(solver)
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+        let mut always_allows = false;
+        let mut always_denies = false;
+
+        for req_env in schema.request_envs() {
+            let compiled_pset = CompiledPolicySet::compile(&pset, &req_env, &schema)
+                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+            if compiler.check_always_allows_opt(&compiled_pset).await
+                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))? {
+                always_allows = true;
+            }
+            if compiler.check_always_denies_opt(&compiled_pset).await
+                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))? {
+                always_denies = true;
+            }
+        }
+
+        let mut diagnostics = Vec::new();
+        if let Some(req_env) = schema.request_envs().next() {
+            for policy in pset.policies() {
+                let compiled_policy = CompiledPolicy::compile(policy, &req_env, &schema)
+                    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+                let never_matches = compiler.check_never_matches_opt(&compiled_policy).await
+                    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+                let never_errors = compiler.check_never_errors_opt(&compiled_policy).await
+                    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+                diagnostics.push(AnalysisPolicyDiagnostic {
+                    policy_id: policy.id().to_string(),
+                    never_matches,
+                    never_errors,
+                });
+            }
+        }
+
+        let analyze_result = AnalysisResult {
+            always_allows,
+            always_denies,
+            diagnostics,
+        };
+
+        compiler.solver_mut().clean_up().await
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        serde_json::to_string(&analyze_result)
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
+    })
+}
+
 /// A Python module implemented in Rust.
 #[pymodule]
 fn _internal(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -569,5 +732,7 @@ fn _internal(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(policies_to_json_str, m)?)?;
     m.add_function(wrap_pyfunction!(policies_from_json_str, m)?)?;
     m.add_function(wrap_pyfunction!(validate_policies, m)?)?;
+    m.add_function(wrap_pyfunction!(compare_policy_sets, m)?)?;
+    m.add_function(wrap_pyfunction!(analyze_policies, m)?)?;
     Ok(())
 }

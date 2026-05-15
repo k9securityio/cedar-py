@@ -253,6 +253,123 @@ def policies_from_json_str(policies: str) -> str:
     return _internal.policies_from_json_str(policies)
 
 
+class AnalysisPolicyDiagnostic:
+    """Diagnostic result for a single policy within an analysis."""
+
+    def __init__(self, diag_dict: dict) -> None:
+        self._diag = diag_dict
+
+    @property
+    def policy_id(self) -> str:
+        return self._diag.get('policy_id', '')
+
+    @property
+    def never_matches(self) -> bool:
+        """True if this policy can never match any request."""
+        return self._diag.get('never_matches', False)
+
+    @property
+    def never_errors(self) -> bool:
+        """True if this policy never produces evaluation errors."""
+        return self._diag.get('never_errors', False)
+
+    def __repr__(self) -> str:
+        return f"AnalysisPolicyDiagnostic(policy_id={self.policy_id!r}, never_matches={self.never_matches}, never_errors={self.never_errors})"
+
+
+class AnalysisResult:
+    """Result of analyzing a Cedar policy set for logical issues."""
+
+    def __init__(self, result_dict: dict) -> None:
+        self._result = result_dict
+        self._diagnostics = [AnalysisPolicyDiagnostic(d) for d in result_dict.get('diagnostics', [])]
+
+    @property
+    def always_allows(self) -> bool:
+        """True if the policy set allows all requests."""
+        return self._result.get('always_allows', False)
+
+    @property
+    def always_denies(self) -> bool:
+        """True if the policy set denies all requests."""
+        return self._result.get('always_denies', False)
+
+    @property
+    def diagnostics(self) -> List['AnalysisPolicyDiagnostic']:
+        """Per-policy diagnostic results."""
+        return self._diagnostics
+
+    def __repr__(self) -> str:
+        return f"AnalysisResult(always_allows={self.always_allows}, always_denies={self.always_denies}, diagnostics={len(self._diagnostics)})"
+
+
+class CompareResult:
+    """Result of comparing two Cedar policy sets."""
+
+    def __init__(self, result_dict: dict) -> None:
+        self._result = result_dict
+
+    @property
+    def equivalent(self) -> bool:
+        """True if the two policy sets are equivalent."""
+        return self._result.get('equivalent', False)
+
+    @property
+    def counterexample(self) -> Union[str, None]:
+        """A concrete request that demonstrates a difference between the two policy sets, or None if equivalent."""
+        return self._result.get('counterexample')
+
+    def __repr__(self) -> str:
+        return f"CompareResult(equivalent={self.equivalent}, counterexample={self.counterexample!r})"
+
+
+def analyze_policies(policies: str,
+                     schema: Union[str, dict]) -> AnalysisResult:
+    """Analyze a Cedar policy set for logical issues.
+
+    Uses the CVC5 SMT solver to check for shadowed permits, impossible conditions,
+    and whether the policy set always allows or always denies all requests.
+
+    :param policies: Cedar policies as a string
+    :param schema: Cedar schema (JSON dict, JSON string, or Cedar schema string)
+
+    :returns: AnalysisResult with always_allows, always_denies, and per-policy diagnostics
+    :raises RuntimeError: if CVC5 is not installed or analysis fails
+    :raises ValueError: if policies or schema cannot be parsed
+    """
+    if isinstance(schema, dict):
+        schema = json.dumps(schema)
+
+    result_str = _internal.analyze_policies(policies, schema)
+    result_dict = json.loads(result_str)
+    return AnalysisResult(result_dict)
+
+
+def compare_policy_sets(baseline_policies: str,
+                        new_policies: str,
+                        schema: Union[str, dict]) -> CompareResult:
+    """Compare two Cedar policy sets and determine if they are equivalent.
+
+    Uses the CVC5 SMT solver to check whether the two policy sets produce
+    identical authorization decisions for all possible requests. If they differ,
+    returns a concrete counterexample request.
+
+    :param baseline_policies: the current/old Cedar policies as a string
+    :param new_policies: the proposed/new Cedar policies as a string
+    :param schema: Cedar schema (JSON dict, JSON string, or Cedar schema string)
+
+    :returns: CompareResult with equivalent boolean and optional counterexample
+    :raises RuntimeError: if CVC5 is not installed or analysis fails
+    :raises ValueError: if policies or schema cannot be parsed
+    """
+    if isinstance(schema, dict):
+        schema = json.dumps(schema)
+
+    result_str = _internal.compare_policy_sets(baseline_policies, new_policies, schema)
+    result_dict = json.loads(result_str)
+    return CompareResult(result_dict)
+
+
 def validate_policies(policies: str,
                       schema: Union[str, dict]) -> ValidationResult:
     """Validate Cedar policies against a schema.
