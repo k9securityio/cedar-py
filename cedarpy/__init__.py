@@ -1,7 +1,7 @@
 import json
 from copy import copy
 from enum import Enum
-from typing import Union, List, Any
+from typing import Union, List, Optional, Any
 
 from cedarpy import _internal
 
@@ -251,6 +251,121 @@ def policies_from_json_str(policies: str) -> str:
     :raises ValueError: if the input policies cannot be parsed
     """
     return _internal.policies_from_json_str(policies)
+
+
+class PartialAuthzResult:
+    """Result of a partial authorization evaluation.
+
+    When the authorizer can reach a definitive decision despite unknowns,
+    ``decision`` is set. Otherwise it is ``None`` and the ``residuals``
+    dict contains simplified policy expressions awaiting further evaluation.
+    """
+
+    def __init__(self, resp: dict) -> None:
+        self._resp = resp
+
+    @property
+    def decision(self) -> Optional[Decision]:
+        d = self._resp.get('decision')
+        if d is None:
+            return None
+        return Decision[d]
+
+    @property
+    def determined(self) -> bool:
+        return self.decision is not None
+
+    @property
+    def allowed(self) -> Optional[bool]:
+        if self.decision is None:
+            return None
+        return self.decision == Decision.Allow
+
+    @property
+    def correlation_id(self) -> Optional[str]:
+        return self._resp.get('correlation_id')
+
+    @property
+    def satisfied(self) -> List[str]:
+        return list(self._resp.get('satisfied', []))
+
+    @property
+    def errored(self) -> List[str]:
+        return list(self._resp.get('errored', []))
+
+    @property
+    def may_be_determining(self) -> List[str]:
+        return list(self._resp.get('may_be_determining', []))
+
+    @property
+    def must_be_determining(self) -> List[str]:
+        return list(self._resp.get('must_be_determining', []))
+
+    @property
+    def nontrivial_residual_ids(self) -> List[str]:
+        return list(self._resp.get('nontrivial_residual_ids', []))
+
+    @property
+    def residuals(self) -> dict:
+        return self._resp.get('residuals', {})
+
+    @property
+    def id_annotations(self) -> dict:
+        return self._resp.get('id_annotations', {})
+
+    @property
+    def diagnostics_errors(self) -> List[str]:
+        return list(self._resp.get('diagnostics_errors', []))
+
+    @property
+    def metrics(self) -> dict:
+        return self._resp.get('metrics', {})
+
+
+def is_authorized_partial(request: dict,
+                          policies: str,
+                          entities: Union[str, List[dict]],
+                          schema: Union[str, dict, None] = None,
+                          verbose: bool = False) -> PartialAuthzResult:
+    """Partially evaluate an authorization request with unknowns.
+
+    Fields in the request dict that are None or absent are treated as
+    unknown. The evaluator simplifies policies as far as possible and
+    returns residual expressions for policies that cannot be fully resolved.
+
+    :param request: dict with optional keys: principal, action, resource,
+        context, correlation_id. Any key that is None or absent is unknown.
+    :param policies: Cedar policies as a string
+    :param entities: entities as a list of dicts or JSON string
+    :param schema: optional Cedar schema
+    :param verbose: enable verbose logging
+
+    :returns: PartialAuthzResult
+    """
+    request_local: dict = {}
+    for key in ('principal', 'action', 'resource', 'correlation_id'):
+        if key in request:
+            request_local[key] = request[key]
+
+    if 'context' in request:
+        context = request['context']
+        if isinstance(context, dict):
+            request_local['context'] = json.dumps(context)
+        elif context is None:
+            request_local['context'] = None
+        else:
+            request_local['context'] = context
+
+    if isinstance(entities, list):
+        entities = json.dumps(entities)
+
+    if schema is not None and isinstance(schema, dict):
+        schema = json.dumps(schema)
+
+    result_str = _internal.is_authorized_partial(
+        request_local, policies, entities, schema, verbose)
+    result_dict = json.loads(result_str)
+    return PartialAuthzResult(result_dict)
 
 
 def validate_policies(policies: str,
