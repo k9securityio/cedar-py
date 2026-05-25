@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- `make benchmark-compare` now runs N=5 release-mode benchmarks at HEAD and gates on median Δ vs `tests/benchmark/results/baseline.json`, replacing the prior single pytest-benchmark run with `--benchmark-compare-fail=median:5%,mean:15%`. The `mean` threshold has been dropped — a single tail outlier could trip a passing run, and the N=5 median is the stable signal. Per-run JSONs land in `tests/benchmark/results/current/` (gitignored). Override the run count via `BENCHMARK_RUNS=N` ([#69](https://github.com/k9securityio/cedar-py/issues/69))
+
 ## [4.8.3] - 2026-05-13
 
 ### Changed

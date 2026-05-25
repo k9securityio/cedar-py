@@ -67,21 +67,14 @@ benchmark-save:
 
 .PHONY: benchmark-compare
 benchmark-compare:
-	# note: tried failing on stddev and max deviations, but the tail seems to be too noisy.
-	# observed repeated max+stddev failures on back to back runs on the same machine
-	# so skipped those assertions and relaxed mean regression threshold, which is a little noisy on batches.
-
-	@echo Running benchmarks and comparing with baseline
+	@echo Running N benchmark runs at HEAD and comparing median Δ against baseline
 	@if [ ! -f $(BENCHMARK_RESULTS_DIR)/baseline.json ]; then \
-		echo "Error: $(BENCHMARK_RESULTS_DIR)/baseline.json not found. Sym-link $(BENCHMARK_RESULTS_DIR)/baseline.json to the current baseline results"; \
+		echo "Error: $(BENCHMARK_RESULTS_DIR)/baseline.json not found. Sym-link $(BENCHMARK_RESULTS_DIR)/baseline.json to a baseline-<state>-median.json first."; \
 		exit 1; \
 	fi
 	set -e ;\
-	maturin develop --release ;\
-	pytest tests/benchmark --benchmark-only \
-		--benchmark-compare=$(BENCHMARK_RESULTS_DIR)/baseline.json -v \
-		--benchmark-compare-fail=median:5% \
-		--benchmark-compare-fail=mean:15%
+	bash tests/benchmark/run_current.sh ;\
+	python3 tests/benchmark/aggregate.py --compare-current $(BENCHMARK_RESULTS_DIR)/current
 
 .PHONY: benchmark-history
 benchmark-history:

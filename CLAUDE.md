@@ -13,7 +13,7 @@ Project-specific guidance for Claude Code sessions working in `cedar-py`.
 - **Unit tests:** `pytest` (discovers `tests/unit/`)
 - **Integration tests:** `make integration-tests` — pulls the `third_party/cedar-integration-tests` git submodule
 - **Benchmarks:**
-  - `make benchmark-compare` for single-run regression check vs `tests/benchmark/results/baseline.json`. Do NOT refresh the baseline for routine dep updates — only for performance-relevant code changes.
+  - `make benchmark-compare` runs N=5 release-mode benchmarks at HEAD and gates on **median Δ** vs `tests/benchmark/results/baseline.json` (per-benchmark `stats.median`). Override the run count with `BENCHMARK_RUNS=N`. The previous `mean:15%` threshold was dropped — median-only gating per #69 goal 3. Per-run JSONs land in `tests/benchmark/results/current/` (gitignored, wiped each invocation). Do NOT refresh the baseline for routine dep updates — only for performance-relevant code changes.
   - `make benchmark-history` for release-mode multi-run capture across the historical commits listed in `tests/benchmark/capture_history.sh`. Outputs land in `tests/benchmark/results/history/<state>.json` (per-commit summary stats) and `tests/benchmark/results/HISTORY.md` (rendered cross-state table). The script does a `git checkout` per state and restores the starting branch on exit.
   - See `tests/benchmark/README.md` for the workflow, default run count (N=5) and why we landed there, the `STATES` format (`<save_prefix>:<git_ref>:<description>`, all required), and the `states-manifest.json` plumbing between the runner and aggregator.
 

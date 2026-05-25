@@ -1,19 +1,38 @@
 # cedarpy benchmark suite
 
-`pytest-benchmark` suite for cedarpy. Two distinct workflows live here:
+`pytest-benchmark` suite for cedarpy. Three workflows live here:
 
-1. **Single-run benchmarks** — the `make benchmark*` targets (run / save / compare-against-baseline). See `Makefile`.
-2. **Historical record** — multi-run release-mode capture across a list of historical commits, aggregated into a committed perf history (this README is mostly about this).
+1. **Ad-hoc benchmarks** — `make benchmark` / `make benchmark-save` for single-run exploration. See `Makefile`.
+2. **Regression gate** — `make benchmark-compare` runs N=5 release-mode benchmarks at HEAD and gates on median Δ vs `results/baseline.json` (see "The regression gate" below).
+3. **Historical record** — multi-run release-mode capture across a list of historical commits, aggregated into a committed perf history (most of this README).
 
 ## Files
 
 - `test_benchmark_authorize.py` — the benchmarks themselves.
+- `run_current.sh` — runs N=5 release-mode benchmarks at HEAD; writes ephemeral per-run JSONs into `results/current/` (gitignored).
 - `capture_history.sh` — captures release-mode runs at each historical commit; writes native pytest-benchmark JSONs.
-- `aggregate.py` — reads native JSONs, writes per-commit summary JSONs and `HISTORY.md`.
+- `aggregate.py` — three modes:
+  - default (`--phase ab`): reads native JSONs, writes per-commit summary JSONs and `HISTORY.md`.
+  - `--build-baseline-from <state>`: synthesizes a median-of-N baseline JSON from a committed historical state.
+  - `--compare-current [DIR]`: compares per-benchmark median across N current runs against `baseline.json` and exits non-zero on regression.
 - `results/Darwin-CPython-3.11-64bit/` — native pytest-benchmark JSONs (one per pytest invocation, autoincremented).
+- `results/current/` — ephemeral per-run JSONs from `run_current.sh` (gitignored, wiped each invocation).
 - `results/history/<state>.json` — per-commit summary (median/max/min/stdev across N runs per benchmark).
 - `results/HISTORY.md` — rendered table view of `results/history/*.json`, one section per benchmark.
-- `results/baseline.json` — used by `make benchmark-compare` (single-run comparison gate).
+- `results/baseline.json` — symlink to the active baseline (typically `baseline-v4_8_0-median.json`); used by `make benchmark-compare`.
+
+## The regression gate
+
+```sh
+make benchmark-compare
+```
+
+Runs `bash run_current.sh` (one release-mode rebuild + N pytest invocations writing to `results/current/run<N>.json`), then `python tests/benchmark/aggregate.py --compare-current` (loads the N runs, computes per-benchmark median μs, compares against `baseline.json`'s `stats.median` per benchmark, and gates on **median Δ > 5%**). A summary table prints on both pass and fail, so drift is visible even when the gate passes.
+
+- **N defaults to 5.** Override per-invocation: `BENCHMARK_RUNS=2 make benchmark-compare` (fast smoke test) or `BENCHMARK_RUNS=10 make benchmark-compare` (tighter median).
+- **The gate is median-only.** The previous `mean:15%` threshold was dropped as noisy by design — a single tail outlier could trip a passing run. The N=5 median is the stable signal.
+- **Faster-than-baseline never fails.** Only positive Δ exceeding the threshold is a regression.
+- The runner does NOT require a clean working tree; the gate runs on whatever HEAD has. Build mode is always release (`maturin develop --release`).
 
 ## Capturing the historical record
 
