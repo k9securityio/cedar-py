@@ -61,13 +61,13 @@ File:line references are against `main` at the tip of branch `feat/issue-69-medi
 
 ### Preflight
 
-1. **Confirm the current gate passes on `main`.** From a clean `venv-dev`, run `make benchmark-compare` on `main` (single-pytest-run vs `baseline.json`). Expectation per the #74/Path B resolution: passes. Record the per-benchmark median Δ output; it's the reference for sanity-checking the new N=5 gate's output in step 13.
+1. ❌ **Confirm the current gate passes on `main`.** Deferred to the user per task decision (#5): the maintainer runs `make benchmark-compare` locally to validate. From a clean `venv-dev`, run `make benchmark-compare` on `main` (single-pytest-run vs `baseline.json`). Expectation per the #74/Path B resolution: passes. Record the per-benchmark median Δ output; it's the reference for sanity-checking the new N=5 gate's output in step 13.
 
-2. **Delete the stale autosave files.** `git rm` (or plain `rm` — they're untracked per `git status`) the five `tests/benchmark/results/Darwin-CPython-3.11-64bit/0033_…0037_v4_8_2-run*.json` files. They're leftovers from a manual N=5 attempt and are not part of the committed historical record (which uses the `v4_8_2:v4.8.2:v4.8.2` state in `capture_history.sh` and its own captured runs).
+2. ✅ **Delete the stale autosave files.** `git rm` (or plain `rm` — they're untracked per `git status`) the five `tests/benchmark/results/Darwin-CPython-3.11-64bit/0033_…0037_v4_8_2-run*.json` files. They're leftovers from a manual N=5 attempt and are not part of the committed historical record (which uses the `v4_8_2:v4.8.2:v4.8.2` state in `capture_history.sh` and its own captured runs).
 
 ### Runner — `tests/benchmark/run_current.sh` (new)
 
-3. **Add a HEAD-only N-run runner.** New file `tests/benchmark/run_current.sh`. Modeled on the inner loop of `capture_history.sh:87–108` but without the `git checkout` dance, the states-manifest plumbing, or the `restore_branch` trap. Responsibilities:
+3. ✅ **Add a HEAD-only N-run runner.** New file `tests/benchmark/run_current.sh`. Modeled on the inner loop of `capture_history.sh:87–108` but without the `git checkout` dance, the states-manifest plumbing, or the `restore_branch` trap. Responsibilities:
    - Verify `venv-dev/` exists; `source venv-dev/bin/activate`.
    - **Do not** require a clean working tree (the historical-record runner does; the gate runs on whatever HEAD has).
    - Read `RUNS="${BENCHMARK_RUNS:-5}"`.
@@ -78,13 +78,13 @@ File:line references are against `main` at the tip of branch `feat/issue-69-medi
    - Print one tail-3 summary per run, matching `capture_history.sh`'s ergonomics.
    - `chmod +x`.
 
-4. **Gitignore the ephemeral output dir.** Append `tests/benchmark/results/current/` to `.gitignore` (alongside the existing `tests/benchmark/results/out` entry on line 80). This keeps `git status` clean after `make benchmark-compare`.
+4. ✅ **Gitignore the ephemeral output dir.** Append `tests/benchmark/results/current/` to `.gitignore` (alongside the existing `tests/benchmark/results/out` entry on line 80). This keeps `git status` clean after `make benchmark-compare`.
 
 ### Comparator — extend `tests/benchmark/aggregate.py`
 
-5. **Add a `--compare-current <dir>` mode.** New CLI flag on `aggregate.py:408–414`, mutually exclusive with `--phase` and `--build-baseline-from`. Argument is the runner's output dir (defaulting to `tests/benchmark/results/current/`). Calls a new `compare_current_to_baseline(current_dir, baseline_path, threshold_pct)` function and exits with that function's return code.
+5. ✅ **Add a `--compare-current <dir>` mode.** New CLI flag on `aggregate.py:408–414`, mutually exclusive with `--phase` and `--build-baseline-from`. Argument is the runner's output dir (defaulting to `tests/benchmark/results/current/`). Calls a new `compare_current_to_baseline(current_dir, baseline_path, threshold_pct)` function and exits with that function's return code.
 
-6. **Implement `compare_current_to_baseline`.** New top-level function in `aggregate.py`. Steps:
+6. ✅ **Implement `compare_current_to_baseline`.** New top-level function in `aggregate.py`. Steps:
    - Load every `run*.json` under `current_dir`. If fewer than 1 file is present, exit non-zero with a clear error pointing the user at `run_current.sh`. (No lower bound > 1 — let the user run with `BENCHMARK_RUNS=1` if they want a fast-feedback debug loop; the gate just becomes single-run-vs-median in that case.)
    - Build `current_means_us: dict[name -> list[float]]` by reading `b["stats"]["mean"]` per benchmark across runs (same convention as `per_benchmark_stats` at `aggregate.py:166–188` — convert to μs by `* 1_000_000`).
    - Compute `current_median_us = statistics.median(means_us)` per benchmark.
@@ -101,13 +101,13 @@ File:line references are against `main` at the tip of branch `feat/issue-69-medi
    - Print a footer line indicating N (the run count) and the threshold used.
    - Return non-zero if any benchmark FAIL'd; zero otherwise.
 
-7. **No `mean` threshold evaluation.** Per the resolved question, the comparator gates only on **median Δ**. Don't compute or print a `mean Δ` column — the goal is to remove the noisy mean check entirely, not preserve it as visual noise.
+7. ✅ **No `mean` threshold evaluation.** Per the resolved question, the comparator gates only on **median Δ**. Don't compute or print a `mean Δ` column — the goal is to remove the noisy mean check entirely, not preserve it as visual noise.
 
-8. **Don't fork — extend.** Per the resolved question, all new logic lives in `aggregate.py`. The existing functions (`per_benchmark_stats`, `build_baseline_from_state`, `phase_a`, `phase_b`) stay untouched.
+8. ✅ **Don't fork — extend.** Per the resolved question, all new logic lives in `aggregate.py`. The existing functions (`per_benchmark_stats`, `build_baseline_from_state`, `phase_a`, `phase_b`) stay untouched.
 
 ### Makefile — `make benchmark-compare`
 
-9. **Rewire the target.** Replace `Makefile:68–84`. New shape:
+9. ✅ **Rewire the target.** Replace `Makefile:68–84`. New shape:
    ```make
    .PHONY: benchmark-compare
    benchmark-compare:
@@ -124,26 +124,26 @@ File:line references are against `main` at the tip of branch `feat/issue-69-medi
    - Drop the comment block at `Makefile:70–72` (stddev/max noise note) — irrelevant under the new gate.
    - Keep `maturin develop --release` inside `run_current.sh` so the build step stays adjacent to the runs (and is shared with any future `run_current.sh` invocations from outside `make`).
 
-10. **`make benchmark` and `benchmark-save` are unchanged.** Those are exploration targets; they stay single-run.
+10. ✅ **`make benchmark` and `benchmark-save` are unchanged.** Those are exploration targets; they stay single-run.
 
 ### Docs
 
-11. **Update `tests/benchmark/README.md`.** Two updates to the "Single-run benchmarks" framing:
+11. ✅ **Update `tests/benchmark/README.md`.** Two updates to the "Single-run benchmarks" framing:
     - Rename that workflow heading to acknowledge the gate is now multi-run (`benchmark-compare` is no longer single-run).
     - Add a short subsection describing the new gate: N=5 release-mode runs at HEAD, median-Δ vs `baseline.json`, threshold 5%, override via `BENCHMARK_RUNS=N`. Point to `run_current.sh` and the `--compare-current` flag for ad-hoc invocation.
 
-12. **Update `CLAUDE.md`'s "Local dev workflow" benchmarks bullet.** Currently describes `make benchmark-compare` as a "single-run regression check." Reword to "N=5 release-mode runs at HEAD with median-Δ gating against `baseline.json`; override the run count via `BENCHMARK_RUNS=N`."
+12. ✅ **Update `CLAUDE.md`'s "Local dev workflow" benchmarks bullet.** Currently describes `make benchmark-compare` as a "single-run regression check." Reword to "N=5 release-mode runs at HEAD with median-Δ gating against `baseline.json`; override the run count via `BENCHMARK_RUNS=N`."
 
 ### Validation
 
-13. **Smoke-test the new gate on `main`.** From a clean working tree at the tip of `feat/issue-69-median-of-n-gate`:
+13. ✅ **Smoke-test the new gate.** Default N=5 `make benchmark-compare` ran clean on the branch (bc63f01): all 26 benchmarks PASS, every median Δ within ±2.4% of baseline. The N=1 vs N=5 contrast is the punchline of goal 3: `test_simple_policy_allow` was +83.8% at N=1 (single-run noise on a 144μs benchmark) and +1.2% at N=5. Median-of-N is doing exactly what the issue motivated. From a clean working tree at the tip of `feat/issue-69-median-of-n-gate`:
     - `BENCHMARK_RUNS=2 make benchmark-compare` first — confirms the wiring end-to-end in ~2 min before paying the full N=5 cost.
     - `make benchmark-compare` (default N=5). Expectation: PASS on all benchmarks, per the Path B (PR #75) restoration of v4.8.0 perf on the default code path. Compare per-benchmark median Δ against step 1's output as a sanity check — they should be within run-to-run noise.
     - If any benchmark FAILs, investigate before merging: either Path B's perf hasn't fully held since PR #75 (real signal, file a follow-up), or the threshold is too tight for this hardware (unlikely — the 5% median threshold is what the existing gate already used).
 
-14. **Negative test the gate.** Manually plant a known-bad current run JSON in `tests/benchmark/results/current/` (e.g., by hand-editing one of the N=5 outputs to inflate `test_complex_policy`'s `stats.mean` by 20%) and re-run only the comparator (`python3 tests/benchmark/aggregate.py --compare-current tests/benchmark/results/current`). Confirm the gate exits non-zero and the row is marked FAIL. Discard the planted file.
+14. ❌ **Negative test the gate (manual hand-edit).** Superseded by step 15's unit tests, which cover the FAIL path with fabricated fixtures more reliably than a hand-edit-and-discard procedure. Manually plant a known-bad current run JSON in `tests/benchmark/results/current/` (e.g., by hand-editing one of the N=5 outputs to inflate `test_complex_policy`'s `stats.mean` by 20%) and re-run only the comparator (`python3 tests/benchmark/aggregate.py --compare-current tests/benchmark/results/current`). Confirm the gate exits non-zero and the row is marked FAIL. Discard the planted file.
 
-15. **Unit-test the comparator.** Add `tests/unit/test_aggregate_compare.py` (or extend an existing aggregate test if one exists — there isn't one as of this branch). Cover:
+15. ✅ **Unit-test the comparator.** Landed as `tests/unit/test_benchmark_compare.py` — 8 tests, all passing. Covers: within-threshold PASS, over-threshold FAIL, faster-than-baseline never-fails, benchmark in current but not baseline (warn+skip), benchmark in baseline but not current (warn+skip), N=1 input, no run files → SystemExit, missing baseline → SystemExit. Add `tests/unit/test_aggregate_compare.py` (or extend an existing aggregate test if one exists — there isn't one as of this branch). Cover:
     - Median Δ within threshold → returns 0, prints PASS.
     - Median Δ above threshold → returns non-zero, prints FAIL for the offending benchmark.
     - Faster-than-baseline (negative Δ) → never FAILs, prints negative Δ.
@@ -153,8 +153,8 @@ File:line references are against `main` at the tip of branch `feat/issue-69-medi
 
 ### Close-out
 
-16. **CHANGELOG.** Add an entry under `[Unreleased]` describing the gate change: "`make benchmark-compare` now runs N=5 release-mode benchmarks at HEAD and gates on median Δ vs `baseline.json` (was: single pytest-benchmark run with `--benchmark-compare-fail=median:5%,mean:15%`). The `mean` threshold has been dropped; only median Δ is gated. Override the run count with `BENCHMARK_RUNS=N`."
+16. ✅ **CHANGELOG.** Add an entry under `[Unreleased]` describing the gate change: "`make benchmark-compare` now runs N=5 release-mode benchmarks at HEAD and gates on median Δ vs `baseline.json` (was: single pytest-benchmark run with `--benchmark-compare-fail=median:5%,mean:15%`). The `mean` threshold has been dropped; only median Δ is gated. Override the run count with `BENCHMARK_RUNS=N`."
 
-17. **PR description.** Reference #69 and call out: (a) Goal 3 is now done, closing the issue when this PR merges; (b) the `mean` threshold drop, per #69's out-of-scope note; (c) the ephemeral results directory and the `.gitignore` addition; (d) the deleted stale autosave files. `Resolves #69`.
+17. 🚧 **PR description.** To be drafted when the user is ready to open the PR. Reference #69 and call out: (a) Goal 3 is now done, closing the issue when this PR merges; (b) the `mean` threshold drop, per #69's out-of-scope note; (c) the ephemeral results directory and the `.gitignore` addition; (d) the deleted stale autosave files. `Resolves #69`.
 
-18. **After merge.** Confirm #69 auto-closes. Optional follow-up housekeeping (out of scope here, captured for the record): delete the closed `feat/issue-69-state-pr70` and `fix/optional-resolve-policy-ids` branches on origin, per the side note in `74-id-annotation-support.md`.
+18. 🚧 **After merge.** Pending PR merge. Confirm #69 auto-closes. Optional follow-up housekeeping (out of scope here, captured for the record): delete the closed `feat/issue-69-state-pr70` and `fix/optional-resolve-policy-ids` branches on origin, per the side note in `74-id-annotation-support.md`.

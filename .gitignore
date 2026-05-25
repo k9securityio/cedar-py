@@ -78,6 +78,7 @@ docs/_build/
 
 # Benchmark results (machine-specific, should not be committed)
 tests/benchmark/results/out
+tests/benchmark/results/current/
 
 # Local scratch — top-level out/ holds ad-hoc working artifacts (analysis
 # notes, captured tool output, draft PR/issue text, benchmark JSONs from
