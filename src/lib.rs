@@ -564,13 +564,12 @@ fn validate_policies(policies: String, schema: String) -> String {
 struct PartialAuthzResponse {
     decision: Option<DecisionSer>,
     correlation_id: Option<String>,
-    satisfied: Vec<String>,
-    errored: Vec<String>,
+    diagnostics: DiagnosticsSer,
     may_be_determining: Vec<String>,
     must_be_determining: Vec<String>,
     nontrivial_residual_ids: Vec<String>,
     residuals: HashMap<String, String>,
-    id_annotations: HashMap<String, String>,
+    residuals_json: HashMap<String, serde_json::Value>,
     metrics: HashMap<String, u128>,
 }
 
@@ -682,10 +681,18 @@ fn is_authorized_partial(
         Decision::Deny => DecisionSer::Deny,
     });
 
-    let satisfied: Vec<String> = partial_response.definitely_satisfied()
-        .map(|p| p.id().to_string()).collect();
-    let errored: Vec<String> = partial_response.definitely_errored()
-        .map(|pid| pid.to_string()).collect();
+    let mut reason: HashSet<PolicyId> = HashSet::new();
+    let mut id_annotations_by_reason: HashMap<String, String> = HashMap::new();
+    for policy in partial_response.definitely_satisfied() {
+        let pid = policy.id().clone();
+        if let Some(annotation) = lookup_id_annotation(&policy_set, &pid) {
+            id_annotations_by_reason.insert(pid.to_string(), annotation);
+        }
+        reason.insert(pid);
+    }
+    let errors: Vec<String> = partial_response.definitely_errored()
+        .map(|pid| format!("while evaluating policy `{}`: evaluation error", pid))
+        .collect();
     let may_be_determining: Vec<String> = partial_response.may_be_determining()
         .map(|p| p.id().to_string()).collect();
     let must_be_determining: Vec<String> = partial_response.must_be_determining()
@@ -694,12 +701,13 @@ fn is_authorized_partial(
         .map(|p| p.id().to_string()).collect();
 
     let mut residuals: HashMap<String, String> = HashMap::new();
-    let mut id_annotations: HashMap<String, String> = HashMap::new();
+    let mut residuals_json: HashMap<String, serde_json::Value> = HashMap::new();
     for policy in partial_response.all_residuals() {
         let pid_str = policy.id().to_string();
         if let Some(annotation) = lookup_id_annotation(&policy_set, policy.id()) {
-            id_annotations.insert(pid_str.clone(), annotation);
+            id_annotations_by_reason.insert(pid_str.clone(), annotation);
         }
+        residuals_json.insert(pid_str.clone(), policy.to_json().unwrap_or(json!(null)));
         residuals.insert(pid_str, policy.to_string());
     }
 
@@ -714,33 +722,23 @@ fn is_authorized_partial(
     let response = PartialAuthzResponse {
         decision,
         correlation_id,
-        satisfied,
-        errored,
+        diagnostics: DiagnosticsSer { reason, id_annotations_by_reason, errors },
         may_be_determining,
         must_be_determining,
         nontrivial_residual_ids,
         residuals,
-        id_annotations,
+        residuals_json,
         metrics,
     };
 
     serde_json::to_string(&response).unwrap()
 }
 
-fn make_partial_result_for_errors(errs: &Vec<Error>) -> String {
+fn make_partial_result_for_errors(errs: &[Error]) -> String {
     let json_obj = json!({
-        "decision": null,
-        "satisfied": [],
-        "errored": [],
-        "may_be_determining": [],
-        "must_be_determining": [],
-        "nontrivial_residual_ids": [],
-        "residuals": {},
-        "id_annotations": {},
-        "diagnostics_errors": stringify_errors(errs),
-        "metrics": {}
+        "errors": errs.iter().map(|e| e.to_string()).collect::<Vec<_>>(),
     });
-    json_obj.to_string()
+    serde_json::to_string(&json_obj).unwrap()
 }
 
 /// A Python module implemented in Rust.

@@ -263,6 +263,7 @@ class PartialAuthzResult:
 
     def __init__(self, resp: dict) -> None:
         self._resp = resp
+        self._diagnostics = Diagnostics(resp.get('diagnostics', {}))
 
     @property
     def decision(self) -> Optional[Decision]:
@@ -270,10 +271,6 @@ class PartialAuthzResult:
         if d is None:
             return None
         return Decision[d]
-
-    @property
-    def determined(self) -> bool:
-        return self.decision is not None
 
     @property
     def allowed(self) -> Optional[bool]:
@@ -286,12 +283,8 @@ class PartialAuthzResult:
         return self._resp.get('correlation_id')
 
     @property
-    def satisfied(self) -> List[str]:
-        return list(self._resp.get('satisfied', []))
-
-    @property
-    def errored(self) -> List[str]:
-        return list(self._resp.get('errored', []))
+    def diagnostics(self) -> Diagnostics:
+        return self._diagnostics
 
     @property
     def may_be_determining(self) -> List[str]:
@@ -310,12 +303,8 @@ class PartialAuthzResult:
         return self._resp.get('residuals', {})
 
     @property
-    def id_annotations(self) -> dict:
-        return self._resp.get('id_annotations', {})
-
-    @property
-    def diagnostics_errors(self) -> List[str]:
-        return list(self._resp.get('diagnostics_errors', []))
+    def residuals_json(self) -> dict:
+        return self._resp.get('residuals_json', {})
 
     @property
     def metrics(self) -> dict:
@@ -369,6 +358,8 @@ def is_authorized_partial(request: dict,
     result_str = _internal.is_authorized_partial(
         request_local, policies, entities, schema, verbose)
     result_dict = json.loads(result_str)
+    if result_dict.get('errors'):
+        raise ValueError('; '.join(result_dict['errors']))
     return PartialAuthzResult(result_dict)
 
 
