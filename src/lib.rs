@@ -602,7 +602,7 @@ fn is_authorized_partial(
     let t_load_entities_duration = t_load_entities.elapsed();
 
     if !errs.is_empty() {
-        return make_partial_result_for_errors(&errs);
+        return make_authz_result_for_errors(&errs);
     }
 
     let t_build_request = Instant::now();
@@ -619,7 +619,7 @@ fn is_authorized_partial(
             Ok(uid) => { builder = builder.principal(uid); }
             Err(e) => {
                 errs.push(Error::msg(format!("Failed to parse principal as entity Uid: {}", e)));
-                return make_partial_result_for_errors(&errs);
+                return make_authz_result_for_errors(&errs);
             }
         }
     }
@@ -629,7 +629,7 @@ fn is_authorized_partial(
             Ok(uid) => { builder = builder.action(uid); }
             Err(e) => {
                 errs.push(Error::msg(format!("Failed to parse action as entity Uid: {}", e)));
-                return make_partial_result_for_errors(&errs);
+                return make_authz_result_for_errors(&errs);
             }
         }
     }
@@ -639,7 +639,7 @@ fn is_authorized_partial(
             Ok(uid) => { builder = builder.resource(uid); }
             Err(e) => {
                 errs.push(Error::msg(format!("Failed to parse resource as entity Uid: {}", e)));
-                return make_partial_result_for_errors(&errs);
+                return make_authz_result_for_errors(&errs);
             }
         }
     }
@@ -650,7 +650,7 @@ fn is_authorized_partial(
             Ok(ctx) => { builder = builder.context(ctx); }
             Err(e) => {
                 errs.push(Error::msg(format!("Failed to parse context: {}", e)));
-                return make_partial_result_for_errors(&errs);
+                return make_authz_result_for_errors(&errs);
             }
         }
     }
@@ -660,7 +660,7 @@ fn is_authorized_partial(
             Ok(r) => r,
             Err(e) => {
                 errs.push(Error::msg(format!("Request validation failed: {}", e)));
-                return make_partial_result_for_errors(&errs);
+                return make_authz_result_for_errors(&errs);
             }
         },
         None => builder.build(),
@@ -715,13 +715,6 @@ fn is_authorized_partial(
     };
 
     serde_json::to_string(&response).unwrap()
-}
-
-fn make_partial_result_for_errors(errs: &[Error]) -> String {
-    let json_obj = json!({
-        "errors": errs.iter().map(|e| e.to_string()).collect::<Vec<_>>(),
-    });
-    serde_json::to_string(&json_obj).unwrap()
 }
 
 /// A Python module implemented in Rust.

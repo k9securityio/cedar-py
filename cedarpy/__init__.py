@@ -257,8 +257,10 @@ class PartialAuthzResult:
     """Result of a partial authorization evaluation.
 
     When the authorizer can reach a definitive decision despite unknowns,
-    ``decision`` is set. Otherwise it is ``None`` and the ``residuals``
-    dict contains simplified policy expressions awaiting further evaluation.
+    ``decision`` is ``Allow`` or ``Deny``. When unknowns prevent a decision,
+    ``decision`` is ``NoDecision`` and ``residuals`` contains simplified
+    policy ASTs awaiting further evaluation. When input errors occur,
+    ``decision`` is ``NoDecision`` and ``residuals`` is empty.
     """
 
     def __init__(self, authz_resp: dict) -> None:
@@ -266,16 +268,14 @@ class PartialAuthzResult:
         self._diagnostics = Diagnostics(authz_resp.get('diagnostics', {}))
 
     @property
-    def decision(self) -> Optional[Decision]:
+    def decision(self) -> Decision:
         d = self._authz_resp.get('decision')
-        if d is None:
-            return None
+        if d is None or d == 'NoDecision':
+            return Decision.NoDecision
         return Decision[d]
 
     @property
-    def allowed(self) -> Optional[bool]:
-        if self.decision is None:
-            return None
+    def allowed(self) -> bool:
         return self.decision == Decision.Allow
 
     @property
@@ -345,8 +345,6 @@ def is_authorized_partial(request: dict,
     result_str = _internal.is_authorized_partial(
         request_local, policies, entities, schema, verbose)
     result_dict = json.loads(result_str)
-    if result_dict.get('errors'):
-        raise ValueError('; '.join(result_dict['errors']))
     return PartialAuthzResult(result_dict)
 
 

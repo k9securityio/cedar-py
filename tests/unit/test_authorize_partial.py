@@ -1,4 +1,3 @@
-import pytest
 from cedarpy import is_authorized_partial, is_authorized, Decision
 from unit import load_file_as_str
 
@@ -43,8 +42,8 @@ def test_unknown_principal_produces_residuals():
         policies=policies,
         entities="[]",
     )
-    assert result.decision is None
-    assert result.allowed is None
+    assert result.decision == Decision.NoDecision
+    assert result.allowed is False
     assert result.residuals == {
         "policy0": {
             "effect": "permit",
@@ -78,7 +77,7 @@ def test_unknown_resource_produces_residuals():
         policies=policies,
         entities="[]",
     )
-    assert result.decision is None
+    assert result.decision == Decision.NoDecision
     assert result.residuals == {
         "policy0": {
             "effect": "permit",
@@ -122,7 +121,7 @@ def test_unknown_context_produces_residuals():
         policies=policies,
         entities="[]",
     )
-    assert result.decision is None
+    assert result.decision == Decision.NoDecision
     assert result.residuals == {
         "policy0": {
             "effect": "permit",
@@ -270,21 +269,27 @@ def test_correlation_id_passthrough():
 
 
 def test_error_invalid_policies():
-    with pytest.raises(ValueError, match="policy parse errors"):
-        is_authorized_partial(
-            request={"principal": 'User::"alice"', "action": 'Action::"view"', "resource": 'Photo::"p"'},
-            policies="this is not valid cedar",
-            entities="[]",
-        )
+    result = is_authorized_partial(
+        request={"principal": 'User::"alice"', "action": 'Action::"view"', "resource": 'Photo::"p"'},
+        policies="this is not valid cedar",
+        entities="[]",
+    )
+    assert result.decision == Decision.NoDecision
+    assert result.allowed is False
+    assert result.residuals == {}
+    assert any("policy parse errors" in e for e in result.diagnostics.errors)
 
 
 def test_error_invalid_principal():
-    with pytest.raises(ValueError, match="Failed to parse principal"):
-        is_authorized_partial(
-            request={"principal": "not-a-valid-uid", "action": 'Action::"view"', "resource": 'Photo::"p"'},
-            policies="permit(principal, action, resource);",
-            entities="[]",
-        )
+    result = is_authorized_partial(
+        request={"principal": "not-a-valid-uid", "action": 'Action::"view"', "resource": 'Photo::"p"'},
+        policies="permit(principal, action, resource);",
+        entities="[]",
+    )
+    assert result.decision == Decision.NoDecision
+    assert result.allowed is False
+    assert result.residuals == {}
+    assert any("Failed to parse principal" in e for e in result.diagnostics.errors)
 
 
 def test_metrics_present():
@@ -348,7 +353,7 @@ def test_none_values_treated_as_unknown():
         policies=policies,
         entities="[]",
     )
-    assert result.decision is None
+    assert result.decision == Decision.NoDecision
     assert result.residuals == {
         "policy0": {
             "effect": "permit",
@@ -408,7 +413,7 @@ def test_partial_with_schema_unknown_principal():
         entities=entities,
         schema=schema,
     )
-    assert result.decision is None
+    assert result.decision == Decision.NoDecision
     assert len(result.diagnostics.errors) == 0
     assert result.residuals == {
         "policy0": {
@@ -461,18 +466,21 @@ def test_partial_with_schema_wrong_principal_type():
     schema = load_file_as_str("resources/sandbox_b/schema.json")
     entities = load_file_as_str("resources/sandbox_b/entities.json")
     policies = 'permit(principal, action == Action::"view", resource);'
-    with pytest.raises(ValueError, match="Request validation failed"):
-        is_authorized_partial(
-            request={
-                "principal": 'Photo::"vacation.jpg"',
-                "action": 'Action::"view"',
-                "resource": 'Photo::"vacation.jpg"',
-                "context": {"authenticated": True},
-            },
-            policies=policies,
-            entities=entities,
-            schema=schema,
-        )
+    result = is_authorized_partial(
+        request={
+            "principal": 'Photo::"vacation.jpg"',
+            "action": 'Action::"view"',
+            "resource": 'Photo::"vacation.jpg"',
+            "context": {"authenticated": True},
+        },
+        policies=policies,
+        entities=entities,
+        schema=schema,
+    )
+    assert result.decision == Decision.NoDecision
+    assert result.allowed is False
+    assert result.residuals == {}
+    assert any("Request validation failed" in e for e in result.diagnostics.errors)
 
 
 def test_partial_with_schema_unknown_context():
@@ -489,7 +497,7 @@ def test_partial_with_schema_unknown_context():
         entities=entities,
         schema=schema,
     )
-    assert result.decision is None
+    assert result.decision == Decision.NoDecision
     assert result.residuals == {
         "policy0": {
             "effect": "permit",
@@ -567,7 +575,7 @@ def test_residual_for_context_condition():
         policies=policies,
         entities="[]",
     )
-    assert result.decision is None
+    assert result.decision == Decision.NoDecision
     assert result.residuals == {
         "policy0": {
             "effect": "permit",
@@ -644,7 +652,7 @@ def test_progressive_request_filling():
     policies = 'permit(principal == User::"alice", action == Action::"view", resource);'
 
     r1 = is_authorized_partial(request={}, policies=policies, entities="[]")
-    assert r1.decision is None
+    assert r1.decision == Decision.NoDecision
     assert r1.residuals == {
         "policy0": {
             "effect": "permit",
@@ -685,7 +693,7 @@ def test_progressive_request_filling():
         policies=policies,
         entities="[]",
     )
-    assert r2.decision is None
+    assert r2.decision == Decision.NoDecision
     assert r2.residuals == {
         "policy0": {
             "effect": "permit",
@@ -735,7 +743,7 @@ def test_progressive_entity_addition():
     }
 
     r1 = is_authorized_partial(request=request, policies=policies, entities="[]")
-    assert r1.decision is None
+    assert r1.decision == Decision.NoDecision
     assert r1.residuals == {
         "policy0": {
             "effect": "permit",
@@ -795,7 +803,7 @@ def test_progressive_combined():
         policies=policies,
         entities="[]",
     )
-    assert r1.decision is None
+    assert r1.decision == Decision.NoDecision
     assert r1.residuals == {
         "policy0": {
             "effect": "permit",
@@ -851,7 +859,7 @@ def test_progressive_combined():
         policies=policies,
         entities="[]",
     )
-    assert r2.decision is None
+    assert r2.decision == Decision.NoDecision
     assert r2.residuals == {
         "policy0": {
             "effect": "permit",
