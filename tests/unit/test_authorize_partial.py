@@ -1,4 +1,5 @@
-from cedarpy import is_authorized_partial, is_authorized, Decision, PartialAuthzResult
+from cedarpy import is_authorized_partial, is_authorized, Decision
+from unit import load_file_as_str
 
 
 def test_unknown_principal_produces_residuals():
@@ -121,23 +122,6 @@ def test_unconditional_permit_with_unknowns():
     )
     assert result.decision == Decision.Allow
     assert result.allowed is True
-
-
-def test_residuals_are_valid_cedar_syntax():
-    policies = '''
-    permit(
-        principal == User::"alice",
-        action == Action::"view",
-        resource
-    );
-    '''
-    result = is_authorized_partial(
-        request={"action": 'Action::"view"', "resource": 'Photo::"photo1"', "context": {}},
-        policies=policies,
-        entities="[]",
-    )
-    for policy_text in result.residuals.values():
-        assert "permit" in policy_text or "forbid" in policy_text
 
 
 def test_id_annotations():
@@ -279,3 +263,209 @@ def test_context_as_dict():
         entities="[]",
     )
     assert result.decision == Decision.Allow
+
+
+def test_partial_with_schema_unknown_principal():
+    schema = load_file_as_str("resources/sandbox_b/schema.json")
+    entities = load_file_as_str("resources/sandbox_b/entities.json")
+    policies = 'permit(principal == User::"alice", action == Action::"view", resource);'
+    result = is_authorized_partial(
+        request={
+            "action": 'Action::"view"',
+            "resource": 'Photo::"vacation.jpg"',
+            "context": {"authenticated": True},
+        },
+        policies=policies,
+        entities=entities,
+        schema=schema,
+    )
+    assert result.decision is None
+    assert result.diagnostics_errors == []
+    assert len(result.nontrivial_residual_ids) == 1
+    assert "alice" in result.residuals["policy0"]
+
+
+def test_partial_with_schema_all_known():
+    schema = load_file_as_str("resources/sandbox_b/schema.json")
+    entities = load_file_as_str("resources/sandbox_b/entities.json")
+    policies = 'permit(principal == User::"alice", action == Action::"view", resource);'
+    result = is_authorized_partial(
+        request={
+            "principal": 'User::"alice"',
+            "action": 'Action::"view"',
+            "resource": 'Photo::"vacation.jpg"',
+            "context": {"authenticated": True},
+        },
+        policies=policies,
+        entities=entities,
+        schema=schema,
+    )
+    assert result.decision == Decision.Allow
+    assert result.diagnostics_errors == []
+    assert "policy0" in result.satisfied
+
+
+def test_partial_with_schema_wrong_principal_type():
+    schema = load_file_as_str("resources/sandbox_b/schema.json")
+    entities = load_file_as_str("resources/sandbox_b/entities.json")
+    policies = 'permit(principal, action == Action::"view", resource);'
+    result = is_authorized_partial(
+        request={
+            "principal": 'Photo::"vacation.jpg"',
+            "action": 'Action::"view"',
+            "resource": 'Photo::"vacation.jpg"',
+            "context": {"authenticated": True},
+        },
+        policies=policies,
+        entities=entities,
+        schema=schema,
+    )
+    assert len(result.diagnostics_errors) > 0
+    assert result.decision is None
+
+
+def test_partial_with_schema_unknown_context():
+    schema = load_file_as_str("resources/sandbox_b/schema.json")
+    entities = load_file_as_str("resources/sandbox_b/entities.json")
+    policies = '''
+    permit(
+        principal == User::"alice",
+        action == Action::"view",
+        resource
+    ) when { context.authenticated };
+    '''
+    result = is_authorized_partial(
+        request={
+            "principal": 'User::"alice"',
+            "action": 'Action::"view"',
+            "resource": 'Photo::"vacation.jpg"',
+        },
+        policies=policies,
+        entities=entities,
+        schema=schema,
+    )
+    assert result.decision is None
+    assert len(result.nontrivial_residual_ids) >= 1
+    assert "authenticated" in result.residuals["policy0"]
+
+
+def test_definitely_errored_type_mismatch():
+    entities = load_file_as_str("resources/sandbox_b/entities.json")
+    policies = '''
+    permit(principal, action, resource) when { resource.missing_attr };
+    permit(principal, action, resource) when { true };
+    '''
+    result = is_authorized_partial(
+        request={
+            "principal": 'User::"alice"',
+            "action": 'Action::"view"',
+            "resource": 'Photo::"vacation.jpg"',
+        },
+        policies=policies,
+        entities=entities,
+    )
+    assert "policy0" in result.errored
+    assert "policy1" in result.satisfied
+    assert result.decision == Decision.Allow
+
+
+def test_may_be_determining_specific_ids():
+    entities = load_file_as_str("resources/sandbox_b/entities.json")
+    policies = '''
+    permit(principal == User::"alice", action == Action::"view", resource);
+    permit(principal == User::"bob", action == Action::"view", resource);
+    '''
+    result = is_authorized_partial(
+        request={
+            "action": 'Action::"view"',
+            "resource": 'Photo::"vacation.jpg"',
+            "context": {},
+        },
+        policies=policies,
+        entities=entities,
+    )
+    assert result.decision is None
+    assert "policy0" in result.may_be_determining
+    assert "policy1" in result.may_be_determining
+
+
+def test_must_be_determining_with_definitive_decision():
+    entities = load_file_as_str("resources/sandbox_b/entities.json")
+    policies = '''
+    forbid(principal, action, resource);
+    permit(principal, action, resource) when { context.x };
+    '''
+    result = is_authorized_partial(
+        request={
+            "principal": 'User::"alice"',
+            "action": 'Action::"view"',
+            "resource": 'Photo::"vacation.jpg"',
+        },
+        policies=policies,
+        entities=entities,
+    )
+    assert result.decision == Decision.Deny
+    assert "policy0" in result.must_be_determining
+    assert "policy0" in result.may_be_determining
+
+
+def test_determining_sets_exclude_irrelevant():
+    entities = load_file_as_str("resources/sandbox_b/entities.json")
+    policies = '''
+    permit(principal == User::"alice", action == Action::"view", resource);
+    permit(principal == User::"alice", action == Action::"delete", resource);
+    '''
+    result = is_authorized_partial(
+        request={
+            "principal": 'User::"alice"',
+            "action": 'Action::"view"',
+            "resource": 'Photo::"vacation.jpg"',
+            "context": {},
+        },
+        policies=policies,
+        entities=entities,
+    )
+    assert result.decision == Decision.Allow
+    assert "policy0" in result.may_be_determining
+    assert "policy0" in result.must_be_determining
+    assert "policy1" not in result.may_be_determining
+    assert "policy1" not in result.must_be_determining
+
+
+def test_residual_for_principal_check():
+    entities = load_file_as_str("resources/sandbox_b/entities.json")
+    policies = 'permit(principal == User::"alice", action == Action::"view", resource);'
+    result = is_authorized_partial(
+        request={
+            "action": 'Action::"view"',
+            "resource": 'Photo::"photo1"',
+            "context": {},
+        },
+        policies=policies,
+        entities=entities,
+    )
+    residual = result.residuals["policy0"]
+    assert residual == 'permit(principal, action, resource) when { ((unknown("principal")) == User::"alice") && true };'
+
+
+def test_residual_for_context_condition():
+    entities = load_file_as_str("resources/sandbox_b/entities.json")
+    policies = '''
+    permit(
+        principal == User::"alice",
+        action == Action::"view",
+        resource
+    ) when { context.is_admin };
+    '''
+    result = is_authorized_partial(
+        request={
+            "principal": 'User::"alice"',
+            "action": 'Action::"view"',
+            "resource": 'Photo::"photo1"',
+        },
+        policies=policies,
+        entities=entities,
+    )
+    assert result.decision is None
+    residual = result.residuals["policy0"]
+    assert residual == 'permit(principal, action, resource) when { true && (true && (true && ((unknown("context")).is_admin))) };'
