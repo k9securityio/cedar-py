@@ -261,13 +261,13 @@ class PartialAuthzResult:
     dict contains simplified policy expressions awaiting further evaluation.
     """
 
-    def __init__(self, resp: dict) -> None:
-        self._resp = resp
-        self._diagnostics = Diagnostics(resp.get('diagnostics', {}))
+    def __init__(self, authz_resp: dict) -> None:
+        self._authz_resp = authz_resp
+        self._diagnostics = Diagnostics(authz_resp.get('diagnostics', {}))
 
     @property
     def decision(self) -> Optional[Decision]:
-        d = self._resp.get('decision')
+        d = self._authz_resp.get('decision')
         if d is None:
             return None
         return Decision[d]
@@ -280,35 +280,22 @@ class PartialAuthzResult:
 
     @property
     def correlation_id(self) -> Optional[str]:
-        return self._resp.get('correlation_id')
+        return self._authz_resp.get('correlation_id')
 
     @property
     def diagnostics(self) -> Diagnostics:
         return self._diagnostics
 
     @property
-    def may_be_determining(self) -> List[str]:
-        return list(self._resp.get('may_be_determining', []))
-
-    @property
-    def must_be_determining(self) -> List[str]:
-        return list(self._resp.get('must_be_determining', []))
-
-    @property
-    def nontrivial_residual_ids(self) -> List[str]:
-        return list(self._resp.get('nontrivial_residual_ids', []))
-
-    @property
     def residuals(self) -> dict:
-        return self._resp.get('residuals', {})
-
-    @property
-    def residuals_json(self) -> dict:
-        return self._resp.get('residuals_json', {})
+        return self._authz_resp.get('residuals', {})
 
     @property
     def metrics(self) -> dict:
-        return self._resp.get('metrics', {})
+        return self._authz_resp.get('metrics', {})
+
+    def __getitem__(self, __name: str) -> Any:
+        return getattr(self, __name)
 
 
 def is_authorized_partial(request: dict,

@@ -565,11 +565,7 @@ struct PartialAuthzResponse {
     decision: Option<DecisionSer>,
     correlation_id: Option<String>,
     diagnostics: DiagnosticsSer,
-    may_be_determining: Vec<String>,
-    must_be_determining: Vec<String>,
-    nontrivial_residual_ids: Vec<String>,
-    residuals: HashMap<String, String>,
-    residuals_json: HashMap<String, serde_json::Value>,
+    residuals: HashMap<String, serde_json::Value>,
     metrics: HashMap<String, u128>,
 }
 
@@ -693,22 +689,13 @@ fn is_authorized_partial(
     let errors: Vec<String> = partial_response.definitely_errored()
         .map(|pid| format!("while evaluating policy `{}`: evaluation error", pid))
         .collect();
-    let may_be_determining: Vec<String> = partial_response.may_be_determining()
-        .map(|p| p.id().to_string()).collect();
-    let must_be_determining: Vec<String> = partial_response.must_be_determining()
-        .map(|p| p.id().to_string()).collect();
-    let nontrivial_residual_ids: Vec<String> = partial_response.nontrivial_residuals()
-        .map(|p| p.id().to_string()).collect();
-
-    let mut residuals: HashMap<String, String> = HashMap::new();
-    let mut residuals_json: HashMap<String, serde_json::Value> = HashMap::new();
+    let mut residuals: HashMap<String, serde_json::Value> = HashMap::new();
     for policy in partial_response.all_residuals() {
         let pid_str = policy.id().to_string();
         if let Some(annotation) = lookup_id_annotation(&policy_set, policy.id()) {
             id_annotations_by_reason.insert(pid_str.clone(), annotation);
         }
-        residuals_json.insert(pid_str.clone(), policy.to_json().unwrap_or(json!(null)));
-        residuals.insert(pid_str, policy.to_string());
+        residuals.insert(pid_str, policy.to_json().unwrap_or(json!(null)));
     }
 
     let metrics = HashMap::from([
@@ -723,11 +710,7 @@ fn is_authorized_partial(
         decision,
         correlation_id,
         diagnostics: DiagnosticsSer { reason, id_annotations_by_reason, errors },
-        may_be_determining,
-        must_be_determining,
-        nontrivial_residual_ids,
         residuals,
-        residuals_json,
         metrics,
     };
 
