@@ -333,14 +333,18 @@ def is_authorized_partial(request: dict,
     unknown. The evaluator simplifies policies as far as possible and
     returns residual expressions for policies that cannot be fully resolved.
 
-    :param request: dict with optional keys: principal, action, resource,
-        context, correlation_id. Any key that is None or absent is unknown.
-    :param policies: Cedar policies as a string
-    :param entities: entities as a list of dicts or JSON string
-    :param schema: optional Cedar schema
-    :param verbose: enable verbose logging
+    :param request is a Cedar-style request object containing a principal, action, resource, and (optional) context;
+    context may be a dict (preferred) or a string.
+    Unlike is_authorized (which defaults an absent context to empty),
+    an absent or None context here is treated as unknown and will residualize;
+    pass context={} for an explicitly empty context.
+    :param policies is a str containing all the policies in the Cedar PolicySet
+    :param entities a list of entities or a json-formatted string containing the list of entities to
+    include in the evaluation
+    :param schema (optional) dictionary or json-formatted string containing the Cedar schema
+    :param verbose (optional) boolean determining whether to enable verbose logging output within the library
 
-    :returns: PartialAuthzResult
+    :returns a PartialAuthzResult
     """
     request_local: dict = {}
     for key in ('principal', 'action', 'resource', 'correlation_id'):
