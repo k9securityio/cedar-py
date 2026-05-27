@@ -697,9 +697,22 @@ fn is_authorized_partial(
         }
         reason.insert(pid);
     }
-    let errors: Vec<String> = partial_response.definitely_errored()
-        .map(|pid| format!("while evaluating policy `{}`: evaluation error", pid))
-        .collect();
+    let errored_ids: Vec<&PolicyId> = partial_response.definitely_errored().collect();
+    let errors: Vec<String> = if errored_ids.is_empty() {
+        Vec::new()
+    } else {
+        let concretized = partial_response.clone().concretize();
+        let error_map: HashMap<&PolicyId, String> = concretized.diagnostics().errors()
+            .map(|e| {
+                let AuthorizationError::PolicyEvaluationError(pe) = e;
+                (pe.policy_id(), e.to_string())
+            })
+            .collect();
+        errored_ids.iter()
+            .map(|pid| error_map.get(pid).cloned()
+                .unwrap_or_else(|| format!("error while evaluating policy `{pid}`: unknown error")))
+            .collect()
+    };
     let may_be_determining: Vec<String> = partial_response.may_be_determining()
         .map(|p| p.id().to_string()).collect();
     let must_be_determining: Vec<String> = partial_response.must_be_determining()

@@ -309,7 +309,7 @@ def test_error_invalid_policies():
     assert result.decision == Decision.NoDecision
     assert result.allowed is False
     assert result.residuals == {}
-    assert any("policy parse errors" in e for e in result.diagnostics.errors)
+    assert result.diagnostics.errors == ['policy parse errors:\nunexpected token `is`']
     assert result.diagnostics.may_be_determining == []
     assert result.diagnostics.must_be_determining == []
     assert result.diagnostics.nontrivial_residuals == []
@@ -325,7 +325,7 @@ def test_error_invalid_principal():
     assert result.decision == Decision.NoDecision
     assert result.allowed is False
     assert result.residuals == {}
-    assert any("Failed to parse principal" in e for e in result.diagnostics.errors)
+    assert result.diagnostics.errors == ['Failed to parse principal as entity Uid: unexpected token `-`']
     assert result.diagnostics.may_be_determining == []
     assert result.diagnostics.must_be_determining == []
     assert result.diagnostics.nontrivial_residuals == []
@@ -548,7 +548,7 @@ def test_partial_with_schema_wrong_principal_type():
     assert result.decision == Decision.NoDecision
     assert result.allowed is False
     assert result.residuals == {}
-    assert any("Request validation failed" in e for e in result.diagnostics.errors)
+    assert result.diagnostics.errors == ['Request validation failed: principal type `Photo` is not valid for `Action::"view"`']
     assert result.diagnostics.may_be_determining == []
     assert result.diagnostics.must_be_determining == []
     assert result.diagnostics.nontrivial_residuals == []
@@ -628,7 +628,7 @@ def test_definitely_errored_type_mismatch():
         policies=policies,
         entities="[]",
     )
-    assert any("policy0" in e for e in result.diagnostics.errors)
+    assert result.diagnostics.errors == ['error while evaluating policy `policy0`: type error: expected long, got string']
     assert "policy1" in result.diagnostics.reasons
     assert result.decision == Decision.Allow
     assert result.diagnostics.may_be_determining == ["policy1"]
