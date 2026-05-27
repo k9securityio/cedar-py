@@ -44,6 +44,10 @@ def test_unknown_principal_produces_residuals():
     )
     assert result.decision == Decision.NoDecision
     assert result.allowed is False
+    assert result.diagnostics.may_be_determining == ["policy0"]
+    assert result.diagnostics.must_be_determining == []
+    assert result.diagnostics.nontrivial_residuals == ["policy0"]
+    assert result.diagnostics.unknown_entities == []
     assert result.residuals == {
         "policy0": {
             "effect": "permit",
@@ -78,6 +82,10 @@ def test_unknown_resource_produces_residuals():
         entities="[]",
     )
     assert result.decision == Decision.NoDecision
+    assert result.diagnostics.may_be_determining == ["policy0"]
+    assert result.diagnostics.must_be_determining == []
+    assert result.diagnostics.nontrivial_residuals == ["policy0"]
+    assert result.diagnostics.unknown_entities == []
     assert result.residuals == {
         "policy0": {
             "effect": "permit",
@@ -122,6 +130,10 @@ def test_unknown_context_produces_residuals():
         entities="[]",
     )
     assert result.decision == Decision.NoDecision
+    assert result.diagnostics.may_be_determining == ["policy0"]
+    assert result.diagnostics.must_be_determining == []
+    assert result.diagnostics.nontrivial_residuals == ["policy0"]
+    assert result.diagnostics.unknown_entities == []
     assert result.residuals == {
         "policy0": {
             "effect": "permit",
@@ -173,6 +185,10 @@ def test_all_known_produces_definitive_allow():
     assert result.decision == Decision.Allow
     assert result.allowed is True
     assert "policy0" in result.diagnostics.reasons
+    assert result.diagnostics.may_be_determining == ["policy0"]
+    assert result.diagnostics.must_be_determining == ["policy0"]
+    assert result.diagnostics.nontrivial_residuals == []
+    assert result.diagnostics.unknown_entities == []
     assert result.residuals == {"policy0": RESIDUAL_PERMIT_TRUE}
 
 
@@ -199,6 +215,10 @@ def test_unconditional_forbid_with_unknowns():
     )
     assert result.decision == Decision.Deny
     assert result.allowed is False
+    assert result.diagnostics.may_be_determining == ["policy0"]
+    assert result.diagnostics.must_be_determining == ["policy0"]
+    assert result.diagnostics.nontrivial_residuals == []
+    assert result.diagnostics.unknown_entities == []
     assert result.residuals == {"policy0": RESIDUAL_FORBID_TRUE}
 
 
@@ -210,6 +230,10 @@ def test_unconditional_permit_with_unknowns():
     )
     assert result.decision == Decision.Allow
     assert result.allowed is True
+    assert result.diagnostics.may_be_determining == ["policy0"]
+    assert result.diagnostics.must_be_determining == ["policy0"]
+    assert result.diagnostics.nontrivial_residuals == []
+    assert result.diagnostics.unknown_entities == []
     assert result.residuals == {"policy0": RESIDUAL_PERMIT_TRUE}
 
 
@@ -225,6 +249,10 @@ def test_id_annotations():
     )
     assert "policy0" in result.diagnostics.id_annotations_by_reason
     assert result.diagnostics.id_annotations_by_reason["policy0"] == "alice-can-view"
+    assert result.diagnostics.may_be_determining == ["policy0"]
+    assert result.diagnostics.must_be_determining == []
+    assert result.diagnostics.nontrivial_residuals == ["policy0"]
+    assert result.diagnostics.unknown_entities == []
     assert result.residuals == {
         "policy0": {
             "effect": "permit",
@@ -265,6 +293,10 @@ def test_correlation_id_passthrough():
         entities="[]",
     )
     assert result.correlation_id == "req-123"
+    assert result.diagnostics.may_be_determining == ["policy0"]
+    assert result.diagnostics.must_be_determining == ["policy0"]
+    assert result.diagnostics.nontrivial_residuals == []
+    assert result.diagnostics.unknown_entities == []
     assert result.residuals == {"policy0": RESIDUAL_PERMIT_TRUE}
 
 
@@ -278,6 +310,10 @@ def test_error_invalid_policies():
     assert result.allowed is False
     assert result.residuals == {}
     assert any("policy parse errors" in e for e in result.diagnostics.errors)
+    assert result.diagnostics.may_be_determining == []
+    assert result.diagnostics.must_be_determining == []
+    assert result.diagnostics.nontrivial_residuals == []
+    assert result.diagnostics.unknown_entities == []
 
 
 def test_error_invalid_principal():
@@ -290,6 +326,10 @@ def test_error_invalid_principal():
     assert result.allowed is False
     assert result.residuals == {}
     assert any("Failed to parse principal" in e for e in result.diagnostics.errors)
+    assert result.diagnostics.may_be_determining == []
+    assert result.diagnostics.must_be_determining == []
+    assert result.diagnostics.nontrivial_residuals == []
+    assert result.diagnostics.unknown_entities == []
 
 
 def test_metrics_present():
@@ -301,6 +341,10 @@ def test_metrics_present():
     assert "parse_policies_duration_micros" in result.metrics
     assert "authz_duration_micros" in result.metrics
     assert "build_request_duration_micros" in result.metrics
+    assert result.diagnostics.may_be_determining == ["policy0"]
+    assert result.diagnostics.must_be_determining == ["policy0"]
+    assert result.diagnostics.nontrivial_residuals == []
+    assert result.diagnostics.unknown_entities == []
     assert result.residuals == {"policy0": RESIDUAL_PERMIT_TRUE}
 
 
@@ -320,6 +364,10 @@ def test_entities_as_list():
         entities=entities,
     )
     assert result.decision == Decision.Allow
+    assert result.diagnostics.may_be_determining == ["policy0"]
+    assert result.diagnostics.must_be_determining == ["policy0"]
+    assert result.diagnostics.nontrivial_residuals == []
+    assert result.diagnostics.unknown_entities == []
     assert result.residuals == {"policy0": RESIDUAL_PERMIT_TRUE}
 
 
@@ -340,6 +388,10 @@ def test_multiple_policies_categorization():
     )
     assert result.decision == Decision.Allow
     assert "policy0" in result.diagnostics.reasons
+    assert result.diagnostics.may_be_determining == ["policy0"]
+    assert result.diagnostics.must_be_determining == ["policy0"]
+    assert result.diagnostics.nontrivial_residuals == []
+    assert result.diagnostics.unknown_entities == []
     assert result.residuals == {
         "policy0": RESIDUAL_PERMIT_TRUE,
         "policy1": RESIDUAL_FORBID_FALSE,
@@ -354,6 +406,10 @@ def test_none_values_treated_as_unknown():
         entities="[]",
     )
     assert result.decision == Decision.NoDecision
+    assert result.diagnostics.may_be_determining == ["policy0"]
+    assert result.diagnostics.must_be_determining == []
+    assert result.diagnostics.nontrivial_residuals == ["policy0"]
+    assert result.diagnostics.unknown_entities == []
     assert result.residuals == {
         "policy0": {
             "effect": "permit",
@@ -393,6 +449,10 @@ def test_context_as_dict():
         entities="[]",
     )
     assert result.decision == Decision.Allow
+    assert result.diagnostics.may_be_determining == ["policy0"]
+    assert result.diagnostics.must_be_determining == ["policy0"]
+    assert result.diagnostics.nontrivial_residuals == []
+    assert result.diagnostics.unknown_entities == []
     assert result.residuals == {"policy0": RESIDUAL_PERMIT_TRUE}
 
 
@@ -415,6 +475,10 @@ def test_partial_with_schema_unknown_principal():
     )
     assert result.decision == Decision.NoDecision
     assert len(result.diagnostics.errors) == 0
+    assert result.diagnostics.may_be_determining == ["policy0"]
+    assert result.diagnostics.must_be_determining == []
+    assert result.diagnostics.nontrivial_residuals == ["policy0"]
+    assert result.diagnostics.unknown_entities == []
     assert result.residuals == {
         "policy0": {
             "effect": "permit",
@@ -459,6 +523,10 @@ def test_partial_with_schema_all_known():
     assert result.decision == Decision.Allow
     assert len(result.diagnostics.errors) == 0
     assert "policy0" in result.diagnostics.reasons
+    assert result.diagnostics.may_be_determining == ["policy0"]
+    assert result.diagnostics.must_be_determining == ["policy0"]
+    assert result.diagnostics.nontrivial_residuals == []
+    assert result.diagnostics.unknown_entities == []
     assert result.residuals == {"policy0": RESIDUAL_PERMIT_TRUE}
 
 
@@ -481,6 +549,10 @@ def test_partial_with_schema_wrong_principal_type():
     assert result.allowed is False
     assert result.residuals == {}
     assert any("Request validation failed" in e for e in result.diagnostics.errors)
+    assert result.diagnostics.may_be_determining == []
+    assert result.diagnostics.must_be_determining == []
+    assert result.diagnostics.nontrivial_residuals == []
+    assert result.diagnostics.unknown_entities == []
 
 
 def test_partial_with_schema_unknown_context():
@@ -498,6 +570,10 @@ def test_partial_with_schema_unknown_context():
         schema=schema,
     )
     assert result.decision == Decision.NoDecision
+    assert result.diagnostics.may_be_determining == ["policy0"]
+    assert result.diagnostics.must_be_determining == []
+    assert result.diagnostics.nontrivial_residuals == ["policy0"]
+    assert result.diagnostics.unknown_entities == []
     assert result.residuals == {
         "policy0": {
             "effect": "permit",
@@ -555,6 +631,10 @@ def test_definitely_errored_type_mismatch():
     assert any("policy0" in e for e in result.diagnostics.errors)
     assert "policy1" in result.diagnostics.reasons
     assert result.decision == Decision.Allow
+    assert result.diagnostics.may_be_determining == ["policy1"]
+    assert result.diagnostics.must_be_determining == ["policy1"]
+    assert result.diagnostics.nontrivial_residuals == []
+    assert result.diagnostics.unknown_entities == []
     assert result.residuals == {
         "policy0": RESIDUAL_PERMIT_FALSE,
         "policy1": RESIDUAL_PERMIT_TRUE,
@@ -576,6 +656,10 @@ def test_residual_for_context_condition():
         entities="[]",
     )
     assert result.decision == Decision.NoDecision
+    assert result.diagnostics.may_be_determining == ["policy0"]
+    assert result.diagnostics.must_be_determining == []
+    assert result.diagnostics.nontrivial_residuals == ["policy0"]
+    assert result.diagnostics.unknown_entities == []
     assert result.residuals == {
         "policy0": {
             "effect": "permit",
@@ -619,6 +703,10 @@ def test_residuals_structure():
         policies=policies,
         entities="[]",
     )
+    assert result.diagnostics.may_be_determining == ["policy0"]
+    assert result.diagnostics.must_be_determining == []
+    assert result.diagnostics.nontrivial_residuals == ["policy0"]
+    assert result.diagnostics.unknown_entities == []
     assert result.residuals == {
         "policy0": {
             "effect": "permit",
@@ -653,6 +741,10 @@ def test_progressive_request_filling():
 
     r1 = is_authorized_partial(request={}, policies=policies, entities="[]")
     assert r1.decision == Decision.NoDecision
+    assert r1.diagnostics.may_be_determining == ["policy0"]
+    assert r1.diagnostics.must_be_determining == []
+    assert r1.diagnostics.nontrivial_residuals == ["policy0"]
+    assert r1.diagnostics.unknown_entities == []
     assert r1.residuals == {
         "policy0": {
             "effect": "permit",
@@ -694,6 +786,10 @@ def test_progressive_request_filling():
         entities="[]",
     )
     assert r2.decision == Decision.NoDecision
+    assert r2.diagnostics.may_be_determining == ["policy0"]
+    assert r2.diagnostics.must_be_determining == []
+    assert r2.diagnostics.nontrivial_residuals == ["policy0"]
+    assert r2.diagnostics.unknown_entities == []
     assert r2.residuals == {
         "policy0": {
             "effect": "permit",
@@ -730,6 +826,10 @@ def test_progressive_request_filling():
         entities="[]",
     )
     assert r3.decision == Decision.Allow
+    assert r3.diagnostics.may_be_determining == ["policy0"]
+    assert r3.diagnostics.must_be_determining == ["policy0"]
+    assert r3.diagnostics.nontrivial_residuals == []
+    assert r3.diagnostics.unknown_entities == []
     assert r3.residuals == {"policy0": RESIDUAL_PERMIT_TRUE}
 
 
@@ -744,6 +844,10 @@ def test_progressive_entity_addition():
 
     r1 = is_authorized_partial(request=request, policies=policies, entities="[]")
     assert r1.decision == Decision.NoDecision
+    assert r1.diagnostics.may_be_determining == ["policy0"]
+    assert r1.diagnostics.must_be_determining == []
+    assert r1.diagnostics.nontrivial_residuals == ["policy0"]
+    assert r1.diagnostics.unknown_entities == ['Photo::"p"']
     assert r1.residuals == {
         "policy0": {
             "effect": "permit",
@@ -787,11 +891,19 @@ def test_progressive_entity_addition():
     entities_true = [{"uid": {"type": "Photo", "id": "p"}, "attrs": {"public": True}, "parents": []}]
     r2 = is_authorized_partial(request=request, policies=policies, entities=entities_true)
     assert r2.decision == Decision.Allow
+    assert r2.diagnostics.may_be_determining == ["policy0"]
+    assert r2.diagnostics.must_be_determining == ["policy0"]
+    assert r2.diagnostics.nontrivial_residuals == []
+    assert r2.diagnostics.unknown_entities == []
     assert r2.residuals == {"policy0": RESIDUAL_PERMIT_TRUE}
 
     entities_false = [{"uid": {"type": "Photo", "id": "p"}, "attrs": {"public": False}, "parents": []}]
     r3 = is_authorized_partial(request=request, policies=policies, entities=entities_false)
     assert r3.decision == Decision.Deny
+    assert r3.diagnostics.may_be_determining == []
+    assert r3.diagnostics.must_be_determining == []
+    assert r3.diagnostics.nontrivial_residuals == []
+    assert r3.diagnostics.unknown_entities == []
     assert r3.residuals == {"policy0": RESIDUAL_PERMIT_FALSE}
 
 
@@ -804,6 +916,10 @@ def test_progressive_combined():
         entities="[]",
     )
     assert r1.decision == Decision.NoDecision
+    assert r1.diagnostics.may_be_determining == ["policy0"]
+    assert r1.diagnostics.must_be_determining == []
+    assert r1.diagnostics.nontrivial_residuals == ["policy0"]
+    assert r1.diagnostics.unknown_entities == []
     assert r1.residuals == {
         "policy0": {
             "effect": "permit",
@@ -860,6 +976,10 @@ def test_progressive_combined():
         entities="[]",
     )
     assert r2.decision == Decision.NoDecision
+    assert r2.diagnostics.may_be_determining == ["policy0"]
+    assert r2.diagnostics.must_be_determining == []
+    assert r2.diagnostics.nontrivial_residuals == ["policy0"]
+    assert r2.diagnostics.unknown_entities == ['Photo::"p"']
     assert r2.residuals == {
         "policy0": {
             "effect": "permit",
@@ -912,4 +1032,8 @@ def test_progressive_combined():
         entities=entities,
     )
     assert r3.decision == Decision.Allow
+    assert r3.diagnostics.may_be_determining == ["policy0"]
+    assert r3.diagnostics.must_be_determining == ["policy0"]
+    assert r3.diagnostics.nontrivial_residuals == []
+    assert r3.diagnostics.unknown_entities == []
     assert r3.residuals == {"policy0": RESIDUAL_PERMIT_TRUE}

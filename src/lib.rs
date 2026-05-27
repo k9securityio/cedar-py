@@ -255,6 +255,17 @@ pub struct DiagnosticsSer {
     errors: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PartialDiagnosticsSer {
+    reason: HashSet<PolicyId>,
+    id_annotations_by_reason: HashMap<String, String>,
+    errors: Vec<String>,
+    may_be_determining: Vec<String>,
+    must_be_determining: Vec<String>,
+    nontrivial_residuals: Vec<String>,
+    unknown_entities: Vec<String>,
+}
+
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub enum DecisionSer {
     /// The `Authorizer` determined that the request should be allowed
@@ -564,7 +575,7 @@ fn validate_policies(policies: String, schema: String) -> String {
 struct PartialAuthzResponse {
     decision: Option<DecisionSer>,
     correlation_id: Option<String>,
-    diagnostics: DiagnosticsSer,
+    diagnostics: PartialDiagnosticsSer,
     residuals: HashMap<String, serde_json::Value>,
     metrics: HashMap<String, u128>,
 }
@@ -689,6 +700,15 @@ fn is_authorized_partial(
     let errors: Vec<String> = partial_response.definitely_errored()
         .map(|pid| format!("while evaluating policy `{}`: evaluation error", pid))
         .collect();
+    let may_be_determining: Vec<String> = partial_response.may_be_determining()
+        .map(|p| p.id().to_string()).collect();
+    let must_be_determining: Vec<String> = partial_response.must_be_determining()
+        .map(|p| p.id().to_string()).collect();
+    let nontrivial_residuals: Vec<String> = partial_response.nontrivial_residuals()
+        .map(|p| p.id().to_string()).collect();
+    let unknown_entities: Vec<String> = partial_response.unknown_entities()
+        .into_iter().map(|e| e.to_string()).collect();
+
     let mut residuals: HashMap<String, serde_json::Value> = HashMap::new();
     for policy in partial_response.all_residuals() {
         let pid_str = policy.id().to_string();
@@ -709,7 +729,11 @@ fn is_authorized_partial(
     let response = PartialAuthzResponse {
         decision,
         correlation_id,
-        diagnostics: DiagnosticsSer { reason, id_annotations_by_reason, errors },
+        diagnostics: PartialDiagnosticsSer {
+            reason, id_annotations_by_reason, errors,
+            may_be_determining, must_be_determining,
+            nontrivial_residuals, unknown_entities,
+        },
         residuals,
         metrics,
     };

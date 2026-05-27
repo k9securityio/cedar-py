@@ -253,6 +253,25 @@ def policies_from_json_str(policies: str) -> str:
     return _internal.policies_from_json_str(policies)
 
 
+class PartialDiagnostics(Diagnostics):
+
+    @property
+    def may_be_determining(self) -> List[str]:
+        return self._diagnostics.get('may_be_determining', [])
+
+    @property
+    def must_be_determining(self) -> List[str]:
+        return self._diagnostics.get('must_be_determining', [])
+
+    @property
+    def nontrivial_residuals(self) -> List[str]:
+        return self._diagnostics.get('nontrivial_residuals', [])
+
+    @property
+    def unknown_entities(self) -> List[str]:
+        return self._diagnostics.get('unknown_entities', [])
+
+
 class PartialAuthzResult:
     """Result of a partial authorization evaluation.
 
@@ -265,7 +284,7 @@ class PartialAuthzResult:
 
     def __init__(self, authz_resp: dict) -> None:
         self._authz_resp = authz_resp
-        self._diagnostics = Diagnostics(authz_resp.get('diagnostics', {}))
+        self._diagnostics = PartialDiagnostics(authz_resp.get('diagnostics', {}))
 
     @property
     def decision(self) -> Decision:
@@ -283,7 +302,7 @@ class PartialAuthzResult:
         return self._authz_resp.get('correlation_id')
 
     @property
-    def diagnostics(self) -> Diagnostics:
+    def diagnostics(self) -> PartialDiagnostics:
         return self._diagnostics
 
     @property
