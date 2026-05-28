@@ -637,7 +637,7 @@ def test_partial_with_schema_unknown_action_skips_context_type_check():
     assert Decision.Allow == result.decision
 
 
-def test_partial_with_schema_unknown_action_skips_context_type_check_when_complete():
+def test_partial_with_schema_known_action_enforces_context_type_check():
     """When action is known, request validation works as expected.
     """
     schema = load_file_as_str("resources/sandbox_b/schema.json")
