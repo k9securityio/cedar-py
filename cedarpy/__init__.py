@@ -295,7 +295,11 @@ class PartialAuthzResult:
 
     @property
     def allowed(self) -> bool:
-        return self.decision == Decision.Allow
+        """allowed is ``True`` iff ``decision == Decision.Allow``. Both ``Deny`` and
+        ``NoDecision`` return ``False``; check ``decision`` directly to
+        distinguish a denial from an unknown-blocked partial result.
+        """
+        return Decision.Allow == self.decision
 
     @property
     def correlation_id(self) -> Optional[str]:
