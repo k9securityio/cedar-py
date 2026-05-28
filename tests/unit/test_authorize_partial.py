@@ -630,12 +630,33 @@ def test_partial_with_schema_unknown_action_skips_context_type_check():
         entities=entities,
         schema=schema,
     )
-    type_errors = [e for e in result.diagnostics.errors if "type" in e.lower()]
-    assert type_errors == []
+    assert len(result.diagnostics.errors) == 0
 
     # the policy doesn't constrain action, so the unknown action doesn't block Allow
     # but the ill-typed context value silently flows through, which is the potentially surprising part
     assert Decision.Allow == result.decision
+
+
+def test_partial_with_schema_unknown_action_skips_context_type_check_when_complete():
+    """When action is known, request validation works as expected.
+    """
+    schema = load_file_as_str("resources/sandbox_b/schema.json")
+    entities = load_file_as_str("resources/sandbox_b/entities.json")
+    policies = 'permit(principal == User::"alice", action, resource);'
+    result = is_authorized_partial(
+        request={
+            "principal": 'User::"alice"',
+            "action": 'Action::"view"',
+            "resource": 'Photo::"vacation.jpg"',
+            "context": {"authenticated": "not a boolean"},
+        },
+        policies=policies,
+        entities=entities,
+        schema=schema,
+    )
+    assert len(result.diagnostics.errors) == 1
+    assert result.diagnostics.errors[0] == 'Request validation failed: context `{authenticated: "not a boolean"}` is not valid for `Action::"view"`'
+    assert Decision.NoDecision == result.decision
 
 
 # --- definitely_errored ---
