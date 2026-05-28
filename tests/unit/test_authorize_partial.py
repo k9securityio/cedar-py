@@ -641,6 +641,27 @@ def test_definitely_errored_type_mismatch():
     }
 
 
+def test_id_annotations_for_errored_policy():
+    policies = '''
+    @id("bad-comparison")
+    permit(principal, action, resource) when { context.value > "hello" };
+    @id("always-allow")
+    permit(principal, action, resource) when { true };
+    '''
+    result = is_authorized_partial(
+        request={
+            "principal": 'User::"alice"',
+            "action": 'Action::"view"',
+            "resource": 'Photo::"p"',
+            "context": {"value": 5},
+        },
+        policies=policies,
+        entities="[]",
+    )
+    assert result.diagnostics.id_annotations_by_reason["policy0"] == "bad-comparison"
+    assert result.diagnostics.id_annotations_by_reason["policy1"] == "always-allow"
+
+
 # --- Residual content ---
 
 

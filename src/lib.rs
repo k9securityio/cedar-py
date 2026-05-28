@@ -698,6 +698,11 @@ fn is_authorized_partial(
         reason.insert(pid);
     }
     let errored_ids: Vec<&PolicyId> = partial_response.definitely_errored().collect();
+    for pid in &errored_ids {
+        if let Some(annotation) = lookup_id_annotation(&policy_set, pid) {
+            id_annotations_by_reason.insert(pid.to_string(), annotation);
+        }
+    }
     let errors: Vec<String> = if errored_ids.is_empty() {
         Vec::new()
     } else {
