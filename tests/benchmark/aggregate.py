@@ -405,13 +405,130 @@ def build_baseline_from_state(save_prefix: str, output_path: Path | None = None)
     return output_path
 
 
+DEFAULT_CURRENT_DIR = RESULTS_DIR / "current"
+BASELINE_PATH = RESULTS_DIR / "baseline.json"
+DEFAULT_THRESHOLD_PCT = 5.0
+
+
+def _rel(path: Path) -> str:
+    """Path relative to REPO_ROOT if possible, else absolute. For display only."""
+    try:
+        return str(path.relative_to(REPO_ROOT))
+    except ValueError:
+        return str(path)
+
+
+def _load_current_runs(current_dir: Path) -> dict[str, list[float]]:
+    """Return per-benchmark list of per-run mean times (μs) from current_dir/run*.json."""
+    run_files = sorted(current_dir.glob("run*.json"))
+    if not run_files:
+        sys.exit(
+            f"error: no run*.json files in {_rel(current_dir)}. "
+            f"Run `bash tests/benchmark/run_current.sh` first."
+        )
+    means_by_name: dict[str, list[float]] = {}
+    for path in run_files:
+        data = json.loads(path.read_text())
+        for b in data["benchmarks"]:
+            means_by_name.setdefault(b["name"], []).append(b["stats"]["mean"] * 1_000_000)
+    return means_by_name
+
+
+def _load_baseline_medians(baseline_path: Path) -> dict[str, float]:
+    """Return per-benchmark baseline median time (μs) from baseline.json's stats.median field."""
+    if not baseline_path.exists():
+        sys.exit(
+            f"error: baseline not found at {_rel(baseline_path)}. "
+            f"Symlink baseline.json to a baseline-<state>-median.json first."
+        )
+    data = json.loads(baseline_path.read_text())
+    return {b["name"]: b["stats"]["median"] * 1_000_000 for b in data["benchmarks"]}
+
+
+def compare_current_to_baseline(
+    current_dir: Path = DEFAULT_CURRENT_DIR,
+    baseline_path: Path = BASELINE_PATH,
+    threshold_pct: float = DEFAULT_THRESHOLD_PCT,
+) -> int:
+    """Compare median across N current runs against baseline median per benchmark.
+
+    Gates on median Δ only (no mean threshold, per #69 goal 3). Faster-than-
+    baseline never fails. Prints a per-benchmark PASS/FAIL summary table for
+    both passing and failing outcomes. Returns 0 if all benchmarks pass, 1 if
+    any benchmark's median Δ exceeds threshold_pct.
+    """
+    current_means = _load_current_runs(current_dir)
+    baseline_medians = _load_baseline_medians(baseline_path)
+
+    n_runs = max((len(v) for v in current_means.values()), default=0)
+    all_names = sorted(set(current_means) | set(baseline_medians))
+
+    rows: list[tuple[str, float | None, float | None, float | None, str]] = []
+    any_fail = False
+    skipped_warnings: list[str] = []
+
+    for name in all_names:
+        means = current_means.get(name)
+        baseline_med = baseline_medians.get(name)
+        if means is None:
+            skipped_warnings.append(f"  {name}: present in baseline but no current runs — skipped")
+            continue
+        if baseline_med is None or baseline_med <= 0:
+            skipped_warnings.append(f"  {name}: present in current runs but no baseline — skipped")
+            continue
+        cur_med = statistics.median(means)
+        delta_pct = (cur_med - baseline_med) / baseline_med * 100
+        status = "FAIL" if delta_pct > threshold_pct else "PASS"
+        if status == "FAIL":
+            any_fail = True
+        rows.append((name, baseline_med, cur_med, delta_pct, status))
+
+    name_w = max((len(r[0]) for r in rows), default=10)
+    name_w = max(name_w, len("Benchmark"))
+    print()
+    print(f"{'Benchmark':<{name_w}}  {'Baseline (μs)':>13}  {'Median (μs)':>11}  {'Δ median':>9}  Status")
+    print(f"{'-' * name_w}  {'-' * 13}  {'-' * 11}  {'-' * 9}  ------")
+    for name, base, cur, delta, status in rows:
+        print(
+            f"{name:<{name_w}}  {fmt_us(base):>13}  {fmt_us(cur):>11}  "
+            f"{fmt_pct(cur, base):>9}  {status}"
+        )
+
+    if skipped_warnings:
+        print("\nwarnings:")
+        for w in skipped_warnings:
+            print(w)
+
+    print(
+        f"\nN={n_runs} current runs vs {_rel(baseline_path)}; "
+        f"threshold: median Δ > {threshold_pct:g}% fails"
+    )
+    if any_fail:
+        print("RESULT: FAIL — one or more benchmarks regressed beyond threshold")
+        return 1
+    print("RESULT: PASS")
+    return 0
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--phase", choices=["a", "b", "ab"], default="ab",
                    help="run phase A (raw → per-commit JSON), phase B (per-commit JSON → markdown), or both (default)")
     p.add_argument("--build-baseline-from", metavar="SAVE_PREFIX",
                    help="alternative mode: synthesize baseline.json from the median of <SAVE_PREFIX>'s runs (skips phases A/B)")
+    p.add_argument("--compare-current", nargs="?", const=str(DEFAULT_CURRENT_DIR),
+                   metavar="DIR",
+                   help=f"alternative mode: compare run*.json in DIR (default {DEFAULT_CURRENT_DIR.relative_to(REPO_ROOT)}) "
+                        f"against baseline.json on median Δ; exits non-zero on regression")
+    p.add_argument("--threshold-pct", type=float, default=DEFAULT_THRESHOLD_PCT,
+                   help=f"median Δ regression threshold percent (default {DEFAULT_THRESHOLD_PCT}); used with --compare-current")
     args = p.parse_args()
+
+    if args.compare_current:
+        return compare_current_to_baseline(
+            current_dir=Path(args.compare_current),
+            threshold_pct=args.threshold_pct,
+        )
 
     if args.build_baseline_from:
         build_baseline_from_state(args.build_baseline_from)
