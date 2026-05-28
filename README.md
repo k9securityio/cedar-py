@@ -137,9 +137,9 @@ if result.decision == Decision.NoDecision:
 
 _Unlike_ `is_authorized`, an absent or `None` `context` is treated as an unknown rather than empty. Pass `context={}` for an explicitly empty context.
 
-> **Note:** A partial-eval result is not a final authorization decision. Re-run `is_authorized` once unknowns are bound — schema type-checking (including action-typed context shapes) is skipped while fields remain unknown. See the [`is_authorized_partial` docstring](cedarpy/__init__.py) for the full caveats.
+> **Note:** A partial-eval result is not a final authorization decision. Re-run `is_authorized` once unknowns are bound. Schema type-checking (including action-typed context shapes) is skipped while fields remain unknown. See the [`is_authorized_partial` docstring](cedarpy/__init__.py) for the full caveats.
 
-See [`tests/unit/test_authorize_partial.py`](tests/unit/test_authorize_partial.py) for the full lifecycle — including binding unknowns and re-running `is_authorized` once the request is complete.
+See [`tests/unit/test_authorize_partial.py`](tests/unit/test_authorize_partial.py) for usage details, including binding unknowns and re-running `is_authorized` once the request is complete.
 
 ### Validating policies against a schema
 
