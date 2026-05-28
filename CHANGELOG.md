@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Adds `is_authorized_partial(request, policies, entities, schema=None)` for Cedar's partial-evaluation authorizer. Request fields that are `None` or absent are treated as unknowns. The authorizer returns `Decision.Allow` or `Decision.Deny` when the unknowns can't change the outcome, and `Decision.NoDecision` plus residual policies (as Cedar JSON) otherwise; callers re-evaluate the residuals once the unknowns are bound. `PartialAuthzResult` uses the same `decision` / `correlation_id` / `diagnostics` / `metrics` structure as `AuthzResult`, with `may_be_determining`, `must_be_determining`, `nontrivial_residuals`, and `unknown_entities` added to diagnostics. Unlike `is_authorized`, an absent or `None` `context` is treated as unknown rather than empty. Pass `context={}` for an explicitly empty context. **Note: A partial-eval result is not a final authorization decision.** Re-run `is_authorized` once unknowns are bound; schema type-checking (including action-typed context shapes) is skipped while fields remain unknown. Enables the `partial-eval` Cargo feature on `cedar-policy` ([#28](https://github.com/k9securityio/cedar-py/issues/28))
+
 ### Changed
 
 - `make benchmark-compare` now runs N=5 release-mode benchmarks at HEAD and gates on median Δ vs `tests/benchmark/results/baseline.json`, replacing the prior single pytest-benchmark run with `--benchmark-compare-fail=median:5%,mean:15%`. The `mean` threshold has been dropped — a single tail outlier could trip a passing run, and the N=5 median is the stable signal. Per-run JSONs land in `tests/benchmark/results/current/` (gitignored). Override the run count via `BENCHMARK_RUNS=N` ([#69](https://github.com/k9securityio/cedar-py/issues/69))

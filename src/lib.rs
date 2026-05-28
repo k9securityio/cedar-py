@@ -255,6 +255,17 @@ pub struct DiagnosticsSer {
     errors: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PartialDiagnosticsSer {
+    reason: HashSet<PolicyId>,
+    id_annotations_by_reason: HashMap<String, String>,
+    errors: Vec<String>,
+    may_be_determining: Vec<String>,
+    must_be_determining: Vec<String>,
+    nontrivial_residuals: Vec<String>,
+    unknown_entities: Vec<String>,
+}
+
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub enum DecisionSer {
     /// The `Authorizer` determined that the request should be allowed
@@ -559,12 +570,196 @@ fn validate_policies(policies: String, schema: String) -> String {
     serde_json::to_string(&result).unwrap()
 }
 
+/// Serializable partial authorization response for Python
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PartialAuthzResponse {
+    decision: Option<DecisionSer>,
+    correlation_id: Option<String>,
+    diagnostics: PartialDiagnosticsSer,
+    residuals: HashMap<String, serde_json::Value>,
+    metrics: HashMap<String, u128>,
+}
+
+#[pyfunction]
+#[pyo3(signature = (request, policies, entities, schema = None, verbose = false))]
+fn is_authorized_partial(
+    request: HashMap<String, Option<String>>,
+    policies: String,
+    entities: String,
+    schema: Option<String>,
+    verbose: Option<bool>,
+) -> String {
+    let verbose = verbose.unwrap_or(false);
+    let mut errs: Vec<Error> = vec![];
+
+    let t_parse_policies = Instant::now();
+    let policy_set = match PolicySet::from_str(&policies) {
+        Ok(pset) => pset,
+        Err(parse_errors) => {
+            let err_message = format!("policy parse errors:\n{:#}", parse_errors);
+            if verbose { println!("{:#}", err_message); }
+            errs.push(Error::msg(err_message));
+            PolicySet::new()
+        }
+    };
+    let t_parse_policies_duration = t_parse_policies.elapsed();
+
+    let t_start_schema = Instant::now();
+    let schema = make_schema(&schema, verbose, &mut errs);
+    let t_parse_schema_duration = t_start_schema.elapsed();
+
+    let t_load_entities = Instant::now();
+    let entities = make_entities(entities, &schema, &mut errs).partial();
+    let t_load_entities_duration = t_load_entities.elapsed();
+
+    if !errs.is_empty() {
+        return make_authz_result_for_errors(&errs);
+    }
+
+    let t_build_request = Instant::now();
+    let principal_str = request.get("principal").and_then(|v| v.as_deref());
+    let action_str = request.get("action").and_then(|v| v.as_deref());
+    let resource_str = request.get("resource").and_then(|v| v.as_deref());
+    let context_str = request.get("context").and_then(|v| v.as_deref());
+    let correlation_id = request.get("correlation_id").and_then(|v| v.clone());
+
+    let mut builder = Request::builder();
+
+    if let Some(p) = principal_str {
+        match p.parse::<EntityUid>() {
+            Ok(uid) => { builder = builder.principal(uid); }
+            Err(e) => {
+                errs.push(Error::msg(format!("Failed to parse principal as entity Uid: {}", e)));
+                return make_authz_result_for_errors(&errs);
+            }
+        }
+    }
+
+    if let Some(a) = action_str {
+        match a.parse::<EntityUid>() {
+            Ok(uid) => { builder = builder.action(uid); }
+            Err(e) => {
+                errs.push(Error::msg(format!("Failed to parse action as entity Uid: {}", e)));
+                return make_authz_result_for_errors(&errs);
+            }
+        }
+    }
+
+    if let Some(r) = resource_str {
+        match r.parse::<EntityUid>() {
+            Ok(uid) => { builder = builder.resource(uid); }
+            Err(e) => {
+                errs.push(Error::msg(format!("Failed to parse resource as entity Uid: {}", e)));
+                return make_authz_result_for_errors(&errs);
+            }
+        }
+    }
+
+    if let Some(ctx_json) = context_str {
+        let action_uid: Option<EntityUid> = action_str.and_then(|a| a.parse().ok());
+        match Context::from_json_str(ctx_json, schema.as_ref().and_then(|s| action_uid.as_ref().map(|a| (s, a)))) {
+            Ok(ctx) => { builder = builder.context(ctx); }
+            Err(e) => {
+                errs.push(Error::msg(format!("Failed to parse context: {}", e)));
+                return make_authz_result_for_errors(&errs);
+            }
+        }
+    }
+
+    let cedar_request = match &schema {
+        Some(s) => match builder.schema(s).build() {
+            Ok(r) => r,
+            Err(e) => {
+                errs.push(Error::msg(format!("Request validation failed: {}", e)));
+                return make_authz_result_for_errors(&errs);
+            }
+        },
+        None => builder.build(),
+    };
+    let build_request_duration = t_build_request.elapsed();
+
+    let authorizer = Authorizer::new();
+    let t_authz = Instant::now();
+    let partial_response = authorizer.is_authorized_partial(&cedar_request, &policy_set, &entities);
+    let authz_duration = t_authz.elapsed();
+
+    let decision = partial_response.decision().map(|d| match d {
+        Decision::Allow => DecisionSer::Allow,
+        Decision::Deny => DecisionSer::Deny,
+    });
+
+    let mut reason: HashSet<PolicyId> = HashSet::new();
+    for policy in partial_response.definitely_satisfied() {
+        reason.insert(policy.id().clone());
+    }
+    let errored_ids: Vec<&PolicyId> = partial_response.definitely_errored().collect();
+    let errors: Vec<String> = if errored_ids.is_empty() {
+        Vec::new()
+    } else {
+        // definitely_errored() yields ids but not messages; concretize() is the
+        // documented way to recover the per-policy error strings. Safe here
+        // because these policies error regardless of how unknowns are bound.
+        let concretized = partial_response.clone().concretize();
+        let error_map: HashMap<&PolicyId, String> = concretized.diagnostics().errors()
+            .map(|e| {
+                let AuthorizationError::PolicyEvaluationError(pe) = e;
+                (pe.policy_id(), e.to_string())
+            })
+            .collect();
+        errored_ids.iter()
+            .map(|pid| error_map.get(pid).cloned()
+                .unwrap_or_else(|| format!("error while evaluating policy `{pid}`: unknown error")))
+            .collect()
+    };
+    let may_be_determining: Vec<String> = partial_response.may_be_determining()
+        .map(|p| p.id().to_string()).collect();
+    let must_be_determining: Vec<String> = partial_response.must_be_determining()
+        .map(|p| p.id().to_string()).collect();
+    let nontrivial_residuals: Vec<String> = partial_response.nontrivial_residuals()
+        .map(|p| p.id().to_string()).collect();
+    let unknown_entities: Vec<String> = partial_response.unknown_entities()
+        .into_iter().map(|e| e.to_string()).collect();
+
+    let mut id_annotations_by_reason: HashMap<String, String> = HashMap::new();
+    let mut residuals: HashMap<String, serde_json::Value> = HashMap::new();
+    for policy in partial_response.all_residuals() {
+        let pid_str = policy.id().to_string();
+        if let Some(annotation) = lookup_id_annotation(&policy_set, policy.id()) {
+            id_annotations_by_reason.insert(pid_str.clone(), annotation);
+        }
+        residuals.insert(pid_str, policy.to_json().unwrap_or(json!(null)));
+    }
+
+    let metrics = HashMap::from([
+        (String::from("parse_policies_duration_micros"), t_parse_policies_duration.as_micros()),
+        (String::from("parse_schema_duration_micros"), t_parse_schema_duration.as_micros()),
+        (String::from("load_entities_duration_micros"), t_load_entities_duration.as_micros()),
+        (String::from("build_request_duration_micros"), build_request_duration.as_micros()),
+        (String::from("authz_duration_micros"), authz_duration.as_micros()),
+    ]);
+
+    let response = PartialAuthzResponse {
+        decision,
+        correlation_id,
+        diagnostics: PartialDiagnosticsSer {
+            reason, id_annotations_by_reason, errors,
+            may_be_determining, must_be_determining,
+            nontrivial_residuals, unknown_entities,
+        },
+        residuals,
+        metrics,
+    };
+
+    serde_json::to_string(&response).unwrap()
+}
+
 /// A Python module implemented in Rust.
 #[pymodule]
 fn _internal(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(echo, m)?)?;
     m.add_function(wrap_pyfunction!(is_authorized, m)?)?;
     m.add_function(wrap_pyfunction!(is_authorized_batch, m)?)?;
+    m.add_function(wrap_pyfunction!(is_authorized_partial, m)?)?;
     m.add_function(wrap_pyfunction!(format_policies, m)?)?;
     m.add_function(wrap_pyfunction!(policies_to_json_str, m)?)?;
     m.add_function(wrap_pyfunction!(policies_from_json_str, m)?)?;

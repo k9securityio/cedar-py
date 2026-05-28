@@ -1,7 +1,7 @@
 import json
 from copy import copy
 from enum import Enum
-from typing import Union, List, Any
+from typing import Union, List, Optional, Any
 
 from cedarpy import _internal
 
@@ -16,7 +16,13 @@ class Decision(Enum):
     NoDecision = 'NoDecision'
 
 
-class Diagnostics:
+class _DiagnosticsBase:
+    """Shared backing for the public diagnostics types. Not part of the
+    public API — type-annotate against ``Diagnostics`` or
+    ``PartialDiagnostics`` directly. Exists to share dict-accessor
+    implementation without committing the two public types to a
+    subclass relationship.
+    """
 
     def __init__(self, diagnostics: dict) -> None:
         super().__init__()
@@ -41,6 +47,11 @@ class Diagnostics:
         are omitted from the map.
         """
         return self._diagnostics.get('id_annotations_by_reason', dict())
+
+
+class Diagnostics(_DiagnosticsBase):
+    """Diagnostics for a fully-evaluated authorization decision."""
+    pass
 
 
 class AuthzResult:
@@ -242,6 +253,7 @@ def policies_to_json_str(policies: str) -> str:
     """
     return _internal.policies_to_json_str(policies)
 
+
 def policies_from_json_str(policies: str) -> str:
     """Convert a json cedar policy file to a cedar policy file.
 
@@ -251,6 +263,150 @@ def policies_from_json_str(policies: str) -> str:
     :raises ValueError: if the input policies cannot be parsed
     """
     return _internal.policies_from_json_str(policies)
+
+
+class PartialDiagnostics(_DiagnosticsBase):
+    """Diagnostics for a partial-evaluation authorization decision.
+
+    Carries the same ``errors`` / ``reasons`` / ``id_annotations_by_reason``
+    surface as ``Diagnostics``, plus partial-eval-specific fields. Note that
+    semantics differ slightly: in partial eval, ``reasons`` lists the
+    definitely-satisfied policies, and ``id_annotations_by_reason`` covers
+    annotations for definitely-satisfied, all-residual, and
+    definitely-errored policies.
+    """
+
+    @property
+    def may_be_determining(self) -> List[str]:
+        return self._diagnostics.get('may_be_determining', [])
+
+    @property
+    def must_be_determining(self) -> List[str]:
+        return self._diagnostics.get('must_be_determining', [])
+
+    @property
+    def nontrivial_residuals(self) -> List[str]:
+        return self._diagnostics.get('nontrivial_residuals', [])
+
+    @property
+    def unknown_entities(self) -> List[str]:
+        return self._diagnostics.get('unknown_entities', [])
+
+
+class PartialAuthzResult:
+    """Result of a partial authorization evaluation.
+
+    When the authorizer can reach a definitive decision despite unknowns,
+    ``decision`` is ``Allow`` or ``Deny``. When unknowns prevent a decision,
+    ``decision`` is ``NoDecision`` and ``residuals`` contains simplified
+    policy ASTs awaiting further evaluation. When input errors occur,
+    ``decision`` is ``NoDecision`` and ``residuals`` is empty.
+    """
+
+    def __init__(self, authz_resp: dict) -> None:
+        self._authz_resp = authz_resp
+        self._diagnostics = PartialDiagnostics(authz_resp.get('diagnostics', {}))
+
+    @property
+    def decision(self) -> Decision:
+        d = self._authz_resp.get('decision')
+        if d is None or d == 'NoDecision':
+            return Decision.NoDecision
+        return Decision[d]
+
+    @property
+    def allowed(self) -> bool:
+        """allowed is ``True`` iff ``decision == Decision.Allow``. Both ``Deny`` and
+        ``NoDecision`` return ``False``; check ``decision`` directly to
+        distinguish a denial from an unknown-blocked partial result.
+        """
+        return Decision.Allow == self.decision
+
+    @property
+    def correlation_id(self) -> Optional[str]:
+        return self._authz_resp.get('correlation_id')
+
+    @property
+    def diagnostics(self) -> PartialDiagnostics:
+        return self._diagnostics
+
+    @property
+    def residuals(self) -> dict:
+        return self._authz_resp.get('residuals', {})
+
+    @property
+    def metrics(self) -> dict:
+        return self._authz_resp.get('metrics', {})
+
+    def __getitem__(self, __name: str) -> Any:
+        return getattr(self, __name)
+
+
+def is_authorized_partial(request: dict,
+                          policies: str,
+                          entities: Union[str, List[dict]],
+                          schema: Union[str, dict, None] = None,
+                          verbose: bool = False) -> PartialAuthzResult:
+    """Partially evaluate an authorization request with unknowns.
+
+    Fields in the request dict that are None or absent are treated as
+    unknown. The evaluator simplifies policies as far as possible and
+    returns residual expressions for policies that cannot be fully resolved.
+
+    .. warning::
+
+        **Partial-eval results MUST NOT be used as a final authorization
+        decision.** Treat ``decision == Decision.Allow`` from
+        ``is_authorized_partial`` as a *preview* that holds only for the
+        unknowns supplied. Once all unknowns are bound, re-run
+        ``is_authorized`` with the complete request; that call performs
+        full schema validation (including action-typed context shapes)
+        which partial evaluation deliberately skips for fields that are
+        still unknown.
+
+        In particular, when a schema is provided but ``action`` is
+        unknown, request-context type-checking against the schema's
+        action-specific context shape is silently skipped — there is no
+        bound action to look up. A residual that depends on context
+        values is not a guarantee that those values are well-typed.
+
+    :param request is a Cedar-style request object containing a principal, action, resource, and (optional) context;
+    context may be a dict (preferred) or a string.
+    Unlike is_authorized (which defaults an absent context to empty),
+    an absent or None context here is treated as unknown and will residualize;
+    pass context={} for an explicitly empty context.
+    :param policies is a str containing all the policies in the Cedar PolicySet
+    :param entities a list of entities or a json-formatted string containing the list of entities to
+    include in the evaluation
+    :param schema (optional) dictionary or json-formatted string containing the Cedar schema
+    :param verbose (optional) boolean determining whether to enable verbose logging output within the library
+
+    :returns a PartialAuthzResult
+    """
+    request_local: dict = {}
+    for key in ('principal', 'action', 'resource', 'correlation_id'):
+        if key in request:
+            request_local[key] = request[key]
+
+    if 'context' in request:
+        context = request['context']
+        if isinstance(context, dict):
+            request_local['context'] = json.dumps(context)
+        elif context is None:
+            request_local['context'] = None
+        else:
+            request_local['context'] = context
+
+    if isinstance(entities, list):
+        entities = json.dumps(entities)
+
+    if schema is not None and isinstance(schema, dict):
+        schema = json.dumps(schema)
+
+    result_str = _internal.is_authorized_partial(
+        request_local, policies, entities, schema, verbose)
+    result_dict = json.loads(result_str)
+    return PartialAuthzResult(result_dict)
 
 
 def validate_policies(policies: str,

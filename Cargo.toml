@@ -14,7 +14,7 @@ crate-type = ["cdylib"]
 [dependencies]
 pyo3 = "0.27.0"
 anyhow = "1.0"
-cedar-policy = "4.8.2"
+cedar-policy = { version = "4.8.2", features = ["partial-eval"] }
 cedar-policy-cli = "4.8.2"
 cedar-policy-formatter = "4.8.2"
 serde = { version = "1.0.0", features = ["derive", "rc"] }
