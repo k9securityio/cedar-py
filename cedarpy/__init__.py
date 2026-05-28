@@ -332,6 +332,23 @@ def is_authorized_partial(request: dict,
     unknown. The evaluator simplifies policies as far as possible and
     returns residual expressions for policies that cannot be fully resolved.
 
+    .. warning::
+
+        **Partial-eval results MUST NOT be used as a final authorization
+        decision.** Treat ``decision == Decision.Allow`` from
+        ``is_authorized_partial`` as a *preview* that holds only for the
+        unknowns supplied. Once all unknowns are bound, re-run
+        ``is_authorized`` with the complete request; that call performs
+        full schema validation (including action-typed context shapes)
+        which partial evaluation deliberately skips for fields that are
+        still unknown.
+
+        In particular, when a schema is provided but ``action`` is
+        unknown, request-context type-checking against the schema's
+        action-specific context shape is silently skipped — there is no
+        bound action to look up. A residual that depends on context
+        values is not a guarantee that those values are well-typed.
+
     :param request is a Cedar-style request object containing a principal, action, resource, and (optional) context;
     context may be a dict (preferred) or a string.
     Unlike is_authorized (which defaults an absent context to empty),
