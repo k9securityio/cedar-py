@@ -109,6 +109,38 @@ cedar-py returns the list of `AuthzResult` objects in the same order as the list
 The above example also supplies an optional `correlation_id` in the request so that you can verify results are returned in the correct order or otherwise map a request to a result.
 
 
+### Partially authorizing a request with unknowns
+
+Sometimes you can't fully specify a request up front. The caller may not have picked a resource yet, or `context` may be filled in by a downstream service. `is_authorized_partial` evaluates whatever is known and returns residual policies for the parts that aren't.
+
+Any request field that is `None` or absent is treated as an unknown. `is_authorized_partial` returns either:
+
+* `Decision.Allow` or `Decision.Deny` when the unknowns can't change the outcome, or
+* `Decision.NoDecision` plus residual policies (as Cedar JSON) for the caller to re-evaluate once the unknowns are bound.
+
+```python
+from cedarpy import is_authorized_partial, PartialAuthzResult, Decision
+
+request = {
+    "principal": 'User::"bob"',
+    "action": 'Action::"view"',
+    # resource and context are unknown for now
+}
+
+result: PartialAuthzResult = is_authorized_partial(request, policies, entities)
+
+if result.decision == Decision.NoDecision:
+    # Residual policies (Cedar JSON) — re-evaluate once unknowns are bound
+    residuals = result.diagnostics.nontrivial_residuals
+    unknowns = result.diagnostics.unknown_entities
+```
+
+_Unlike_ `is_authorized`, an absent or `None` `context` is treated as an unknown rather than empty. Pass `context={}` for an explicitly empty context.
+
+> **Note:** A partial-eval result is not a final authorization decision. Re-run `is_authorized` once unknowns are bound — schema type-checking (including action-typed context shapes) is skipped while fields remain unknown. See the [`is_authorized_partial` docstring](cedarpy/__init__.py) for the full caveats.
+
+See [`tests/unit/test_authorize_partial.py`](tests/unit/test_authorize_partial.py) for the full lifecycle — including binding unknowns and re-running `is_authorized` once the request is complete.
+
 ### Validating policies against a schema
 
 You can use `validate_policies` to validate Cedar policies against a schema before deploying them. Validation catches common mistakes like typos in entity types, invalid actions, type mismatches, and unsafe access to optional attributes—errors that would otherwise cause policies to silently fail at runtime.
