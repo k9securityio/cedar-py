@@ -706,6 +706,9 @@ fn is_authorized_partial(
     let errors: Vec<String> = if errored_ids.is_empty() {
         Vec::new()
     } else {
+        // definitely_errored() yields ids but not messages; concretize() is the
+        // documented way to recover the per-policy error strings. Safe here
+        // because these policies error regardless of how unknowns are bound.
         let concretized = partial_response.clone().concretize();
         let error_map: HashMap<&PolicyId, String> = concretized.diagnostics().errors()
             .map(|e| {
