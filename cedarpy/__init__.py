@@ -16,7 +16,13 @@ class Decision(Enum):
     NoDecision = 'NoDecision'
 
 
-class Diagnostics:
+class _DiagnosticsBase:
+    """Shared backing for the public diagnostics types. Not part of the
+    public API — type-annotate against ``Diagnostics`` or
+    ``PartialDiagnostics`` directly. Exists to share dict-accessor
+    implementation without committing the two public types to a
+    subclass relationship.
+    """
 
     def __init__(self, diagnostics: dict) -> None:
         super().__init__()
@@ -41,6 +47,11 @@ class Diagnostics:
         are omitted from the map.
         """
         return self._diagnostics.get('id_annotations_by_reason', dict())
+
+
+class Diagnostics(_DiagnosticsBase):
+    """Diagnostics for a fully-evaluated authorization decision."""
+    pass
 
 
 class AuthzResult:
@@ -242,6 +253,7 @@ def policies_to_json_str(policies: str) -> str:
     """
     return _internal.policies_to_json_str(policies)
 
+
 def policies_from_json_str(policies: str) -> str:
     """Convert a json cedar policy file to a cedar policy file.
 
@@ -253,7 +265,16 @@ def policies_from_json_str(policies: str) -> str:
     return _internal.policies_from_json_str(policies)
 
 
-class PartialDiagnostics(Diagnostics):
+class PartialDiagnostics(_DiagnosticsBase):
+    """Diagnostics for a partial-evaluation authorization decision.
+
+    Carries the same ``errors`` / ``reasons`` / ``id_annotations_by_reason``
+    surface as ``Diagnostics``, plus partial-eval-specific fields. Note that
+    semantics differ slightly: in partial eval, ``reasons`` lists the
+    definitely-satisfied policies, and ``id_annotations_by_reason`` covers
+    annotations for definitely-satisfied, all-residual, and
+    definitely-errored policies.
+    """
 
     @property
     def may_be_determining(self) -> List[str]:
