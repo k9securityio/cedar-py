@@ -610,6 +610,34 @@ def test_partial_with_schema_unknown_context():
     }
 
 
+def test_partial_with_schema_unknown_action_skips_context_type_check():
+    """When action is unknown, the schema's action-specific context shape
+    is not consulted, so an ill-typed context value passes through without
+    a diagnostic. This is the concrete behavior behind the
+    is_authorized_partial docstring warning that partial-eval results
+    must not be treated as a final authorization decision.
+    """
+    schema = load_file_as_str("resources/sandbox_b/schema.json")
+    entities = load_file_as_str("resources/sandbox_b/entities.json")
+    policies = 'permit(principal == User::"alice", action, resource);'
+    result = is_authorized_partial(
+        request={
+            "principal": 'User::"alice"',
+            "resource": 'Photo::"vacation.jpg"',
+            "context": {"authenticated": "not a boolean"},
+        },
+        policies=policies,
+        entities=entities,
+        schema=schema,
+    )
+    type_errors = [e for e in result.diagnostics.errors if "type" in e.lower()]
+    assert type_errors == []
+
+    # the policy doesn't constrain action, so the unknown action doesn't block Allow
+    # but the ill-typed context value silently flows through, which is the potentially surprising part
+    assert Decision.Allow == result.decision
+
+
 # --- definitely_errored ---
 
 
