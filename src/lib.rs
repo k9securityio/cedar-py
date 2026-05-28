@@ -689,20 +689,10 @@ fn is_authorized_partial(
     });
 
     let mut reason: HashSet<PolicyId> = HashSet::new();
-    let mut id_annotations_by_reason: HashMap<String, String> = HashMap::new();
     for policy in partial_response.definitely_satisfied() {
-        let pid = policy.id().clone();
-        if let Some(annotation) = lookup_id_annotation(&policy_set, &pid) {
-            id_annotations_by_reason.insert(pid.to_string(), annotation);
-        }
-        reason.insert(pid);
+        reason.insert(policy.id().clone());
     }
     let errored_ids: Vec<&PolicyId> = partial_response.definitely_errored().collect();
-    for pid in &errored_ids {
-        if let Some(annotation) = lookup_id_annotation(&policy_set, pid) {
-            id_annotations_by_reason.insert(pid.to_string(), annotation);
-        }
-    }
     let errors: Vec<String> = if errored_ids.is_empty() {
         Vec::new()
     } else {
@@ -730,6 +720,7 @@ fn is_authorized_partial(
     let unknown_entities: Vec<String> = partial_response.unknown_entities()
         .into_iter().map(|e| e.to_string()).collect();
 
+    let mut id_annotations_by_reason: HashMap<String, String> = HashMap::new();
     let mut residuals: HashMap<String, serde_json::Value> = HashMap::new();
     for policy in partial_response.all_residuals() {
         let pid_str = policy.id().to_string();
