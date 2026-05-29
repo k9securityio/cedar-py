@@ -36,6 +36,13 @@ integration-tests: submodules
 	set -e ;\
 	pytest tests/integration/test_cedar_integration_tests.py
 
+.PHONY: corpus-tests
+corpus-tests: submodules
+	@echo Running auto-generated cedar corpus tests
+	@echo This suite is large \(7000+ files\) and may take several minutes.
+	set -e ;\
+	pytest tests/integration/test_cedar_corpus_tests.py
+
 .PHONY: release
 release:
 	@echo Building a release
