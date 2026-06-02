@@ -34,6 +34,7 @@ import shutil
 import tarfile
 import tempfile
 from pathlib import Path
+from typing import Optional
 
 import pytest
 
@@ -43,7 +44,7 @@ import cedarpy
 CORPUS_TARBALL = Path(__file__).parent / "resources" / "cedar-integration-tests" / "corpus-tests.tar.gz"
 
 
-def _extract_corpus_once() -> Path:
+def _extract_corpus_once() -> Optional[Path]:
     """Extract the corpus tarball to a process-lifetime tmp dir.
 
     pytest collection happens at import time, before any fixture has
