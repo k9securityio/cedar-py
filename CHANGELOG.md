@@ -10,7 +10,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- Adds `is_authorized_partial(request, policies, entities, schema=None)` for Cedar's partial-evaluation authorizer. Request fields that are `None` or absent are treated as unknowns. The authorizer returns `Decision.Allow` or `Decision.Deny` when the unknowns can't change the outcome, and `Decision.NoDecision` plus residual policies (as Cedar JSON) otherwise; callers re-evaluate the residuals once the unknowns are bound. `PartialAuthzResult` uses the same `decision` / `correlation_id` / `diagnostics` / `metrics` structure as `AuthzResult`, with `may_be_determining`, `must_be_determining`, `nontrivial_residuals`, and `unknown_entities` added to diagnostics. Unlike `is_authorized`, an absent or `None` `context` is treated as unknown rather than empty. Pass `context={}` for an explicitly empty context. **Note: A partial-eval result is not a final authorization decision.** Re-run `is_authorized` once unknowns are bound; schema type-checking (including action-typed context shapes) is skipped while fields remain unknown. Enables the `partial-eval` Cargo feature on `cedar-policy` ([#28](https://github.com/k9securityio/cedar-py/issues/28))
+- `is_authorized` / `is_authorized_batch` now accept a structured `{"type": ..., "id": ...}` dict for `principal`, `action`, and `resource`, in addition to the existing Cedar surface-syntax string (`'User::"alice"'`). The dict form routes through `EntityUid::from_json` (mirroring cedar-java's `JsonEUID`) and accepts entity ids containing characters the surface parser rejects as "needs to be normalized" (e.g. embedded newlines). Pure addition — string-form callers are unchanged. Also adds a `make corpus-tests` target that runs the upstream fuzzer-generated corpus (7,462 files / 59,696 request cases); kept separate from `make integration-tests` because it takes several minutes ([#87](https://github.com/k9securityio/cedar-py/pull/87) — thanks [@geekphilosophy](https://github.com/geekphilosophy))
+
+### Changed
+
+- **Behavior change.** `is_authorized` / `is_authorized_batch` now raise a `KeyError` when a request is missing `principal`, `action`, or `resource`, instead of triggering a Rust panic. The missing field name is named in the exception ([#87](https://github.com/k9securityio/cedar-py/pull/87))
+
+## [4.8.4] - 2026-05-29
+
+### Added
+
+- Adds `is_authorized_partial(request, policies, entities, schema=None)` for Cedar's partial-evaluation authorizer. Request fields that are `None` or absent are treated as unknowns. The authorizer returns `Decision.Allow` or `Decision.Deny` when the unknowns can't change the outcome, and `Decision.NoDecision` plus residual policies (as Cedar JSON) otherwise; callers re-evaluate the residuals once the unknowns are bound. `PartialAuthzResult` uses the same `decision` / `correlation_id` / `diagnostics` / `metrics` structure as `AuthzResult`, with `may_be_determining`, `must_be_determining`, `nontrivial_residuals`, and `unknown_entities` added to diagnostics. Unlike `is_authorized`, an absent or `None` `context` is treated as unknown rather than empty. Pass `context={}` for an explicitly empty context. **Note: A partial-eval result is not a final authorization decision.** Re-run `is_authorized` once unknowns are bound; schema type-checking (including action-typed context shapes) is skipped while fields remain unknown. Enables the `partial-eval` Cargo feature on `cedar-policy` ([#28](https://github.com/k9securityio/cedar-py/issues/28)) — Thanks [@swenger](https://github.com/swenger)!
 
 ### Changed
 
@@ -67,7 +77,8 @@ Dependency update release. No functional or API changes — Cedar Policy engine 
 
 - Performance regression test suite built on `pytest-benchmark` ([#39](https://github.com/k9securityio/cedar-py/pull/39))
 
-[Unreleased]: https://github.com/k9securityio/cedar-py/compare/v4.8.3...HEAD
+[Unreleased]: https://github.com/k9securityio/cedar-py/compare/v4.8.4...HEAD
+[4.8.4]: https://github.com/k9securityio/cedar-py/compare/v4.8.3...v4.8.4
 [4.8.3]: https://github.com/k9securityio/cedar-py/compare/v4.8.2...v4.8.3
 [4.8.2]: https://github.com/k9securityio/cedar-py/compare/v4.8.1...v4.8.2
 [4.8.1]: https://github.com/k9securityio/cedar-py/compare/v4.8.0...v4.8.1
