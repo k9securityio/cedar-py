@@ -11,7 +11,7 @@
 <table>
 <thead><tr><th>Cedar Policy (engine) release</th><th>cedarpy release</th><th>cedarpy branch</th></tr></thead>
 <tbody>
-    <tr><td>v4.8.2</td><td>v4.8.3</td><td>main</td></tr>
+    <tr><td>v4.8.2</td><td>v4.8.4</td><td>main</td></tr>
     <tr><td>v4.7.2</td><td>v4.7.1</td><td>release/4.7.x</td></tr>
     <tr><td>v4.1.0</td><td>v4.1.0</td><td>release/4.1.x</td></tr>
     <tr><td>v2.2.0</td><td>v0.4.1</td><td>release/2.2.x</td></tr>
@@ -108,6 +108,65 @@ cedar-py returns the list of `AuthzResult` objects in the same order as the list
 
 The above example also supplies an optional `correlation_id` in the request so that you can verify results are returned in the correct order or otherwise map a request to a result.
 
+
+### Partially authorizing a request with unknowns
+
+Sometimes you can't fully evaluate a request up front. A resource entity may not be loaded from the database yet, the caller may not have picked a resource, or `context` may be filled in by a downstream service. `is_authorized_partial` evaluates whatever is known and returns residual policies for the parts that aren't.
+
+`is_authorized_partial` returns either:
+
+* `Decision.Allow` or `Decision.Deny` when the unknowns can't change the outcome, or
+* `Decision.NoDecision` plus residual policies for the caller to re-evaluate once the unknowns are bound.
+
+```python
+from cedarpy import is_authorized_partial, PartialAuthzResult, Decision
+
+# Allow access to all principals when the resource is public
+policies: str = 'permit(principal, action, resource) when { resource.public == true };'
+
+# Resource entity hasn't been loaded from the database yet
+entities: list = []
+
+request = {
+    "principal": 'User::"alice"',
+    "action": 'Action::"view"',
+    "resource": 'Photo::"photo1"',
+    "context": {},
+}
+
+result: PartialAuthzResult = is_authorized_partial(request, policies, entities)
+
+# Cedar can't decide yet: the policy depends on resource.public,
+# but Photo::"photo1" hasn't been loaded.
+assert result.decision == Decision.NoDecision
+
+# Which entities Cedar needs you to load before it can decide:
+assert result.diagnostics.unknown_entities == ['Photo::"photo1"']
+
+# Which policies are still unresolved, identified by the auto-generated policy id:
+assert result.diagnostics.nontrivial_residuals == ['policy0']
+```
+
+Now you can load the unknown entities and re-evaluate access with `is_authorized` to get a final decision:
+
+```python
+from cedarpy import is_authorized
+
+# Load Photo::"photo1" from the database and transform to its Cedar entity representation
+entities = [
+    {"uid": {"__entity": {"type": "Photo", "id": "photo1"}},
+     "attrs": {"public": True}, "parents": []}
+]
+
+final_result = is_authorized(request, policies, entities) # new entities; same request and policies
+assert final_result.decision == Decision.Allow
+```
+
+_Unlike_ `is_authorized`, an absent or `None` `context` is treated as an unknown rather than empty. Pass `context={}` for an explicitly empty context.
+
+> **Note:** A partial-eval result is not a final authorization decision. Schema type-checking, particularly the per-action `context` type, is skipped while fields remain unknown. See the [`is_authorized_partial` docstring](cedarpy/__init__.py) for the full caveats.
+
+See [`tests/unit/test_authorize_partial.py`](tests/unit/test_authorize_partial.py) for usage details, including binding unknowns and re-running `is_authorized` once the request is complete.
 
 ### Validating policies against a schema
 
