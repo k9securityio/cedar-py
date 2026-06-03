@@ -313,7 +313,17 @@ Then you can run:
 make integration-tests
 ```
 
-`cedar-py` currently passes 69 of the 74 tests defined in the `example_use_cases`, `multi`, `ip`, and `decimal` suites. The integration tests also validate policies against schemas when `shouldValidate` is set in the test definition. See [test_cedar_integration_tests.py](tests/integration/test_cedar_integration_tests.py) for details.
+`cedar-py` currently passes all 74 tests defined in the `example_use_cases`, `multi`, `ip`, and `decimal` suites. The integration tests also validate policies against schemas when `shouldValidate` is set in the test definition. See [test_cedar_integration_tests.py](tests/integration/test_cedar_integration_tests.py) for details.
+
+#### Corpus tests
+
+The upstream `cedar-integration-tests` repository also ships a fuzzer-generated corpus (`corpus-tests.tar.gz`) — 7,462 test files containing 59,696 individual request cases. cedar-py passes all 59,696. Runs are kept in a separate target since the suite takes a few minutes:
+
+```shell
+make corpus-tests
+```
+
+The runner mirrors the leniency rules used by the upstream Rust runner (`cedar-testing/tests/cedar-policy/corpus_tests.rs`) and `cedar-java`'s `SharedIntegrationTests`: reasons compared as a set, errors compared by count, and policy/schema parse failures (cedarpy's `NoDecision`) soft-pass when the fixture's expected decision is `Deny`. See [test_cedar_corpus_tests.py](tests/integration/test_cedar_corpus_tests.py) for details.
 
 ### Using locally-built artifacts
 

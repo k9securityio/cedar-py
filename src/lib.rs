@@ -6,6 +6,7 @@ use anyhow::{Context as _, Error, Result};
 use cedar_policy::*;
 use cedar_policy_formatter::{Config, policies_str_to_pretty};
 use pyo3::prelude::*;
+use pyo3::types::{PyDict, PyString};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -56,13 +57,43 @@ fn policies_from_json_str(s: String) -> PyResult<String> {
 }
 
 
+/// How a principal/action/resource was supplied by the Python caller.
+///
+/// `Cedar` is the surface-syntax string form (e.g. `User::"alice"`),
+/// parsed via `EntityUid::from_str`. This is constrained by Cedar's
+/// surface grammar — entity ids containing whitespace or other
+/// characters that are not valid in the surface syntax cannot be
+/// expressed this way.
+///
+/// `Json` is the structured form (e.g. `{"type": "User", "id":
+/// "alice"}`), parsed via `EntityUid::from_json`. This bypasses the
+/// surface-syntax restriction and matches the `JsonEUID` form used by
+/// cedar-java's request API.
+pub enum EntityUidInput {
+    Cedar(String),
+    Json(serde_json::Value),
+}
+
+impl EntityUidInput {
+    fn parse(&self, what: &str) -> Result<EntityUid> {
+        match self {
+            EntityUidInput::Cedar(s) => s
+                .parse()
+                .context(format!("Failed to parse {what} as entity Uid")),
+            EntityUidInput::Json(v) => EntityUid::from_json(v.clone())
+                .context(format!("Failed to parse {what} as entity Uid (JSON form)")),
+        }
+    }
+}
+
 pub struct RequestArgs {
-    /// Principal for the request, e.g., User::"alice"
-    pub principal: String,
-    /// Action for the request, e.g., Action::"view"
-    pub action: String,
-    /// Resource for the request, e.g., File::"myfile.txt"
-    pub resource: String,
+    /// Principal for the request — surface-syntax string `User::"alice"`
+    /// or structured `{"type": "User", "id": "alice"}`.
+    pub principal: EntityUidInput,
+    /// Action for the request — same form options as `principal`.
+    pub action: EntityUidInput,
+    /// Resource for the request — same form options as `principal`.
+    pub resource: EntityUidInput,
     /// A JSON object representing the context for the request.
     /// Should be a (possibly empty) map from keys to values.
     pub context_json: Option<String>,
@@ -74,9 +105,9 @@ pub struct RequestArgs {
 impl RequestArgs {
     /// Turn this `RequestArgs` into the appropriate `Request` object
     fn get_request(&self, schema: Option<&Schema>) -> Result<Request> {
-        let principal: EntityUid = self.principal.parse().context(format!("Failed to parse principal as entity Uid"))?;
-        let action: EntityUid = self.action.parse().context(format!("Failed to parse action as entity Uid"))?;
-        let resource: EntityUid = self.resource.parse().context(format!("Failed to parse resource as entity Uid"))?;
+        let principal: EntityUid = self.principal.parse("principal")?;
+        let action: EntityUid = self.action.parse("action")?;
+        let resource: EntityUid = self.resource.parse("resource")?;
         let context: Context = match &self.context_json {
             None => Context::empty(),
             Some(context_json_str) => {
@@ -91,23 +122,23 @@ impl RequestArgs {
 
 #[pyfunction]
 #[pyo3(signature = (request, policies, entities, schema = None, verbose = false,))]
-fn is_authorized(request: HashMap<String, String>,
+fn is_authorized(request: Bound<'_, PyDict>,
                  policies: String,
                  entities: String,
                  schema: Option<String>,
                  verbose: Option<bool>)
-                 -> String {
-    is_authorized_batch(vec![request], policies, entities, schema, verbose)[0].clone()
+                 -> PyResult<String> {
+    Ok(is_authorized_batch(vec![request], policies, entities, schema, verbose)?[0].clone())
 }
 
 #[pyfunction]
 #[pyo3(signature = (requests, policies, entities, schema = None, verbose = false,))]
-fn is_authorized_batch(requests: Vec<HashMap<String, String>>,
+fn is_authorized_batch(requests: Vec<Bound<'_, PyDict>>,
                        policies: String,
                        entities: String,
                        schema: Option<String>,
                        verbose: Option<bool>)
-                       -> Vec<String> {
+                       -> PyResult<Vec<String>> {
     // CLI AuthorizeArgs: https://github.com/cedar-policy/cedar/blob/main/cedar-policy-cli/src/lib.rs#L183
     let verbose = verbose.unwrap_or(false);
     if verbose {
@@ -146,9 +177,9 @@ fn is_authorized_batch(requests: Vec<HashMap<String, String>>,
 
     // build a list of RequestArgs
     let mut request_args_vec: Vec<RequestArgs> = Vec::new();
-    requests.iter().for_each(|request: &HashMap<String, String>| {
-        request_args_vec.push(to_request_args(request));
-    });
+    for request in requests.iter() {
+        request_args_vec.push(to_request_args(request)?);
+    }
 
     let mut responses_vec: Vec<String> = Vec::new();
 
@@ -192,7 +223,7 @@ fn is_authorized_batch(requests: Vec<HashMap<String, String>>,
 
     }
 
-    return responses_vec;
+    Ok(responses_vec)
 }
 
 fn make_authz_result_for_errors(errs: &Vec<Error>) -> String {
@@ -211,26 +242,59 @@ fn stringify_errors(errs: &Vec<Error>) -> Vec<String> {
     errs.iter().map(|e| e.to_string()).collect()
 }
 
-fn to_request_args(request: &HashMap<String, String>) -> RequestArgs {
-    // collect request arguments into a struct compatible with authorization request
-    let principal: String = request.get(String::from("principal").as_str()).unwrap().to_string();
-    let action: String = request.get(String::from("action").as_str()).unwrap().to_string();
-    let resource: String = request.get(String::from("resource").as_str()).unwrap().to_string();
-    let correlation_id: Option<String> = request.get(String::from("correlation_id").as_str()).cloned();
+/// Extract a principal/action/resource value from a Python request
+/// dict. Accepts either a string (Cedar surface syntax, e.g.
+/// `User::"alice"`) or a dict with `type` and `id` keys (the
+/// structured form, parsed via `EntityUid::from_json`).
+fn extract_euid_field(
+    request: &Bound<'_, PyDict>,
+    field: &str,
+) -> PyResult<EntityUidInput> {
+    let value = request
+        .get_item(field)?
+        .ok_or_else(|| pyo3::exceptions::PyKeyError::new_err(field.to_string()))?;
+    if let Ok(s) = value.cast::<PyString>() {
+        Ok(EntityUidInput::Cedar(s.to_string()))
+    } else if let Ok(d) = value.cast::<PyDict>() {
+        let type_name: String = d
+            .get_item("type")?
+            .ok_or_else(|| pyo3::exceptions::PyKeyError::new_err(
+                format!("request[{field}] dict missing 'type' key")))?
+            .extract()?;
+        let id: String = d
+            .get_item("id")?
+            .ok_or_else(|| pyo3::exceptions::PyKeyError::new_err(
+                format!("request[{field}] dict missing 'id' key")))?
+            .extract()?;
+        Ok(EntityUidInput::Json(json!({"type": type_name, "id": id})))
+    } else {
+        Err(pyo3::exceptions::PyTypeError::new_err(format!(
+            "request[{field}] must be a string (e.g. 'User::\"alice\"') or a dict with 'type' and 'id' keys",
+        )))
+    }
+}
 
-    let context_option = request.get(String::from("context").as_str());
-    let context_json: Option<String> = match context_option {
-        None => None, // context member not present
-        Some(context) => Some(context.to_string())
+fn to_request_args(request: &Bound<'_, PyDict>) -> PyResult<RequestArgs> {
+    let principal = extract_euid_field(request, "principal")?;
+    let action = extract_euid_field(request, "action")?;
+    let resource = extract_euid_field(request, "resource")?;
+
+    let correlation_id: Option<String> = match request.get_item("correlation_id")? {
+        None => None,
+        Some(v) => Some(v.extract()?),
+    };
+    let context_json: Option<String> = match request.get_item("context")? {
+        None => None,
+        Some(v) => Some(v.extract()?),
     };
 
-    RequestArgs {
+    Ok(RequestArgs {
         principal,
         action,
         resource,
         context_json,
         correlation_id,
-    }
+    })
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]

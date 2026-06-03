@@ -84,7 +84,12 @@ jobs:
             echo 'running unit tests'
             pytest
             echo 'running integration tests'
-            pytest tests/integration
+            # Run only the hand-written suite. Pointing at the whole
+            # tests/integration dir would also collect the ~60K-case
+            # corpus suite (test_cedar_corpus_tests.py), which is meant
+            # to be opt-in via `make corpus-tests` and is far too slow
+            # under aarch64 emulation.
+            pytest tests/integration/test_cedar_integration_tests.py
 
   windows:
     runs-on: ${{ matrix.platform.runner }}

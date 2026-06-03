@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `is_authorized` / `is_authorized_batch` now accept a structured `{"type": ..., "id": ...}` dict for `principal`, `action`, and `resource`, in addition to the existing Cedar surface-syntax string (`'User::"alice"'`). The dict form routes through `EntityUid::from_json` (mirroring cedar-java's `JsonEUID`) and accepts entity ids containing characters the surface parser rejects as "needs to be normalized" (e.g. embedded newlines). Pure addition — string-form callers are unchanged. Also adds a `make corpus-tests` target that runs the upstream fuzzer-generated corpus (7,462 files / 59,696 request cases); kept separate from `make integration-tests` because it takes several minutes ([#87](https://github.com/k9securityio/cedar-py/pull/87) — thanks [@geekphilosophy](https://github.com/geekphilosophy))
+
+### Changed
+
+- **Behavior change.** `is_authorized` / `is_authorized_batch` now raise a `KeyError` when a request is missing `principal`, `action`, or `resource`, instead of triggering a Rust panic. The missing field name is named in the exception ([#87](https://github.com/k9securityio/cedar-py/pull/87))
+
 ## [4.8.4] - 2026-05-29
 
 ### Added

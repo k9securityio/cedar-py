@@ -152,8 +152,13 @@ def is_authorized(request: dict,
                   verbose: bool = False) -> AuthzResult:
     """Evaluate whether the request is authorized given the parameters.
 
-    :param request is a Cedar-style request object containing a principal, action, resource, and (optional) context;
-    context may be a dict (preferred) or a string
+    :param request is a Cedar-style request object containing a principal, action, resource, and (optional) context.
+    Each of ``principal``, ``action``, ``resource`` may be either a Cedar surface-syntax string
+    (e.g. ``'User::"alice"'``) or a structured dict with ``type`` and ``id`` keys
+    (e.g. ``{"type": "User", "id": "alice"}``). The dict form sidesteps Cedar's surface-syntax
+    constraints and is required for entity ids containing characters Cedar's parser rejects as
+    "needs to be normalized" (e.g. embedded newlines). It mirrors cedar-java's ``JsonEUID`` form.
+    ``context`` may be a dict (preferred) or a string.
     :param policies is a str containing all the policies in the Cedar PolicySet
     :param entities a list of entities or a json-formatted string containing the list of entities to
     include in the evaluation
@@ -178,8 +183,11 @@ def is_authorized_batch(requests: List[dict],
     """Evaluate whether a batch of requests are authorized given the other parameters.  Each request is evaluated
     independently and results in an AuthzResult per request.
 
-    :param requests is list of Cedar-style request objects containing a principal, action, resource, and (optional) context;
-    context may be a dict (preferred) or a string
+    :param requests is list of Cedar-style request objects containing a principal, action, resource, and (optional) context.
+    Each of ``principal``, ``action``, ``resource`` may be either a Cedar surface-syntax string
+    (e.g. ``'User::"alice"'``) or a structured dict with ``type`` and ``id`` keys
+    (e.g. ``{"type": "User", "id": "alice"}``). See ``is_authorized`` for details. ``context`` may
+    be a dict (preferred) or a string.
     :param policies is a str containing all the policies in the Cedar PolicySet
     :param entities a list of entities or a json-formatted string containing the list of entities to
     include in the evaluation

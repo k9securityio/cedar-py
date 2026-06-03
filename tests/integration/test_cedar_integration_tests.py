@@ -80,9 +80,13 @@ class BaseDataDrivenCedarIntegrationTestCase(unittest.TestCase):
                          msg=f'unexpected decision for query desc: {description}')
         # 'reason' spelling is correct here, but a debatable choice as it's a list
         # 'reason' matches the (Rust) Decision enum but Java API has exposed as reasons (plural)
-        self.assertEqual(request_model['reason'], authz_result.diagnostics.reasons,
-                         msg=f'unexpected errors for query desc: {description}')
-        self.assertEqual(request_model['errors'], authz_result.diagnostics.errors,
+        # Compare as sets: cedar's Diagnostics::reason() is a HashSet<PolicyId>, and the
+        # upstream cedar-testing runner (cedar-testing/src/integration_testing.rs)
+        # collects both expected and actual into a HashSet before assert_eq!. The JSON
+        # array form in the fixtures is just a carrier — semantically it's a set.
+        self.assertEqual(set(request_model['reason']), set(authz_result.diagnostics.reasons),
+                         msg=f'unexpected reasons for query desc: {description}')
+        self.assertEqual(set(request_model['errors']), set(authz_result.diagnostics.errors),
                          msg=f'unexpected errors for query desc: {description}')
 
 
@@ -339,7 +343,6 @@ class CedarMultiIntegrationTestCase(BaseDataDrivenCedarIntegrationTestCase):
 
     @parameterized.expand(get_authz_test_params_for_test_suite("multi", "4"),
                           name_func=custom_name_func)
-    @unittest.skip(reason="12 pass, 1 fails")
     def test_multi_4(self,
                      policies: str,
                      entities: list,
@@ -352,7 +355,6 @@ class CedarMultiIntegrationTestCase(BaseDataDrivenCedarIntegrationTestCase):
 
     @parameterized.expand(get_authz_test_params_for_test_suite("multi", "5"),
                           name_func=custom_name_func)
-    @unittest.skip(reason="Depends on unspecified principal, which is (currently) unsupported by is_authorized, i.e. principal is a required parameter")
     def test_multi_5(self,
                      policies: str,
                      entities: list,
