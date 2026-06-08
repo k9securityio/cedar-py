@@ -77,7 +77,7 @@ def is_authorized_partial(
 |----------|------|-------------|
 | `decision` | `Decision` | `Allow`, `Deny`, or `NoDecision` |
 | `allowed` | `bool` | `True` only for `Decision.Allow` |
-| `residuals` | `dict` | Policy ID → residual (Cedar JSON AST) - also contains trivial policies (those that already esolve to `Allow` or `Deny`) |
+| `residuals` | `dict` | Policy ID → residual (Cedar JSON AST) - also contains trivial policies (those that already resolve to `Allow` or `Deny`) |
 | `diagnostics` | `PartialDiagnostics` | See below |
 | `metrics` | `dict` | Timing info (parse, authz, request build durations) |
 | `correlation_id` | `str \| None` | Echoed from request if provided |
