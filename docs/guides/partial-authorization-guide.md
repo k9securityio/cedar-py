@@ -128,6 +128,9 @@ result = is_authorized_partial(
 assert result.decision == Decision.Deny
 ```
 
+To tell Cedar that the context is known but empty,
+pass `context={}` explicitly.
+
 
 ## Understanding residuals
 
