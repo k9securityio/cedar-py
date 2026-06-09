@@ -162,11 +162,9 @@ final_result = is_authorized(request, policies, entities) # new entities; same r
 assert final_result.decision == Decision.Allow
 ```
 
-_Unlike_ `is_authorized`, an absent or `None` `context` is treated as an unknown rather than empty. Pass `context={}` for an explicitly empty context.
+> **Note:** A partial-eval result is not a final authorization decision. Always re-run `is_authorized` once unknowns are bound.
 
-> **Note:** A partial-eval result is not a final authorization decision. Schema type-checking, particularly the per-action `context` type, is skipped while fields remain unknown. See the [`is_authorized_partial` docstring](cedarpy/__init__.py) for the full caveats.
-
-See [`tests/unit/test_authorize_partial.py`](tests/unit/test_authorize_partial.py) for usage details, including binding unknowns and re-running `is_authorized` once the request is complete.
+See the [Partial Authorization Guide](docs/guides/partial-authorization-guide.md) for edge cases, residual structure, and advanced patterns (SQL translation, Cedar text re-evaluation).
 
 ### Validating policies against a schema
 
