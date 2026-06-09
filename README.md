@@ -111,23 +111,55 @@ The above example also supplies an optional `correlation_id` in the request so t
 
 ### Partially authorizing a request with unknowns
 
-`is_authorized_partial` evaluates whatever is known in a request and returns residual policies for unknown parts. Use it when a resource entity hasn't been loaded yet, the caller hasn't picked a resource, or context will be filled by a downstream service.
+Sometimes you can't fully evaluate a request up front. A resource entity may not be loaded from the database yet, the caller may not have picked a resource, or `context` may be filled in by a downstream service. `is_authorized_partial` evaluates whatever is known and returns residual policies for the parts that aren't.
+
+`is_authorized_partial` returns either:
+
+* `Decision.Allow` or `Decision.Deny` when the unknowns can't change the outcome, or
+* `Decision.NoDecision` plus residual policies for the caller to re-evaluate once the unknowns are bound.
 
 ```python
-from cedarpy import is_authorized_partial, Decision
+from cedarpy import is_authorized_partial, PartialAuthzResult, Decision
 
-result = is_authorized_partial(
-    request={
-        "principal": 'User::"alice"',
-        "action": 'Action::"view"',
-        "resource": 'Photo::"photo1"',
-        "context": {},
-    },
-    policies='permit(principal, action, resource) when { resource.public == true };',
-    entities=[],  # Photo::"photo1" not loaded yet
-)
+# Allow access to all principals when the resource is public
+policies: str = 'permit(principal, action, resource) when { resource.public == true };'
+
+# Resource entity hasn't been loaded from the database yet
+entities: list = []
+
+request = {
+    "principal": 'User::"alice"',
+    "action": 'Action::"view"',
+    "resource": 'Photo::"photo1"',
+    "context": {},
+}
+
+result: PartialAuthzResult = is_authorized_partial(request, policies, entities)
+
+# Cedar can't decide yet: the policy depends on resource.public,
+# but Photo::"photo1" hasn't been loaded.
 assert result.decision == Decision.NoDecision
+
+# Which entities Cedar needs you to load before it can decide:
 assert result.diagnostics.unknown_entities == ['Photo::"photo1"']
+
+# Which policies are still unresolved, identified by the auto-generated policy id:
+assert result.diagnostics.nontrivial_residuals == ['policy0']
+```
+
+Now you can load the unknown entities and re-evaluate access with `is_authorized` to get a final decision:
+
+```python
+from cedarpy import is_authorized
+
+# Load Photo::"photo1" from the database and transform to its Cedar entity representation
+entities = [
+    {"uid": {"__entity": {"type": "Photo", "id": "photo1"}},
+     "attrs": {"public": True}, "parents": []}
+]
+
+final_result = is_authorized(request, policies, entities) # new entities; same request and policies
+assert final_result.decision == Decision.Allow
 ```
 
 > **Note:** A partial-eval result is not a final authorization decision. Always re-run `is_authorized` once unknowns are bound.
