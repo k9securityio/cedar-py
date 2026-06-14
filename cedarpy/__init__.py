@@ -5,6 +5,9 @@ from typing import Union, List, Optional, Any
 
 from cedarpy import _internal
 
+# Re-export the Rust-implemented PolicySet handle (see help(PolicySet) for usage).
+PolicySet = _internal.PolicySet
+
 
 def echo(s: str) -> str:
     return _internal.echo(s)
@@ -146,7 +149,7 @@ class ValidationResult:
 
 
 def is_authorized(request: dict,
-                  policies: str,
+                  policies: Union[str, PolicySet],
                   entities: Union[str, List[dict]],
                   schema: Union[str, dict, None] = None,
                   verbose: bool = False) -> AuthzResult:
@@ -159,7 +162,9 @@ def is_authorized(request: dict,
     constraints and is required for entity ids containing characters Cedar's parser rejects as
     "needs to be normalized" (e.g. embedded newlines). It mirrors cedar-java's ``JsonEUID`` form.
     ``context`` may be a dict (preferred) or a string.
-    :param policies is a str containing all the policies in the Cedar PolicySet
+    :param policies the Cedar policies, as either a str containing all the policies in the PolicySet
+    or a pre-parsed ``PolicySet`` handle (``PolicySet.from_str(...)``). Reusing a handle across calls
+    avoids re-parsing the policies on every call; see the ``PolicySet`` class for details.
     :param entities a list of entities or a json-formatted string containing the list of entities to
     include in the evaluation
     :param schema (optional) dictionary or json-formatted string containing the Cedar schema
@@ -176,7 +181,7 @@ def is_authorized(request: dict,
 
 
 def is_authorized_batch(requests: List[dict],
-                        policies: str,
+                        policies: Union[str, PolicySet],
                         entities: Union[str, List[dict]],
                         schema: Union[str, dict, None] = None,
                         verbose: bool = False) -> List[AuthzResult]:
@@ -188,7 +193,9 @@ def is_authorized_batch(requests: List[dict],
     (e.g. ``'User::"alice"'``) or a structured dict with ``type`` and ``id`` keys
     (e.g. ``{"type": "User", "id": "alice"}``). See ``is_authorized`` for details. ``context`` may
     be a dict (preferred) or a string.
-    :param policies is a str containing all the policies in the Cedar PolicySet
+    :param policies the Cedar policies, as either a str containing all the policies in the PolicySet
+    or a pre-parsed ``PolicySet`` handle (``PolicySet.from_str(...)``). Reusing a handle across calls
+    avoids re-parsing the policies on every call; see the ``PolicySet`` class for details.
     :param entities a list of entities or a json-formatted string containing the list of entities to
     include in the evaluation
     :param schema (optional) dictionary or json-formatted string containing the Cedar schema
@@ -351,7 +358,7 @@ class PartialAuthzResult:
 
 
 def is_authorized_partial(request: dict,
-                          policies: str,
+                          policies: Union[str, PolicySet],
                           entities: Union[str, List[dict]],
                           schema: Union[str, dict, None] = None,
                           verbose: bool = False) -> PartialAuthzResult:
@@ -383,7 +390,9 @@ def is_authorized_partial(request: dict,
     Unlike is_authorized (which defaults an absent context to empty),
     an absent or None context here is treated as unknown and will residualize;
     pass context={} for an explicitly empty context.
-    :param policies is a str containing all the policies in the Cedar PolicySet
+    :param policies the Cedar policies, as either a str containing all the policies in the PolicySet
+    or a pre-parsed ``PolicySet`` handle (``PolicySet.from_str(...)``). Reusing a handle across calls
+    avoids re-parsing the policies on every call; see the ``PolicySet`` class for details.
     :param entities a list of entities or a json-formatted string containing the list of entities to
     include in the evaluation
     :param schema (optional) dictionary or json-formatted string containing the Cedar schema
