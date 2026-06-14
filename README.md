@@ -109,6 +109,34 @@ cedar-py returns the list of `AuthzResult` objects in the same order as the list
 The above example also supplies an optional `correlation_id` in the request so that you can verify results are returned in the correct order or otherwise map a request to a result.
 
 
+### Reusing parsed policies for performance
+
+Parsing the policy set (`PolicySet::from_str`) is the dominant per-call cost in `is_authorized`. When your policies are static — for example a code-checked policy set loaded once at startup in a long-running service or AWS Lambda — you can parse them a single time into a reusable `PolicySet` handle and pass that handle wherever you'd pass a policies string. This skips the re-parse on every call.
+
+```python
+from cedarpy import PolicySet, is_authorized, is_authorized_batch, Decision
+
+policies: str = "// a string containing cedar policies"
+
+# Parse once (e.g. at process/Lambda cold start). Parse errors raise ValueError here,
+# rather than being folded into an authorization result.
+policy_set = PolicySet.from_str(policies)
+
+# Reuse the handle across many requests — no re-parse per call:
+authz_result = is_authorized(request, policy_set, entities)
+authz_results = is_authorized_batch(requests, policy_set, entities)
+```
+
+The `PolicySet` handle is accepted anywhere a policies string is accepted: `is_authorized`, `is_authorized_batch`, and `is_authorized_partial`. Passing a plain string still works exactly as before — the handle is purely opt-in and fully backwards compatible. The handle's memory is released automatically when the last Python reference is dropped.
+
+A `PolicySet` can also be built from the Cedar JSON (EST) policy format with `PolicySet.from_json_str(...)`, and supports `len(policy_set)` (number of policies) and `str(policy_set)` (the policy set rendered back to Cedar text).
+
+This complements batch authorization: batching amortizes entity/schema parsing across a set of requests evaluated together, while a reusable `PolicySet` amortizes policy parsing across calls made at different times. The two compose. The speedup grows with policy size — in the project's benchmark suite (release build, ~10-entity calls) reuse is ~1.3x on a single-rule policy but ~9x on a typical production-scale policy (~16 KB / 60 rules), where it removes ~1.4 ms of policy parsing per call.
+
+On a successful evaluation the result's `metrics` reflect the reuse: `parse_policies_duration_micros` measures only the (near-zero) borrow rather than the original parse, and `metrics["policies_pre_parsed"]` is `1` (it is `0` when policies are passed as a string and parsed on that call). As with all `metrics`, these keys are present only on successful evaluations — an error result carries an empty `metrics` map.
+
+> Note: reuse applies to the policy set. Entities and schema are still parsed on each call.
+
 ### Partially authorizing a request with unknowns
 
 Sometimes you can't fully evaluate a request up front. A resource entity may not be loaded from the database yet, the caller may not have picked a resource, or `context` may be filled in by a downstream service. `is_authorized_partial` evaluates whatever is known and returns residual policies for the parts that aren't.

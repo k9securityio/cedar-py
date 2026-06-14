@@ -229,6 +229,45 @@ With `--benchmark-compare-fail`, the test run fails if thresholds are exceeded.
 | `test_batch_size_scaling[50]` | 50 | Large batch |
 | `test_batch_size_scaling[100]` | 100 | Very large batch |
 
+### PolicySet Reuse Tests
+
+Each pair compares the string path (policies re-parsed on every call) against a
+pre-parsed, reusable `PolicySet` handle (`PolicySet.from_str(...)`, see the
+"Reusing parsed policies for performance" section of the README). The gap is
+the per-call policy-parse cost the handle eliminates, so it widens with policy
+size.
+
+| Test | Policy | Path |
+|------|--------|------|
+| `test_simple_reparse_string` | simple (1 rule) | string (re-parse each call) |
+| `test_simple_reuse_handle` | simple (1 rule) | reused `PolicySet` handle |
+| `test_medium_reparse_string` | medium (4 rules) | string (re-parse each call) |
+| `test_medium_reuse_handle` | medium (4 rules) | reused `PolicySet` handle |
+| `test_typical_reparse_string` | typical (~16 KB, 60 rules) | string (re-parse each call) |
+| `test_typical_reuse_handle` | typical (~16 KB, 60 rules) | reused `PolicySet` handle |
+
+The `typical` fixture is a synthetic production-scale policy set, generated so
+its size (and thus parse cost) is representative without committing a real policy.
+
+Run just this group with:
+
+```bash
+pytest tests/benchmark --benchmark-only -k PolicySetReuse
+```
+
+On the reference machine (release build, ~10-entity calls) the median per-call
+times are roughly:
+
+| Policy | re-parse | reuse | speedup |
+|--------|----------|-------|---------|
+| simple (1 rule) | ~152 µs | ~120 µs | ~1.3x |
+| medium (4 rules) | ~183 µs | ~125 µs | ~1.5x |
+| typical (~16 KB) | ~1.54 ms | ~168 µs | ~9.2x |
+
+Your absolute numbers will differ, but the handle should consistently win, by
+more as the policy set grows — on the typical set it removes ~1.4 ms of policy
+parsing per call.
+
 ### Realistic Scenario Tests
 
 Tests using `sandbox_b` fixtures with schema validation:
