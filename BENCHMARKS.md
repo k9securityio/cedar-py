@@ -229,6 +229,45 @@ With `--benchmark-compare-fail`, the test run fails if thresholds are exceeded.
 | `test_batch_size_scaling[50]` | 50 | Large batch |
 | `test_batch_size_scaling[100]` | 100 | Very large batch |
 
+### PolicySet Reuse Tests
+
+These pair with the policy-complexity benchmarks above: the string-path
+benchmark for each size (`test_simple_policy_*`, `test_medium_policy`,
+`test_complex_policy`, `test_large_policy`) re-parses the policies on every
+call, while the `*_reuse_handle` benchmark passes a pre-parsed, reusable
+`PolicySet` handle (`PolicySet.from_str(...)`, see the "Reusing parsed policies
+for performance" section of the README). The gap between each pair is the
+per-call policy-parse cost the handle eliminates, so it widens with policy size.
+
+| Policy | re-parse (string) | reuse (handle) |
+|--------|-------------------|----------------|
+| simple (1 rule) | `test_simple_policy_allow` | `test_simple_policy_reuse_handle` |
+| medium (4 rules) | `test_medium_policy` | `test_medium_policy_reuse_handle` |
+| complex (10 rules) | `test_complex_policy` | `test_complex_policy_reuse_handle` |
+| large (~16 KB, 60 rules) | `test_large_policy` | `test_large_policy_reuse_handle` |
+
+The `large` fixture is a synthetic production-scale policy set, generated so its
+size (and thus parse cost) is representative without committing a real policy.
+
+Run just the reuse handles (and re-parse baselines) with:
+
+```bash
+pytest tests/benchmark --benchmark-only -k "reuse_handle or test_large_policy"
+```
+
+On the reference machine (release build, ~10-entity calls) the median per-call
+times are roughly:
+
+| Policy | re-parse | reuse | speedup |
+|--------|----------|-------|---------|
+| simple (1 rule) | ~152 µs | ~120 µs | ~1.3x |
+| medium (4 rules) | ~183 µs | ~125 µs | ~1.5x |
+| large (~16 KB) | ~1.54 ms | ~168 µs | ~9.2x |
+
+Your absolute numbers will differ, but the handle should consistently win, by
+more as the policy set grows — on the large set it removes ~1.4 ms of policy
+parsing per call.
+
 ### Realistic Scenario Tests
 
 Tests using `sandbox_b` fixtures with schema validation:

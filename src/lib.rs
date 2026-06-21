@@ -56,6 +56,113 @@ fn policies_from_json_str(s: String) -> PyResult<String> {
     }
 }
 
+/// An opaque, reusable handle wrapping a parsed Cedar policy set.
+///
+/// Parsing policies is the dominant per-call cost in `is_authorized`. Callers
+/// whose policies are static can parse them once into a `PolicySet` and reuse
+/// the handle across many authorization calls, avoiding the re-parse each time:
+///
+///     ps = PolicySet.from_str(policies)        # parse once
+///     for req in requests:
+///         is_authorized(req, ps, entities)     # reuse — no re-parse
+///
+/// A `PolicySet` is accepted anywhere a policies string is accepted:
+/// `is_authorized`, `is_authorized_batch`, and `is_authorized_partial`.
+///
+/// Construct with `PolicySet.from_str(cedar_text)` or
+/// `PolicySet.from_json_str(cedar_json)`; both raise `ValueError` on parse
+/// errors. The handle is immutable, and its memory is released automatically
+/// when the last Python reference is dropped.
+// `frozen` makes the handle immutable so the authorization functions can borrow
+// the inner PolicySet without a runtime borrow check (and share it across
+// threads); see `PoliciesArg::resolve`.
+#[pyclass(name = "PolicySet", frozen)]
+struct PyPolicySet {
+    inner: PolicySet,
+}
+
+#[pymethods]
+impl PyPolicySet {
+    /// Parse a `PolicySet` from Cedar policy text (e.g. `permit(...);`).
+    ///
+    /// Unlike passing policy text to `is_authorized`, parse errors are raised
+    /// eagerly here rather than folded into an authorization result.
+    ///
+    /// :raises ValueError: if the policies cannot be parsed.
+    #[staticmethod]
+    fn from_str(s: &str) -> PyResult<Self> {
+        match PolicySet::from_str(s) {
+            Ok(inner) => Ok(PyPolicySet { inner }),
+            // `{:#}` renders the full, span-annotated set of parse errors,
+            // matching the detail of the string-authorization parse path.
+            Err(e) => Err(pyo3::exceptions::PyValueError::new_err(format!("{:#}", e))),
+        }
+    }
+
+    /// Parse a `PolicySet` from the Cedar JSON (EST) policy format.
+    ///
+    /// :raises ValueError: if the JSON policies cannot be parsed.
+    #[staticmethod]
+    fn from_json_str(s: &str) -> PyResult<Self> {
+        match PolicySet::from_json_str(s) {
+            Ok(inner) => Ok(PyPolicySet { inner }),
+            Err(e) => Err(pyo3::exceptions::PyValueError::new_err(format!("{:#}", e))),
+        }
+    }
+
+    /// The number of policies in the set.
+    fn __len__(&self) -> usize {
+        self.inner.policies().count()
+    }
+
+    /// The policy set rendered back to Cedar policy text.
+    fn __str__(&self) -> String {
+        self.inner.to_string()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("PolicySet(<{} policies>)", self.inner.policies().count())
+    }
+}
+
+/// The `policies` argument accepted by the authorization functions: either
+/// Cedar policy text (`str`) or a pre-parsed `PolicySet` handle. `Source` (the
+/// common string path) is tried first so a `str` argument pays no failed handle
+/// extraction; a `PolicySet` handle falls through to `Handle`. Order matters:
+/// trying `Handle` first would churn a discarded `PyErr` on every string call.
+#[derive(FromPyObject)]
+enum PoliciesArg {
+    Source(String),
+    Handle(Py<PyPolicySet>),
+}
+
+impl PoliciesArg {
+    /// Resolve to a borrowed `PolicySet`. The handle path borrows the parsed
+    /// set with no re-parse; the source path parses the text, recording any
+    /// parse error in `errs` and yielding an empty set (preserving the prior
+    /// string-path behavior). The returned reference borrows from `slot`,
+    /// which the caller must keep alive for the duration of use. A parse error
+    /// is printed to stdout only when `verbose`, consistent with the other
+    /// diagnostic output on the authorization path.
+    fn resolve<'a>(&'a self, slot: &'a mut Option<PolicySet>, errs: &mut Vec<Error>, verbose: bool) -> &'a PolicySet {
+        match self {
+            PoliciesArg::Handle(handle) => &handle.get().inner,
+            PoliciesArg::Source(policies) => {
+                let pset = match PolicySet::from_str(policies) {
+                    Ok(pset) => pset,
+                    Err(parse_errors) => {
+                        let err_message = format!("policy parse errors:\n{:#}", parse_errors);
+                        if verbose { println!("{:#}", err_message); }
+                        errs.push(Error::msg(err_message));
+                        PolicySet::new()
+                    }
+                };
+                slot.insert(pset)
+            }
+        }
+    }
+}
+
 
 /// How a principal/action/resource was supplied by the Python caller.
 ///
@@ -123,7 +230,7 @@ impl RequestArgs {
 #[pyfunction]
 #[pyo3(signature = (request, policies, entities, schema = None, verbose = false,))]
 fn is_authorized(request: Bound<'_, PyDict>,
-                 policies: String,
+                 policies: PoliciesArg,
                  entities: String,
                  schema: Option<String>,
                  verbose: Option<bool>)
@@ -134,7 +241,7 @@ fn is_authorized(request: Bound<'_, PyDict>,
 #[pyfunction]
 #[pyo3(signature = (requests, policies, entities, schema = None, verbose = false,))]
 fn is_authorized_batch(requests: Vec<Bound<'_, PyDict>>,
-                       policies: String,
+                       policies: PoliciesArg,
                        entities: String,
                        schema: Option<String>,
                        verbose: Option<bool>)
@@ -143,7 +250,10 @@ fn is_authorized_batch(requests: Vec<Bound<'_, PyDict>>,
     let verbose = verbose.unwrap_or(false);
     if verbose {
         //println!("requests: {}", requests);
-        println!("policies: {}", policies);
+        match &policies {
+            PoliciesArg::Source(p) => println!("policies: {}", p),
+            PoliciesArg::Handle(_) => println!("policies: <pre-parsed PolicySet handle>"),
+        }
         println!("entities: {}", entities);
         println!("schema: {}", schema.clone().unwrap_or(String::from("<none>")));
     }
@@ -151,18 +261,13 @@ fn is_authorized_batch(requests: Vec<Bound<'_, PyDict>>,
 
     // probably need to deconstruct execute_authorization_request so that we can reuse the
     // expensive parts (policies, entities, schema):
-    // parse policies
+    // parse policies (or borrow the pre-parsed PolicySet handle, skipping the parse)
+    // When a pre-parsed handle is supplied, parse_policies_duration_micros measures only
+    // the (near-zero) borrow, not the original parse; policies_pre_parsed flags this.
+    let policies_pre_parsed = matches!(&policies, PoliciesArg::Handle(_));
     let t_parse_policies = Instant::now();
-    let policy_set = match PolicySet::from_str(&policies) {
-        Ok(pset) => pset,
-        Err(parse_errors) => {
-            let err_message = format!("policy parse errors:\n{:#}",
-                                      parse_errors.to_string());
-            println!("{:#}", err_message);
-            errs.push(Error::msg(err_message));
-            PolicySet::new()
-        }
-    };
+    let mut policy_set_slot: Option<PolicySet> = None;
+    let policy_set = policies.resolve(&mut policy_set_slot, &mut errs, verbose);
     let t_parse_policies_duration = t_parse_policies.elapsed();
 
     // parse schema
@@ -187,7 +292,7 @@ fn is_authorized_batch(requests: Vec<Bound<'_, PyDict>>,
     for request_args in request_args_vec.iter() {
         if errs.is_empty() {
             let ans = execute_authorization_request(&request_args,
-                                                    &policy_set,
+                                                    policy_set,
                                                     &entities,
                                                     &schema,
                                                     verbose);
@@ -195,6 +300,8 @@ fn is_authorized_batch(requests: Vec<Bound<'_, PyDict>>,
                 Ok(mut ans) => {
                     ans.metrics.insert(String::from("parse_policies_duration_micros"),
                                        t_parse_policies_duration.as_micros());
+                    ans.metrics.insert(String::from("policies_pre_parsed"),
+                                       policies_pre_parsed as u128);
                     ans.metrics.insert(String::from("parse_schema_duration_micros"),
                                        t_parse_schema_duration.as_micros());
                     ans.metrics.insert(String::from("load_entities_duration_micros"),
@@ -204,14 +311,16 @@ fn is_authorized_batch(requests: Vec<Bound<'_, PyDict>>,
                     match to_json_str_result {
                         Ok(json_str) => { json_str }
                         Err(err) => {
-                            println!("{:#}", err);
+                            if verbose { println!("{:#}", err); }
                             make_authz_result_for_errors(&vec![Error::from(err)])
                         }
                     }
                 }
                 Err(errs) => {
-                    for err in &errs {
-                        println!("{:#}", err);
+                    if verbose {
+                        for err in &errs {
+                            println!("{:#}", err);
+                        }
                     }
                     make_authz_result_for_errors(&errs)
                 }
@@ -648,7 +757,7 @@ struct PartialAuthzResponse {
 #[pyo3(signature = (request, policies, entities, schema = None, verbose = false))]
 fn is_authorized_partial(
     request: HashMap<String, Option<String>>,
-    policies: String,
+    policies: PoliciesArg,
     entities: String,
     schema: Option<String>,
     verbose: Option<bool>,
@@ -656,16 +765,10 @@ fn is_authorized_partial(
     let verbose = verbose.unwrap_or(false);
     let mut errs: Vec<Error> = vec![];
 
+    let policies_pre_parsed = matches!(&policies, PoliciesArg::Handle(_));
     let t_parse_policies = Instant::now();
-    let policy_set = match PolicySet::from_str(&policies) {
-        Ok(pset) => pset,
-        Err(parse_errors) => {
-            let err_message = format!("policy parse errors:\n{:#}", parse_errors);
-            if verbose { println!("{:#}", err_message); }
-            errs.push(Error::msg(err_message));
-            PolicySet::new()
-        }
-    };
+    let mut policy_set_slot: Option<PolicySet> = None;
+    let policy_set = policies.resolve(&mut policy_set_slot, &mut errs, verbose);
     let t_parse_policies_duration = t_parse_policies.elapsed();
 
     let t_start_schema = Instant::now();
@@ -744,7 +847,7 @@ fn is_authorized_partial(
 
     let authorizer = Authorizer::new();
     let t_authz = Instant::now();
-    let partial_response = authorizer.is_authorized_partial(&cedar_request, &policy_set, &entities);
+    let partial_response = authorizer.is_authorized_partial(&cedar_request, policy_set, &entities);
     let authz_duration = t_authz.elapsed();
 
     let decision = partial_response.decision().map(|d| match d {
@@ -788,7 +891,7 @@ fn is_authorized_partial(
     let mut residuals: HashMap<String, serde_json::Value> = HashMap::new();
     for policy in partial_response.all_residuals() {
         let pid_str = policy.id().to_string();
-        if let Some(annotation) = lookup_id_annotation(&policy_set, policy.id()) {
+        if let Some(annotation) = lookup_id_annotation(policy_set, policy.id()) {
             id_annotations_by_reason.insert(pid_str.clone(), annotation);
         }
         residuals.insert(pid_str, policy.to_json().unwrap_or(json!(null)));
@@ -796,6 +899,7 @@ fn is_authorized_partial(
 
     let metrics = HashMap::from([
         (String::from("parse_policies_duration_micros"), t_parse_policies_duration.as_micros()),
+        (String::from("policies_pre_parsed"), policies_pre_parsed as u128),
         (String::from("parse_schema_duration_micros"), t_parse_schema_duration.as_micros()),
         (String::from("load_entities_duration_micros"), t_load_entities_duration.as_micros()),
         (String::from("build_request_duration_micros"), build_request_duration.as_micros()),
@@ -820,6 +924,7 @@ fn is_authorized_partial(
 /// A Python module implemented in Rust.
 #[pymodule]
 fn _internal(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_class::<PyPolicySet>()?;
     m.add_function(wrap_pyfunction!(echo, m)?)?;
     m.add_function(wrap_pyfunction!(is_authorized, m)?)?;
     m.add_function(wrap_pyfunction!(is_authorized_batch, m)?)?;

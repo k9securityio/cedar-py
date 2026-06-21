@@ -16,7 +16,7 @@ import json
 import pytest
 from typing import List
 
-from cedarpy import is_authorized, is_authorized_batch, Decision
+from cedarpy import is_authorized, is_authorized_batch, Decision, PolicySet
 
 from benchmark import load_file_as_str
 
@@ -195,6 +195,35 @@ class PolicyFixtures:
                 !(context has urgent && context.urgent == true)
             };
         """
+
+    @staticmethod
+    def large_policy(n: int = 60) -> str:
+        """A synthetic production-scale policy set (~16 KB, n rules).
+
+        Shaped like a real application's policies: group-scoped permits with
+        attribute/context conditions plus periodic forbids. Generated rather
+        than hand-written so the size (and thus parse cost) is representative
+        of a production policy set without committing a real one.
+        """
+        parts = []
+        for i in range(n):
+            if i % 10 == 4:
+                parts.append(
+                    f'@description("deny archived resources for group {i}")\n'
+                    f'forbid(principal in UserGroup::"Group{i}", action, resource)\n'
+                    f'when {{ resource has archived && resource.archived == true }};')
+            else:
+                parts.append(
+                    f'@description("Group{i} members may View/Edit their team resources")\n'
+                    f'permit(\n'
+                    f'  principal in UserGroup::"Group{i}",\n'
+                    f'  action in [Action::"View", Action::"Edit"],\n'
+                    f'  resource in Resources::"Team{i}"\n'
+                    f')\nwhen {{\n'
+                    f'  resource.owner == principal ||\n'
+                    f'  (context has level && context.level >= {i % 5})\n'
+                    f'}};')
+        return "\n\n".join(parts)
 
 
 class EntityFixtures:
@@ -380,6 +409,11 @@ def complex_policy():
 
 
 @pytest.fixture
+def large_policy():
+    return PolicyFixtures.large_policy()
+
+
+@pytest.fixture
 def small_entities():
     return EntityFixtures.small_entities()
 
@@ -514,6 +548,65 @@ class IsAuthorizedBenchmarkTestCase:
         request = RequestFixtures.request_with_context()
 
         result = benchmark(is_authorized, request, complex_policy, small_entities)
+
+        assert result.decision in [Decision.Allow, Decision.Deny]
+
+    def test_large_policy(self, benchmark, large_policy, small_entities):
+        """Benchmark is_authorized with large production-scale policy (~16 KB, 60 rules)."""
+        result = benchmark(is_authorized, self._LARGE_REQUEST, large_policy, small_entities)
+
+        assert result.decision in [Decision.Allow, Decision.Deny]
+
+    # -------------------------------------------------------------------------
+    # PolicySet Reuse Benchmarks
+    #
+    # The policy-complexity benchmarks above pass policy text, so they re-parse
+    # on every call. These pass a pre-parsed PolicySet handle instead; the gap
+    # between each pair is the per-call policy-parse cost the handle eliminates.
+    # It widens with policy size, so `large` shows the largest speedup.
+    # Feature: https://github.com/k9securityio/cedar-py/issues/83
+    # -------------------------------------------------------------------------
+
+    # large (production-scale) policies reference Group/Team entities
+    _LARGE_REQUEST = {
+        "principal": 'User::"alice"',
+        "action": 'Action::"View"',
+        "resource": 'Resources::"Team1"',
+        "context": {},
+    }
+
+    def test_simple_policy_reuse_handle(self, benchmark, simple_policy, small_entities):
+        """simple (1 rule), reusing a pre-parsed PolicySet handle."""
+        request = RequestFixtures.simple_allow_request()
+        policy_set = PolicySet.from_str(simple_policy)
+
+        result = benchmark(is_authorized, request, policy_set, small_entities)
+
+        assert result.decision == Decision.Allow
+
+    def test_medium_policy_reuse_handle(self, benchmark, medium_policy, small_entities):
+        """medium (4 rules), reusing a pre-parsed PolicySet handle."""
+        request = RequestFixtures.simple_allow_request()
+        policy_set = PolicySet.from_str(medium_policy)
+
+        result = benchmark(is_authorized, request, policy_set, small_entities)
+
+        assert result.decision in [Decision.Allow, Decision.Deny]
+
+    def test_complex_policy_reuse_handle(self, benchmark, complex_policy, small_entities):
+        """complex (10 rules), reusing a pre-parsed PolicySet handle."""
+        request = RequestFixtures.request_with_context()
+        policy_set = PolicySet.from_str(complex_policy)
+
+        result = benchmark(is_authorized, request, policy_set, small_entities)
+
+        assert result.decision in [Decision.Allow, Decision.Deny]
+
+    def test_large_policy_reuse_handle(self, benchmark, large_policy, small_entities):
+        """large production-scale (~16 KB, 60 rules), reusing a pre-parsed handle."""
+        policy_set = PolicySet.from_str(large_policy)
+
+        result = benchmark(is_authorized, self._LARGE_REQUEST, policy_set, small_entities)
 
         assert result.decision in [Decision.Allow, Decision.Deny]
 
