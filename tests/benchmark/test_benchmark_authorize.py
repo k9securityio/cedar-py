@@ -197,7 +197,7 @@ class PolicyFixtures:
         """
 
     @staticmethod
-    def typical_policy(n: int = 60) -> str:
+    def large_policy(n: int = 60) -> str:
         """A synthetic production-scale policy set (~16 KB, n rules).
 
         Shaped like a real application's policies: group-scoped permits with
@@ -409,8 +409,8 @@ def complex_policy():
 
 
 @pytest.fixture
-def typical_policy():
-    return PolicyFixtures.typical_policy()
+def large_policy():
+    return PolicyFixtures.large_policy()
 
 
 @pytest.fixture
@@ -548,6 +548,65 @@ class IsAuthorizedBenchmarkTestCase:
         request = RequestFixtures.request_with_context()
 
         result = benchmark(is_authorized, request, complex_policy, small_entities)
+
+        assert result.decision in [Decision.Allow, Decision.Deny]
+
+    def test_large_policy(self, benchmark, large_policy, small_entities):
+        """Benchmark is_authorized with large production-scale policy (~16 KB, 60 rules)."""
+        result = benchmark(is_authorized, self._LARGE_REQUEST, large_policy, small_entities)
+
+        assert result.decision in [Decision.Allow, Decision.Deny]
+
+    # -------------------------------------------------------------------------
+    # PolicySet Reuse Benchmarks
+    #
+    # The policy-complexity benchmarks above pass policy text, so they re-parse
+    # on every call. These pass a pre-parsed PolicySet handle instead; the gap
+    # between each pair is the per-call policy-parse cost the handle eliminates.
+    # It widens with policy size, so `large` shows the largest speedup.
+    # Feature: https://github.com/k9securityio/cedar-py/issues/83
+    # -------------------------------------------------------------------------
+
+    # large (production-scale) policies reference Group/Team entities
+    _LARGE_REQUEST = {
+        "principal": 'User::"alice"',
+        "action": 'Action::"View"',
+        "resource": 'Resources::"Team1"',
+        "context": {},
+    }
+
+    def test_simple_policy_reuse_handle(self, benchmark, simple_policy, small_entities):
+        """simple (1 rule), reusing a pre-parsed PolicySet handle."""
+        request = RequestFixtures.simple_allow_request()
+        policy_set = PolicySet.from_str(simple_policy)
+
+        result = benchmark(is_authorized, request, policy_set, small_entities)
+
+        assert result.decision == Decision.Allow
+
+    def test_medium_policy_reuse_handle(self, benchmark, medium_policy, small_entities):
+        """medium (4 rules), reusing a pre-parsed PolicySet handle."""
+        request = RequestFixtures.simple_allow_request()
+        policy_set = PolicySet.from_str(medium_policy)
+
+        result = benchmark(is_authorized, request, policy_set, small_entities)
+
+        assert result.decision in [Decision.Allow, Decision.Deny]
+
+    def test_complex_policy_reuse_handle(self, benchmark, complex_policy, small_entities):
+        """complex (10 rules), reusing a pre-parsed PolicySet handle."""
+        request = RequestFixtures.request_with_context()
+        policy_set = PolicySet.from_str(complex_policy)
+
+        result = benchmark(is_authorized, request, policy_set, small_entities)
+
+        assert result.decision in [Decision.Allow, Decision.Deny]
+
+    def test_large_policy_reuse_handle(self, benchmark, large_policy, small_entities):
+        """large production-scale (~16 KB, 60 rules), reusing a pre-parsed handle."""
+        policy_set = PolicySet.from_str(large_policy)
+
+        result = benchmark(is_authorized, self._LARGE_REQUEST, policy_set, small_entities)
 
         assert result.decision in [Decision.Allow, Decision.Deny]
 
@@ -832,62 +891,4 @@ class InputFormatBenchmarkTestCase:
             is_authorized, request, medium_policy, medium_entities
         )
 
-        assert result.decision in [Decision.Allow, Decision.Deny]
-
-
-@pytest.mark.benchmark(group="policyset_reuse")
-class PolicySetReuseBenchmarkTestCase:
-    """Benchmarks demonstrating the reusable PolicySet handle across policy sizes.
-
-    Each size has a pair: the string path (which re-parses the policies on every
-    call) vs. a pre-parsed PolicySet handle (which skips the parse). The gap is
-    the per-call policy-parse cost the handle eliminates; it grows with policy
-    size, so the typical (production-scale) pair shows the largest speedup.
-
-    Feature from https://github.com/k9securityio/cedar-py/issues/83
-    """
-
-    # typical (production-scale) policies reference Group/Team entities
-    _TYPICAL_REQUEST = {
-        "principal": 'User::"alice"',
-        "action": 'Action::"View"',
-        "resource": 'Resources::"Team1"',
-        "context": {},
-    }
-
-    def test_simple_reparse_string(self, benchmark, simple_policy, small_entities):
-        """simple (1 rule), re-parsed on every call."""
-        request = RequestFixtures.simple_allow_request()
-        result = benchmark(is_authorized, request, simple_policy, small_entities)
-        assert result.decision in [Decision.Allow, Decision.Deny]
-
-    def test_simple_reuse_handle(self, benchmark, simple_policy, small_entities):
-        """simple (1 rule), reusing a pre-parsed PolicySet handle."""
-        request = RequestFixtures.simple_allow_request()
-        policy_set = PolicySet.from_str(simple_policy)
-        result = benchmark(is_authorized, request, policy_set, small_entities)
-        assert result.decision in [Decision.Allow, Decision.Deny]
-
-    def test_medium_reparse_string(self, benchmark, medium_policy, small_entities):
-        """medium (4 rules), re-parsed on every call."""
-        request = RequestFixtures.simple_allow_request()
-        result = benchmark(is_authorized, request, medium_policy, small_entities)
-        assert result.decision in [Decision.Allow, Decision.Deny]
-
-    def test_medium_reuse_handle(self, benchmark, medium_policy, small_entities):
-        """medium (4 rules), reusing a pre-parsed PolicySet handle."""
-        request = RequestFixtures.simple_allow_request()
-        policy_set = PolicySet.from_str(medium_policy)
-        result = benchmark(is_authorized, request, policy_set, small_entities)
-        assert result.decision in [Decision.Allow, Decision.Deny]
-
-    def test_typical_reparse_string(self, benchmark, typical_policy, small_entities):
-        """typical production-scale (~16 KB, 60 rules), re-parsed on every call."""
-        result = benchmark(is_authorized, self._TYPICAL_REQUEST, typical_policy, small_entities)
-        assert result.decision in [Decision.Allow, Decision.Deny]
-
-    def test_typical_reuse_handle(self, benchmark, typical_policy, small_entities):
-        """typical production-scale (~16 KB, 60 rules), reusing a pre-parsed handle."""
-        policy_set = PolicySet.from_str(typical_policy)
-        result = benchmark(is_authorized, self._TYPICAL_REQUEST, policy_set, small_entities)
         assert result.decision in [Decision.Allow, Decision.Deny]
