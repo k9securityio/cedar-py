@@ -111,7 +111,7 @@ The above example also supplies an optional `correlation_id` in the request so t
 
 ### Reusing parsed policies for performance
 
-Parsing the policy set (`PolicySet::from_str`) is the dominant per-call cost in `is_authorized`. When your policies are static — for example a code-checked policy set loaded once at startup in a long-running service or AWS Lambda — you can parse them a single time into a reusable `PolicySet` handle and pass that handle wherever you'd pass a policies string. This skips the re-parse on every call.
+Parsing the policy set (`PolicySet::from_str`) is the dominant per-call cost in `is_authorized`. When your policies are static, for example a code-checked policy set loaded once at startup in a long-running service or AWS Lambda, you can parse them a single time into a reusable `PolicySet` handle and pass that handle wherever you'd pass a policies string. This skips the re-parse on every call.
 
 ```python
 from cedarpy import PolicySet, is_authorized, is_authorized_batch, Decision
@@ -127,7 +127,7 @@ authz_result = is_authorized(request, policy_set, entities)
 authz_results = is_authorized_batch(requests, policy_set, entities)
 ```
 
-The `PolicySet` handle is accepted anywhere a policies string is accepted: `is_authorized`, `is_authorized_batch`, and `is_authorized_partial`. Passing a plain string still works exactly as before — the handle is purely opt-in and fully backwards compatible. The handle's memory is released automatically when the last Python reference is dropped.
+The `PolicySet` handle is accepted anywhere a policies string is accepted: `is_authorized`, `is_authorized_batch`, and `is_authorized_partial`. Passing a plain string still works exactly as before; the handle is purely opt-in and fully backwards compatible. The handle's memory is released automatically when the last Python reference is dropped.
 
 A `PolicySet` can also be built from the Cedar JSON (EST) policy format with `PolicySet.from_json_str(...)`, and supports `len(policy_set)` (number of policies) and `str(policy_set)` (the policy set rendered back to Cedar text).
 
