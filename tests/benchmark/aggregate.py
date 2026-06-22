@@ -43,6 +43,14 @@ HISTORY_DIR = RESULTS_DIR / "history"
 HISTORY_MD = RESULTS_DIR / "HISTORY.md"
 MANIFEST_PATH = HISTORY_DIR / "states-manifest.json"
 
+# Fixed short-SHA length for history filenames and the `short_sha` field.
+# We truncate the full SHA ourselves rather than use git's `%h`, whose
+# auto-abbreviation length grows as the repo accumulates objects (7 -> 8 -> ...).
+# A growing `%h` re-derives a different filename/field for the same commit on
+# every re-aggregate, churning the committed record and emitting duplicate
+# <sha>.json files. A fixed width keeps re-aggregation a no-op.
+SHORT_SHA_LEN = 7
+
 
 def median_baseline_path(save_prefix: str) -> Path:
     """Default output path for build_baseline_from_state, per save_prefix."""
@@ -91,10 +99,13 @@ def commit_metadata(sha: str) -> dict:
     """
     info = git(
         "log", "-1",
-        "--pretty=format:%H%x1f%h%x1f%aI%x1f%s%x1f%b",
+        "--pretty=format:%H%x1f%aI%x1f%s%x1f%b",
         sha,
     ).split("\x1f")
-    long_sha, short_sha, iso_date, subject, body = info
+    long_sha, iso_date, subject, body = info
+    # Fixed-width abbreviation; do NOT use git's `%h` (its length grows with the
+    # repo, see SHORT_SHA_LEN).
+    short_sha = long_sha[:SHORT_SHA_LEN]
     # Author date as YYYY-MM-DD
     date = iso_date.split("T", 1)[0]
     # First non-empty line of the body (PR title for GitHub merges)
