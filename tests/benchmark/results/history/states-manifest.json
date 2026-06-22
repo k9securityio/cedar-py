@@ -33,5 +33,10 @@
     "save_prefix": "v4_8_2",
     "ref": "v4.8.2",
     "description": "v4.8.2"
+  },
+  {
+    "save_prefix": "v4_8_5",
+    "ref": "v4.8.5",
+    "description": "v4.8.5 PolicySet reuse handle"
   }
 ]
