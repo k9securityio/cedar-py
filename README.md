@@ -135,6 +135,18 @@ This complements batch authorization: batching amortizes entity/schema parsing a
 
 On a successful evaluation the result's `metrics` reflect the reuse: `parse_policies_duration_micros` measures only the (near-zero) borrow rather than the original parse, and `metrics["policies_pre_parsed"]` is `1` (it is `0` when policies are passed as a string and parsed on that call). As with all `metrics`, these keys are present only on successful evaluations — an error result carries an empty `metrics` map.
 
+**Advanced: adding per-request policies to a static base.** Most callers reuse a single static `PolicySet` as above. If, however, your policy set is *mostly* static but a few policies vary per request, you don't have to re-parse the whole base text each time — `PolicySet.with_added_str(fragment)` clones the compiled base and parses only the fragment, returning a **new** handle (the base is left unchanged):
+
+```python
+base = PolicySet.from_str(static_policies)        # parse the large static base once
+
+# per request: add only the small dynamic fragment — the base is not re-parsed
+for_request = base.with_added_str(per_request_policies)
+authz_result = is_authorized(request, for_request, entities)
+```
+
+The result is equivalent to authorizing against the concatenated base-plus-fragment text. (Cedar assigns surface-syntax policies a positional `PolicyId` — `policy0`, `policy1`, … — per parse, so a fragment parsed on its own restarts at `policy0`; `with_added_str` renumbers the fragment's colliding ids to follow the base, exactly as concatenation would, and any `@id("...")` annotations are preserved and still resolve via `diagnostics.id_annotations_by_reason`.)
+
 ### Reusing parsed entities for performance
 
 Entities are parsed on each call too: `is_authorized` deserializes the entities JSON and computes the transitive closure of the `parents` graph. When you authorize many requests against a large, stable entity graph, you can parse it once into a reusable `Entities` handle and pass it wherever you'd pass an entities string or list:

@@ -34,6 +34,22 @@ class PolicySet:
         """Parse a ``PolicySet`` from the Cedar JSON (EST) policy format. Raises ``ValueError`` on parse errors."""
         ...
 
+    def with_added_str(self, fragment: str) -> "PolicySet":
+        """Return a NEW ``PolicySet`` handle: this set plus the policies parsed
+        from ``fragment``. The base is cloned, not re-parsed — only ``fragment``
+        is parsed — so a caller with a static base and small dynamic fragments
+        avoids re-parsing the base each call.
+
+        The result is equivalent (same authorization decisions) to parsing the
+        concatenated base-plus-fragment text. Cedar assigns surface-syntax
+        policies a positional ``PolicyId`` (``policy0``, ``policy1``, …) per
+        parse, so the fragment's ids that would collide with the base are
+        renumbered to follow it, exactly as concatenation would. ``@id``
+        annotations are preserved. Raises ``ValueError`` if ``fragment`` cannot
+        be parsed.
+        """
+        ...
+
     def __len__(self) -> int: ...
     def __str__(self) -> str: ...
     def __repr__(self) -> str: ...

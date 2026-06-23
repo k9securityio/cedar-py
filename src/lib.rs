@@ -110,6 +110,39 @@ impl PyPolicySet {
         }
     }
 
+    /// Return a NEW `PolicySet` handle: this (compiled) set plus the policies
+    /// parsed from `fragment`. The base is cloned, not re-parsed — only the
+    /// (typically small) fragment is parsed — so a caller with a static base and
+    /// small dynamic fragments avoids re-parsing the base on every call. The
+    /// handle is immutable; the base is left unchanged.
+    ///
+    /// The result is equivalent (same authorization decisions) to parsing the
+    /// concatenated base-plus-fragment policy text. Cedar derives a `PolicyId`
+    /// for surface-syntax policies positionally per parse (`policy0`, `policy1`,
+    /// …), so a fragment parsed on its own restarts at `policy0` and would
+    /// collide with the base. To stay equivalent to the concatenated parse, the
+    /// fragment's colliding ids are renumbered to follow the base (the way
+    /// concatenated text numbers them); non-colliding ids are preserved. A
+    /// fragment policy's `@id` annotation (which Cedar treats as inert) is
+    /// unaffected.
+    ///
+    /// :raises ValueError: if `fragment` cannot be parsed.
+    fn with_added_str(&self, fragment: &str) -> PyResult<Self> {
+        let added = PolicySet::from_str(fragment)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("{:#}", e)))?;
+        let mut merged = self.inner.clone();
+        // `rename_duplicates = true`: renumber the fragment's per-parse ids that
+        // collide with the base, so a surface-syntax fragment (whose ids always
+        // restart at `policy0`) composes with a non-empty base exactly as the
+        // concatenated text would. cedar updates any internal references to the
+        // renamed ids. The only error path left is a malformed fragment, caught
+        // by `from_str` above; `merge` itself cannot fail here.
+        merged
+            .merge(&added, true)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+        Ok(PyPolicySet { inner: merged })
+    }
+
     /// The number of policies in the set.
     fn __len__(&self) -> usize {
         self.inner.policies().count()
