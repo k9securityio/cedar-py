@@ -135,7 +135,31 @@ This complements batch authorization: batching amortizes entity/schema parsing a
 
 On a successful evaluation the result's `metrics` reflect the reuse: `parse_policies_duration_micros` measures only the (near-zero) borrow rather than the original parse, and `metrics["policies_pre_parsed"]` is `1` (it is `0` when policies are passed as a string and parsed on that call). As with all `metrics`, these keys are present only on successful evaluations — an error result carries an empty `metrics` map.
 
-> Note: reuse applies to the policy set. Entities and schema are still parsed on each call.
+### Reusing parsed entities for performance
+
+Entities are parsed on each call too: `is_authorized` deserializes the entities JSON and computes the transitive closure of the `parents` graph. When you authorize many requests against a large, stable entity graph, you can parse it once into a reusable `Entities` handle and pass it wherever you'd pass an entities string or list:
+
+```python
+from cedarpy import Entities, PolicySet, is_authorized
+
+base = Entities.from_json_str(entities_json)       # parse the stable graph once
+authz_result = is_authorized(request, policy_set, base)
+```
+
+The common shape is a large, stable base graph (your organization's users and groups, say) plus a small set of entities that are specific to each request (the resources being acted on). Build the base once and merge the per-request delta with `add_from_json_str`, which parses **only the delta** and returns a new handle — the base is immutable and reused across every request:
+
+```python
+base = Entities.from_json_str(org_graph_json)      # users, groups: parsed once, reused
+
+for request in requests:
+    # add only this request's entities (e.g. the documents involved); base is not re-parsed
+    for_request = base.add_from_json_str(request_entities_json)
+    is_authorized(request, policy_set, for_request)
+```
+
+`add_from_json_str` is a disjoint union: a delta entity whose uid already exists in the base (and is not identical) raises `ValueError`. An optional `schema` argument to `from_json_str` / `add_from_json_str` validates the entities at construction. The handle is accepted anywhere an entities string/list is accepted (`is_authorized`, `is_authorized_batch`, `is_authorized_partial`), supports `len()` and `str()`, and sets `metrics["entities_pre_parsed"]` to `1` on the reuse path. As with the `PolicySet` handle, passing a string or list still works unchanged — the handle is purely opt-in.
+
+> Note: the `Entities` and `PolicySet` handles are independent and compose — reuse whichever inputs are stable for your workload, or both. Schema is still parsed on each call.
 
 ### Partially authorizing a request with unknowns
 

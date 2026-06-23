@@ -9,6 +9,74 @@ from cedarpy import _internal
 PolicySet = _internal.PolicySet
 
 
+class Entities:
+    """An opaque, reusable handle wrapping a parsed Cedar entity set.
+
+    Parse a stable entity graph once with ``Entities.from_json_str(...)`` and
+    pass the handle anywhere an entities string/list is accepted
+    (``is_authorized``, ``is_authorized_batch``, ``is_authorized_partial``),
+    reusing it across calls to avoid re-parsing (JSON deserialization plus
+    transitive-closure computation). For the "stable base plus a per-request
+    delta" pattern, ``add_from_json_str(delta)`` parses only the delta and
+    returns a NEW handle — the base is immutable and reused.
+
+    The optional ``schema`` (a Cedar schema as a JSON/Cedar string, or a dict)
+    validates the entities at construction; it is not re-applied when the handle
+    is later reused in an ``is_authorized(..., schema=...)`` call (same
+    pre-parsed-handle contract as ``PolicySet``).
+
+    This thin wrapper normalizes a dict ``schema`` to JSON (matching the rest of
+    the package) and delegates to the Rust-backed handle; ``len()`` is the entity
+    count and ``str()`` renders the entities back to Cedar JSON.
+    """
+
+    def __init__(self, _inner: "_internal.Entities") -> None:
+        # Handles are created via from_json_str / add_from_json_str, never
+        # constructed directly; mirror the Rust handle's no-bare-constructor rule.
+        if not isinstance(_inner, _internal.Entities):
+            raise TypeError(
+                "Entities cannot be constructed directly; use Entities.from_json_str(...)")
+        self._inner = _inner
+
+    @staticmethod
+    def from_json_str(s: str, schema: Union[str, dict, None] = None) -> "Entities":
+        """Parse an ``Entities`` handle from a Cedar JSON entities document.
+
+        :param schema: (optional) a Cedar schema as a JSON/Cedar string or a
+            dict; when supplied, the entities are validated against it.
+        :raises ValueError: if the entities (or schema) cannot be parsed, or the
+            entities do not conform to ``schema``.
+        """
+        if isinstance(schema, dict):
+            schema = json.dumps(schema)
+        return Entities(_internal.Entities.from_json_str(s, schema))
+
+    def add_from_json_str(self, delta: str, schema: Union[str, dict, None] = None) -> "Entities":
+        """Return a NEW ``Entities`` handle: this base plus the entities parsed
+        from ``delta``. The base is cloned, not re-parsed — only ``delta`` is
+        parsed. The merge is a disjoint union: a ``delta`` entity whose uid
+        duplicates a non-identical base uid raises ``ValueError``.
+
+        :param schema: (optional) a Cedar schema as a JSON/Cedar string or a
+            dict; when supplied, validates the combined set.
+        :raises ValueError: if ``delta`` (or ``schema``) cannot be parsed, a
+            ``delta`` uid duplicates a non-identical base uid, or the result
+            violates ``schema``.
+        """
+        if isinstance(schema, dict):
+            schema = json.dumps(schema)
+        return Entities(self._inner.add_from_json_str(delta, schema))
+
+    def __len__(self) -> int:
+        return len(self._inner)
+
+    def __str__(self) -> str:
+        return str(self._inner)
+
+    def __repr__(self) -> str:
+        return repr(self._inner)
+
+
 def echo(s: str) -> str:
     return _internal.echo(s)
 
@@ -150,7 +218,7 @@ class ValidationResult:
 
 def is_authorized(request: dict,
                   policies: Union[str, PolicySet],
-                  entities: Union[str, List[dict]],
+                  entities: Union[str, List[dict], Entities],
                   schema: Union[str, dict, None] = None,
                   verbose: bool = False) -> AuthzResult:
     """Evaluate whether the request is authorized given the parameters.
@@ -165,8 +233,9 @@ def is_authorized(request: dict,
     :param policies the Cedar policies, as either a str containing all the policies in the PolicySet
     or a pre-parsed ``PolicySet`` handle (``PolicySet.from_str(...)``). Reusing a handle across calls
     avoids re-parsing the policies on every call; see the ``PolicySet`` class for details.
-    :param entities a list of entities or a json-formatted string containing the list of entities to
-    include in the evaluation
+    :param entities a list of entities, a json-formatted string containing the list of entities, or a
+    pre-parsed ``Entities`` handle (``Entities.from_json_str(...)``). Reusing a handle across calls
+    avoids re-parsing the entity graph on every call; see the ``Entities`` class for details.
     :param schema (optional) dictionary or json-formatted string containing the Cedar schema
     :param verbose (optional) boolean determining whether to enable verbose logging output within the library
 
@@ -182,7 +251,7 @@ def is_authorized(request: dict,
 
 def is_authorized_batch(requests: List[dict],
                         policies: Union[str, PolicySet],
-                        entities: Union[str, List[dict]],
+                        entities: Union[str, List[dict], Entities],
                         schema: Union[str, dict, None] = None,
                         verbose: bool = False) -> List[AuthzResult]:
     """Evaluate whether a batch of requests are authorized given the other parameters.  Each request is evaluated
@@ -196,8 +265,9 @@ def is_authorized_batch(requests: List[dict],
     :param policies the Cedar policies, as either a str containing all the policies in the PolicySet
     or a pre-parsed ``PolicySet`` handle (``PolicySet.from_str(...)``). Reusing a handle across calls
     avoids re-parsing the policies on every call; see the ``PolicySet`` class for details.
-    :param entities a list of entities or a json-formatted string containing the list of entities to
-    include in the evaluation
+    :param entities a list of entities, a json-formatted string containing the list of entities, or a
+    pre-parsed ``Entities`` handle (``Entities.from_json_str(...)``). Reusing a handle across calls
+    avoids re-parsing the entity graph on every call; see the ``Entities`` class for details.
     :param schema (optional) dictionary or json-formatted string containing the Cedar schema
     :param verbose (optional) boolean determining whether to enable verbose logging output within the library
 
@@ -219,10 +289,13 @@ def is_authorized_batch(requests: List[dict],
 
         requests_local.append(request)
 
-    if isinstance(entities, str):
-        pass
-    elif isinstance(entities, list):
-        entities = json.dumps(entities)
+    # Normalize entities to what the extension accepts: a JSON string, or the
+    # Rust-backed _internal.Entities unwrapped from the public handle.
+    internal_entities = entities
+    if isinstance(internal_entities, list):
+        internal_entities = json.dumps(internal_entities)
+    elif isinstance(internal_entities, Entities):
+        internal_entities = internal_entities._inner
 
     if schema is not None:
         if isinstance(schema, str):
@@ -230,7 +303,7 @@ def is_authorized_batch(requests: List[dict],
         elif isinstance(schema, dict):
             schema = json.dumps(schema)
 
-    authz_result_strs: List[str] = _internal.is_authorized_batch(requests_local, policies, entities, schema, verbose)
+    authz_result_strs: List[str] = _internal.is_authorized_batch(requests_local, policies, internal_entities, schema, verbose)
     authz_result_objs: List[dict] = []
 
     for authz_result_str in authz_result_strs:
@@ -359,7 +432,7 @@ class PartialAuthzResult:
 
 def is_authorized_partial(request: dict,
                           policies: Union[str, PolicySet],
-                          entities: Union[str, List[dict]],
+                          entities: Union[str, List[dict], Entities],
                           schema: Union[str, dict, None] = None,
                           verbose: bool = False) -> PartialAuthzResult:
     """Partially evaluate an authorization request with unknowns.
@@ -393,8 +466,9 @@ def is_authorized_partial(request: dict,
     :param policies the Cedar policies, as either a str containing all the policies in the PolicySet
     or a pre-parsed ``PolicySet`` handle (``PolicySet.from_str(...)``). Reusing a handle across calls
     avoids re-parsing the policies on every call; see the ``PolicySet`` class for details.
-    :param entities a list of entities or a json-formatted string containing the list of entities to
-    include in the evaluation
+    :param entities a list of entities, a json-formatted string containing the list of entities, or a
+    pre-parsed ``Entities`` handle (``Entities.from_json_str(...)``). Reusing a handle across calls
+    avoids re-parsing the entity graph on every call; see the ``Entities`` class for details.
     :param schema (optional) dictionary or json-formatted string containing the Cedar schema
     :param verbose (optional) boolean determining whether to enable verbose logging output within the library
 
@@ -414,14 +488,17 @@ def is_authorized_partial(request: dict,
         else:
             request_local['context'] = context
 
-    if isinstance(entities, list):
-        entities = json.dumps(entities)
+    internal_entities = entities
+    if isinstance(internal_entities, list):
+        internal_entities = json.dumps(internal_entities)
+    elif isinstance(internal_entities, Entities):
+        internal_entities = internal_entities._inner
 
     if schema is not None and isinstance(schema, dict):
         schema = json.dumps(schema)
 
     result_str = _internal.is_authorized_partial(
-        request_local, policies, entities, schema, verbose)
+        request_local, policies, internal_entities, schema, verbose)
     result_dict = json.loads(result_str)
     return PartialAuthzResult(result_dict)
 

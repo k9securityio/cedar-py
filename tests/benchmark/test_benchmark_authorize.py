@@ -16,7 +16,7 @@ import json
 import pytest
 from typing import List
 
-from cedarpy import is_authorized, is_authorized_batch, Decision, PolicySet
+from cedarpy import is_authorized, is_authorized_batch, Decision, PolicySet, Entities
 
 from benchmark import load_file_as_str
 
@@ -645,6 +645,95 @@ class IsAuthorizedBenchmarkTestCase:
         }
 
         result = benchmark(is_authorized, request, medium_policy, large_entities)
+
+        assert result.decision in [Decision.Allow, Decision.Deny]
+
+    # -------------------------------------------------------------------------
+    # Entities Reuse Benchmarks
+    #
+    # The entity-set benchmarks above pass an entities list, so each call
+    # re-serializes it to JSON and the core re-parses it (deserialize + compute
+    # the transitive closure of the `parents` graph). These pass a pre-parsed
+    # Entities handle instead; the gap between each pair is the per-call entity
+    # parse the handle eliminates. It widens with the entity-set size.
+    # Feature: https://github.com/k9securityio/cedar-py/issues/83
+    # -------------------------------------------------------------------------
+
+    _ENTITY_REQUEST = {
+        "principal": 'User::"user_0"',
+        "action": 'Action::"view"',
+        "resource": 'Resource::"resource_0"',
+        "context": {},
+    }
+
+    def test_medium_entity_set_reuse_handle(self, benchmark, medium_policy, medium_entities):
+        """~50 entities, reusing a pre-parsed Entities handle."""
+        entities = Entities.from_json_str(json.dumps(medium_entities))
+
+        result = benchmark(is_authorized, self._ENTITY_REQUEST, medium_policy, entities)
+
+        assert result.decision in [Decision.Allow, Decision.Deny]
+
+    def test_large_entity_set_reuse_handle(self, benchmark, medium_policy, large_entities):
+        """~200 entities, reusing a pre-parsed Entities handle."""
+        entities = Entities.from_json_str(json.dumps(large_entities))
+
+        result = benchmark(is_authorized, self._ENTITY_REQUEST, medium_policy, entities)
+
+        assert result.decision in [Decision.Allow, Decision.Deny]
+
+    # -------------------------------------------------------------------------
+    # Entities Base-plus-Delta Benchmarks
+    #
+    # The downstream-motivating pattern: a large, stable base graph parsed once,
+    # plus a tiny per-request delta. The `_str` baseline re-serializes and
+    # re-parses base+delta together every call; the `_reuse_handle` version
+    # parses the base once and per call parses only the delta via
+    # add_from_json_str. The gap is the base parse the handle amortizes (the
+    # delta and the closure recompute happen either way).
+    # -------------------------------------------------------------------------
+
+    @staticmethod
+    def _request_delta() -> List[dict]:
+        """A small per-request delta: a couple of resources owned by user_0."""
+        return [
+            {"uid": {"type": "Resource", "id": "req_resource_a"},
+             "attrs": {"owner": {"__entity": {"type": "User", "id": "user_0"}},
+                       "private": False, "team": "engineering",
+                       "archived": False, "shared_with": []},
+             "parents": []},
+            {"uid": {"type": "Resource", "id": "req_resource_b"},
+             "attrs": {"owner": {"__entity": {"type": "User", "id": "user_0"}},
+                       "private": True, "team": "engineering",
+                       "archived": False, "shared_with": []},
+             "parents": []},
+        ]
+
+    _DELTA_REQUEST = {
+        "principal": 'User::"user_0"',
+        "action": 'Action::"view"',
+        "resource": 'Resource::"req_resource_a"',
+        "context": {},
+    }
+
+    def test_base_plus_delta_str(self, benchmark, medium_policy, large_entities):
+        """Baseline: pass base+delta as one list every call (re-parses the base)."""
+        merged = large_entities + self._request_delta()
+
+        result = benchmark(is_authorized, self._DELTA_REQUEST, medium_policy, merged)
+
+        assert result.decision in [Decision.Allow, Decision.Deny]
+
+    def test_base_plus_delta_reuse_handle(self, benchmark, medium_policy, large_entities):
+        """Reuse: parse the base once, add only the per-request delta each call."""
+        base = Entities.from_json_str(json.dumps(large_entities))
+        delta_json = json.dumps(self._request_delta())
+
+        def authorize():
+            for_request = base.add_from_json_str(delta_json)
+            return is_authorized(self._DELTA_REQUEST, medium_policy, for_request)
+
+        result = benchmark(authorize)
 
         assert result.decision in [Decision.Allow, Decision.Deny]
 

@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- A reusable, pre-parsed `Entities` handle, mirroring the `PolicySet` handle. Parse a stable entity graph once with `Entities.from_json_str(entities_json, schema=None)` and pass the handle to `is_authorized`, `is_authorized_batch`, or `is_authorized_partial` anywhere an entities string/list is accepted — skipping the per-call JSON deserialization and transitive-closure computation. For the common "stable base plus a small per-request delta" pattern, `entities.add_from_json_str(delta_json, schema=None)` clones the base and parses only the delta, returning a **new** handle (the base is immutable and reused). The merge is a disjoint union: a delta uid that duplicates a non-identical base uid raises `ValueError`, as does malformed JSON or a schema violation. The `entities` parameter widens from `str | list` to `str | list | Entities`; existing string/list callers are unchanged, so this is a pure, opt-in addition. The handle supports `len()` (entity count) and `str()` (rendered entities JSON), and on a successful evaluation the result `metrics` gain an `entities_pre_parsed` flag (`1` for the handle path, `0` otherwise). Mirrors the cedar-java / cedar-policy-rb handle APIs ([#83](https://github.com/k9securityio/cedar-py/issues/83)). Thanks [@Iamrodos](https://github.com/Iamrodos)!
+
 ## [4.8.5] - 2026-06-21
 
 ### Added
