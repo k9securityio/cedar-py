@@ -274,6 +274,73 @@ class PolicySetConcurrencyTestCase(unittest.TestCase):
         self.assertEqual(len(cases), len(results))
 
 
+class PolicySetWithAddedStrTestCase(unittest.TestCase):
+    """with_added_str returns a NEW handle: the base plus a parsed fragment,
+    without re-parsing the base, equivalent to parsing the concatenated text."""
+
+    BASE = 'permit(principal == User::"alice", action == Action::"view", resource);'
+    FRAGMENT = 'permit(principal == User::"bob", action == Action::"view", resource);'
+
+    def test_adds_fragment_returning_new_handle_leaving_base_unchanged(self) -> None:
+        base = PolicySet.from_str(self.BASE)
+        combined = base.with_added_str(self.FRAGMENT)
+        self.assertIsNot(base, combined)
+        self.assertEqual(1, len(base))      # base untouched (immutable)
+        self.assertEqual(2, len(combined))  # base + fragment
+
+    def test_decisions_match_concatenated_text(self) -> None:
+        # Both base and fragment, parsed alone, would be `policy0`; the fragment's
+        # id is renumbered so both survive, exactly as concatenated text does.
+        combined = PolicySet.from_str(self.BASE).with_added_str(self.FRAGMENT)
+        concatenated = PolicySet.from_str(self.BASE + "\n" + self.FRAGMENT)
+
+        bob_req = {"principal": 'User::"bob"', "action": 'Action::"view"', "resource": 'Photo::"p"'}
+        alice_req = {"principal": 'User::"alice"', "action": 'Action::"view"', "resource": 'Photo::"p"'}
+        for req in (alice_req, bob_req):
+            from_added = is_authorized(req, combined, ENTITIES)
+            from_concat = is_authorized(req, concatenated, ENTITIES)
+            self.assertEqual(Decision.Allow, from_added.decision)
+            self.assertEqual(from_concat.decision, from_added.decision)
+            # exactly one (renumbered) policy is the reason — no collision/loss
+            self.assertEqual(1, len(from_added.diagnostics.reasons))
+
+    def test_id_annotations_survive_renumbering(self) -> None:
+        # @id annotations are preserved through the PolicyId renumbering, and
+        # still resolve via id_annotations_by_reason for each matched policy.
+        base = PolicySet.from_str(
+            '@id("base-allow-alice")\n'
+            'permit(principal == User::"alice", action == Action::"view", resource);')
+        combined = base.with_added_str(
+            '@id("frag-allow-bob")\n'
+            'permit(principal == User::"bob", action == Action::"view", resource);')
+
+        alice_req = {"principal": 'User::"alice"', "action": 'Action::"view"', "resource": 'Photo::"p"'}
+        bob_req = {"principal": 'User::"bob"', "action": 'Action::"view"', "resource": 'Photo::"p"'}
+        alice_res = is_authorized(alice_req, combined, ENTITIES)
+        bob_res = is_authorized(bob_req, combined, ENTITIES)
+        self.assertIn("base-allow-alice", alice_res.diagnostics.id_annotations_by_reason.values())
+        self.assertIn("frag-allow-bob", bob_res.diagnostics.id_annotations_by_reason.values())
+
+    def test_add_empty_fragment_is_noop(self) -> None:
+        base = PolicySet.from_str(self.BASE)
+        combined = base.with_added_str("")
+        self.assertEqual(1, len(combined))
+
+    def test_malformed_fragment_raises_value_error(self) -> None:
+        base = PolicySet.from_str(self.BASE)
+        with self.assertRaises(ValueError):
+            base.with_added_str("this is not valid cedar {{{")
+
+    def test_result_handle_usable_in_batch_and_partial(self) -> None:
+        combined = PolicySet.from_str(self.BASE).with_added_str(self.FRAGMENT)
+        alice_req = {"principal": 'User::"alice"', "action": 'Action::"view"', "resource": 'Photo::"p"'}
+        bob_req = {"principal": 'User::"bob"', "action": 'Action::"view"', "resource": 'Photo::"p"'}
+        batch = is_authorized_batch([alice_req, bob_req], combined, ENTITIES)
+        self.assertEqual([Decision.Allow, Decision.Allow], [r.decision for r in batch])
+        partial = is_authorized_partial({**alice_req, "context": {}}, combined, ENTITIES)
+        self.assertEqual(Decision.Allow, partial.decision)
+
+
 class PolicySetTypeErrorTestCase(unittest.TestCase):
     """Wrong-typed policies argument is rejected with TypeError."""
 
