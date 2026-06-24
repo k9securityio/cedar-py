@@ -7,9 +7,9 @@ that the handle path is a behavior-preserving, opt-in alternative to passing
 entities as a JSON string or list.
 
 The handle also supports an immutable "add a per-request delta" path via
-``add_from_json_str``: a large, stable base graph is parsed once and a small
+``with_added_json_str``: a large, stable base graph is parsed once and a small
 delta (e.g. the entities specific to one request) is merged in per call,
-parsing only the delta. ``add_from_json_str`` returns a NEW handle and leaves
+parsing only the delta. ``with_added_json_str`` returns a NEW handle and leaves
 the base unchanged.
 
 Feature follow-up from https://github.com/k9securityio/cedar-py/issues/83
@@ -145,7 +145,7 @@ class EntitiesPartialTestCase(unittest.TestCase):
 
 
 class EntitiesAddTestCase(unittest.TestCase):
-    """add_from_json_str merges a delta, immutably, and matches the merged JSON."""
+    """with_added_json_str merges a delta, immutably, and matches the merged JSON."""
 
     BASE_JSON = json.dumps([
         {"uid": {"type": "User", "id": "alice"}, "attrs": {}, "parents": []},
@@ -160,7 +160,7 @@ class EntitiesAddTestCase(unittest.TestCase):
 
     def test_add_matches_passing_merged_json(self) -> None:
         base = Entities.from_json_str(self.BASE_JSON)
-        merged_handle = base.add_from_json_str(self.DELTA_JSON)
+        merged_handle = base.with_added_json_str(self.DELTA_JSON)
 
         merged_list = json.loads(self.BASE_JSON) + json.loads(self.DELTA_JSON)
         merged_json = json.dumps(merged_list)
@@ -173,7 +173,7 @@ class EntitiesAddTestCase(unittest.TestCase):
     def test_add_returns_new_handle_and_leaves_base_unchanged(self) -> None:
         base = Entities.from_json_str(self.BASE_JSON)
         self.assertEqual(2, len(base))
-        merged = base.add_from_json_str(self.DELTA_JSON)
+        merged = base.with_added_json_str(self.DELTA_JSON)
         self.assertEqual(3, len(merged))
         # immutability: base is untouched, a distinct object is returned
         self.assertEqual(2, len(base))
@@ -187,7 +187,7 @@ class EntitiesAddTestCase(unittest.TestCase):
              "attrs": {"role": "admin"}, "parents": []},
         ])
         with self.assertRaises(ValueError):
-            base.add_from_json_str(clashing)
+            base.with_added_json_str(clashing)
 
     def test_identical_duplicate_uid_is_allowed(self) -> None:
         # An entity identical to one already present is a no-op, not an error.
@@ -195,13 +195,13 @@ class EntitiesAddTestCase(unittest.TestCase):
         identical = json.dumps([
             {"uid": {"type": "User", "id": "alice"}, "attrs": {}, "parents": []},
         ])
-        merged = base.add_from_json_str(identical)
+        merged = base.with_added_json_str(identical)
         self.assertEqual(2, len(merged))
 
     def test_add_malformed_delta_raises(self) -> None:
         base = Entities.from_json_str(self.BASE_JSON)
         with self.assertRaises(ValueError):
-            base.add_from_json_str("{not json")
+            base.with_added_json_str("{not json")
 
 
 class EntitiesBasePlusDeltaScenarioTestCase(unittest.TestCase):
@@ -210,7 +210,7 @@ class EntitiesBasePlusDeltaScenarioTestCase(unittest.TestCase):
     This mirrors the downstream (emu) use case that motivated the handle: a
     large, stable base entity graph (org users and groups) is parsed once, then
     each request adds only the small set of entities specific to that request
-    (the resources being acted on) via add_from_json_str, which parses only the
+    (the resources being acted on) via with_added_json_str, which parses only the
     delta. The base handle is reused across every request.
     """
 
@@ -244,7 +244,7 @@ class EntitiesBasePlusDeltaScenarioTestCase(unittest.TestCase):
 
     def test_base_reused_with_per_request_delta(self) -> None:
         # alice (engineering) owns doc-1 -> allowed
-        per_request = self.base.add_from_json_str(self._doc_delta("doc-1", "alice"))
+        per_request = self.base.with_added_json_str(self._doc_delta("doc-1", "alice"))
         request = {
             "principal": 'User::"alice"',
             "action": 'Action::"view"',
@@ -253,7 +253,7 @@ class EntitiesBasePlusDeltaScenarioTestCase(unittest.TestCase):
         self.assertEqual(Decision.Allow, is_authorized(request, self.POLICY, per_request).decision)
 
         # bob is in sales, not engineering -> denied, reusing the SAME base handle
-        per_request_bob = self.base.add_from_json_str(self._doc_delta("doc-2", "bob"))
+        per_request_bob = self.base.with_added_json_str(self._doc_delta("doc-2", "bob"))
         request_bob = {
             "principal": 'User::"bob"',
             "action": 'Action::"view"',
@@ -311,8 +311,8 @@ class EntitiesSchemaTestCase(unittest.TestCase):
             len(Entities.from_json_str(ENTITIES_JSON, schema=schema_dict)),
         )
         self.assertEqual(
-            len(Entities.from_json_str("[]").add_from_json_str(ENTITIES_JSON, schema=self.SCHEMA)),
-            len(Entities.from_json_str("[]").add_from_json_str(ENTITIES_JSON, schema=schema_dict)),
+            len(Entities.from_json_str("[]").with_added_json_str(ENTITIES_JSON, schema=self.SCHEMA)),
+            len(Entities.from_json_str("[]").with_added_json_str(ENTITIES_JSON, schema=schema_dict)),
         )
 
 
@@ -362,7 +362,7 @@ class EntitiesConcurrencyTestCase(unittest.TestCase):
         def run(case):
             owner, expected = case
             doc = f"doc-{owner}"
-            per_request = shared.add_from_json_str(
+            per_request = shared.with_added_json_str(
                 EntitiesBasePlusDeltaScenarioTestCase._doc_delta(doc, owner))
             request = {
                 "principal": f'User::"{owner}"',

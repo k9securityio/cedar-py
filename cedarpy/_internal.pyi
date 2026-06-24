@@ -69,16 +69,16 @@ class Entities:
             is_authorized(req, policy_set, base)        # reuse — no re-parse
 
     For the common "stable base plus a tiny per-request delta" pattern, build
-    the base once and add the delta per call with ``add_from_json_str``, which
+    the base once and add the delta per call with ``with_added_json_str``, which
     parses only the delta::
 
-        per_request = base.add_from_json_str(delta_json)
+        per_request = base.with_added_json_str(delta_json)
         is_authorized(req, policy_set, per_request)
 
     An ``Entities`` is accepted anywhere an entities string/list is accepted:
     ``is_authorized``, ``is_authorized_batch``, and ``is_authorized_partial``.
 
-    The handle is immutable — ``add_from_json_str`` returns a NEW handle and
+    The handle is immutable — ``with_added_json_str`` returns a NEW handle and
     leaves the base unchanged — and its memory is released automatically when
     the last Python reference is dropped. An optional ``schema`` is applied when
     the handle is built; it is not re-applied when the handle is later reused in
@@ -96,7 +96,7 @@ class Entities:
         """
         ...
 
-    def add_from_json_str(self, delta: str, schema: Optional[str] = ...) -> "Entities":
+    def with_added_json_str(self, delta: str, schema: Optional[str] = ...) -> "Entities":
         """Return a NEW ``Entities`` handle: this base set plus the entities
         parsed from ``delta``. The base is cloned, not re-parsed — only ``delta``
         is parsed. The merge is a disjoint union: a ``delta`` entity whose uid

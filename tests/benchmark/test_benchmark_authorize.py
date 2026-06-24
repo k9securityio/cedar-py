@@ -689,7 +689,7 @@ class IsAuthorizedBenchmarkTestCase:
     # plus a tiny per-request delta. The `_str` baseline re-serializes and
     # re-parses base+delta together every call; the `_reuse_handle` version
     # parses the base once and per call parses only the delta via
-    # add_from_json_str. The gap is the base parse the handle amortizes (the
+    # with_added_json_str. The gap is the base parse the handle amortizes (the
     # delta and the closure recompute happen either way).
     # -------------------------------------------------------------------------
 
@@ -730,7 +730,7 @@ class IsAuthorizedBenchmarkTestCase:
         delta_json = json.dumps(self._request_delta())
 
         def authorize():
-            for_request = base.add_from_json_str(delta_json)
+            for_request = base.with_added_json_str(delta_json)
             return is_authorized(self._DELTA_REQUEST, medium_policy, for_request)
 
         result = benchmark(authorize)

@@ -174,14 +174,14 @@ impl PyPolicySet {
 /// `is_authorized`, `is_authorized_batch`, and `is_authorized_partial`.
 ///
 /// For the common "stable base plus a tiny per-request delta" pattern, build
-/// the base once and add the delta per call with `add_from_json_str`, which
+/// the base once and add the delta per call with `with_added_json_str`, which
 /// parses only the delta:
 ///
-///     per_request = base.add_from_json_str(delta_json)
+///     per_request = base.with_added_json_str(delta_json)
 ///     is_authorized(req, policy_set, per_request)
 ///
 /// Construct with `Entities.from_json_str(cedar_json, schema=None)`. The handle
-/// is immutable — `add_from_json_str` returns a NEW handle and leaves the base
+/// is immutable — `with_added_json_str` returns a NEW handle and leaves the base
 /// unchanged — and its memory is released automatically when the last Python
 /// reference is dropped.
 ///
@@ -228,7 +228,7 @@ impl PyEntities {
     /// :raises ValueError: if `delta` (or `schema`) cannot be parsed, if a
     ///     `delta` uid duplicates a base uid, or the result violates `schema`.
     #[pyo3(signature = (delta, schema = None))]
-    fn add_from_json_str(&self, delta: &str, schema: Option<&str>) -> PyResult<Self> {
+    fn with_added_json_str(&self, delta: &str, schema: Option<&str>) -> PyResult<Self> {
         let schema = parse_schema_arg(schema)?;
         // Clone keeps the handle immutable; `add_entities_from_json_str` consumes
         // the clone and parses only `delta` (not the base) before recomputing the

@@ -158,18 +158,18 @@ base = Entities.from_json_str(entities_json)       # parse the stable graph once
 authz_result = is_authorized(request, policy_set, base)
 ```
 
-The common shape is a large, stable base graph (your organization's users and groups, say) plus a small set of entities that are specific to each request (the resources being acted on). Build the base once and merge the per-request delta with `add_from_json_str`, which parses **only the delta** and returns a new handle — the base is immutable and reused across every request:
+The common shape is a large, stable base graph (your organization's users and groups, say) plus a small set of entities that are specific to each request (the resources being acted on). Build the base once and merge the per-request delta with `with_added_json_str`, which parses **only the delta** and returns a new handle — the base is immutable and reused across every request:
 
 ```python
 base = Entities.from_json_str(org_graph_json)      # users, groups: parsed once, reused
 
 for request in requests:
     # add only this request's entities (e.g. the documents involved); base is not re-parsed
-    for_request = base.add_from_json_str(request_entities_json)
+    for_request = base.with_added_json_str(request_entities_json)
     is_authorized(request, policy_set, for_request)
 ```
 
-`add_from_json_str` is a disjoint union: a delta entity whose uid already exists in the base (and is not identical) raises `ValueError`. An optional `schema` argument to `from_json_str` / `add_from_json_str` validates the entities at construction. The handle is accepted anywhere an entities string/list is accepted (`is_authorized`, `is_authorized_batch`, `is_authorized_partial`), supports `len()` and `str()`, and sets `metrics["entities_pre_parsed"]` to `1` on the reuse path. As with the `PolicySet` handle, passing a string or list still works unchanged — the handle is purely opt-in.
+`with_added_json_str` is a disjoint union: a delta entity whose uid already exists in the base (and is not identical) raises `ValueError`. An optional `schema` argument to `from_json_str` / `with_added_json_str` validates the entities at construction. The handle is accepted anywhere an entities string/list is accepted (`is_authorized`, `is_authorized_batch`, `is_authorized_partial`), supports `len()` and `str()`, and sets `metrics["entities_pre_parsed"]` to `1` on the reuse path. As with the `PolicySet` handle, passing a string or list still works unchanged — the handle is purely opt-in.
 
 > Note: the `Entities` and `PolicySet` handles are independent and compose — reuse whichever inputs are stable for your workload, or both. Schema is still parsed on each call.
 

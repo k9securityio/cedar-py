@@ -17,7 +17,7 @@ class Entities:
     (``is_authorized``, ``is_authorized_batch``, ``is_authorized_partial``),
     reusing it across calls to avoid re-parsing (JSON deserialization plus
     transitive-closure computation). For the "stable base plus a per-request
-    delta" pattern, ``add_from_json_str(delta)`` parses only the delta and
+    delta" pattern, ``with_added_json_str(delta)`` parses only the delta and
     returns a NEW handle — the base is immutable and reused.
 
     The optional ``schema`` (a Cedar schema as a JSON/Cedar string, or a dict)
@@ -31,7 +31,7 @@ class Entities:
     """
 
     def __init__(self, _inner: "_internal.Entities") -> None:
-        # Handles are created via from_json_str / add_from_json_str, never
+        # Handles are created via from_json_str / with_added_json_str, never
         # constructed directly; mirror the Rust handle's no-bare-constructor rule.
         if not isinstance(_inner, _internal.Entities):
             raise TypeError(
@@ -51,7 +51,7 @@ class Entities:
             schema = json.dumps(schema)
         return Entities(_internal.Entities.from_json_str(s, schema))
 
-    def add_from_json_str(self, delta: str, schema: Union[str, dict, None] = None) -> "Entities":
+    def with_added_json_str(self, delta: str, schema: Union[str, dict, None] = None) -> "Entities":
         """Return a NEW ``Entities`` handle: this base plus the entities parsed
         from ``delta``. The base is cloned, not re-parsed — only ``delta`` is
         parsed. The merge is a disjoint union: a ``delta`` entity whose uid
@@ -65,7 +65,7 @@ class Entities:
         """
         if isinstance(schema, dict):
             schema = json.dumps(schema)
-        return Entities(self._inner.add_from_json_str(delta, schema))
+        return Entities(self._inner.with_added_json_str(delta, schema))
 
     def __len__(self) -> int:
         return len(self._inner)
