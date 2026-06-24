@@ -73,6 +73,13 @@ fn policies_from_json_str(s: String) -> PyResult<String> {
 /// `PolicySet.from_json_str(cedar_json)`; both raise `ValueError` on parse
 /// errors. The handle is immutable, and its memory is released automatically
 /// when the last Python reference is dropped.
+///
+/// A set may also contain Cedar *templates* (policies with `?principal` /
+/// `?resource` slots). A template authorizes nothing until it is linked to
+/// concrete values: `with_linked` / `with_linked_batch` return a NEW handle with
+/// the linked policy added (immutable, like `with_added_str`). `templates`
+/// (which lists each template's links) and `without_linked` round out the
+/// lifecycle.
 // `frozen` makes the handle immutable so the authorization functions can borrow
 // the inner PolicySet without a runtime borrow check (and share it across
 // threads); see `PoliciesArg::resolve`.
@@ -143,6 +150,151 @@ impl PyPolicySet {
         Ok(PyPolicySet { inner: merged })
     }
 
+    /// Return a NEW `PolicySet` handle: this set with `links` applied. Each
+    /// link instantiates a template in the set into a concrete, evaluatable
+    /// policy by filling its slots. This is the primary linking entry point;
+    /// `with_linked` is the single-link convenience over it.
+    ///
+    /// Linking does not modify or rename the template: it creates a *new*
+    /// policy (the template with its slots filled) and adds it to the returned
+    /// set. The template stays in the set and can be linked again under a
+    /// different `new_id`, which is how one template grants many principals.
+    ///
+    /// `links` is a list of dicts, each with:
+    ///   - `template_id`: which template to fill in — its `@id` annotation
+    ///     value, or the parser-assigned `policy<N>` id (see resolution below),
+    ///   - `new_id`: the id assigned to the new template-linked policy this
+    ///     creates. It is the caller's to choose — neither a template id nor a
+    ///     principal — and mirrors the Cedar CLI's `--new-id`,
+    ///   - `values`: a dict mapping each slot (`"?principal"` / `"?resource"`)
+    ///     to an entity uid, given as a Cedar string (`'User::"jane"'`) or a
+    ///     `{"type": ..., "id": ...}` dict — the same two forms `is_authorized`
+    ///     accepts for a request principal/resource.
+    ///
+    /// The base is cloned once and every link is applied to the clone, so a
+    /// batch of links pays a single clone rather than one per link. The base is
+    /// left unchanged. The operation is all-or-nothing: if any link fails, the
+    /// partially-built clone is discarded and `ValueError` is raised, so the
+    /// returned handle (when one is returned) reflects every requested link.
+    ///
+    /// :raises ValueError: if a `template_id` is not a template in the set, a
+    ///     `new_id` collides with an existing policy id, a slot value cannot be
+    ///     parsed, or the slots a template declares are not exactly filled.
+    /// :raises KeyError: if a link dict is missing `template_id`, `new_id`, or
+    ///     `values`.
+    /// A `template_id` may be either the template's literal Cedar id or, when no
+    /// template has that literal id, the value of a template's `@id` annotation
+    /// (see `with_linked` / `resolve_template_id` for the resolution rule).
+    fn with_linked_batch(&self, links: Vec<Bound<'_, PyDict>>) -> PyResult<Self> {
+        let mut specs = Vec::with_capacity(links.len());
+        for link in &links {
+            specs.push(parse_link_spec(link)?);
+        }
+        self.apply_links(specs)
+    }
+
+    /// Return a NEW `PolicySet` handle with a single template linked. Sugar for
+    /// `with_linked_batch` with one link; see it for the slot-value forms and
+    /// error semantics.
+    ///
+    /// `template_id` is resolved to a template in the set by its literal Cedar
+    /// id first; if no template has that literal id, it is matched against the
+    /// value of each template's `@id` annotation (the labeling convention the
+    /// Cedar CLI uses for linking — an `@id` is otherwise inert and is not the
+    /// template's id). An `@id` match must be unambiguous.
+    ///
+    /// :raises ValueError: as `with_linked_batch`.
+    #[pyo3(signature = (template_id, new_id, values))]
+    fn with_linked(
+        &self,
+        template_id: &str,
+        new_id: &str,
+        values: &Bound<'_, PyDict>,
+    ) -> PyResult<Self> {
+        let spec = (
+            template_id.to_string(),
+            new_id.to_string(),
+            parse_slot_values(values)?,
+        );
+        self.apply_links(vec![spec])
+    }
+
+    /// The templates in this set — the linkable `?principal` / `?resource`
+    /// policies — as a list of dicts, one per template:
+    ///
+    ///   - `id`: the template's literal Cedar id (the positional `policy<N>`,
+    ///     or an explicit id if one was assigned).
+    ///   - `id_annotation`: the value of its `@id` annotation, or `None` when it
+    ///     has none. **Prefer this when linking** — an `@id` is stable across
+    ///     parsing and merging, whereas the positional `id` is not (see
+    ///     `with_linked`). Either is accepted as `template_id`.
+    ///   - `slots`: the slot keys it declares, e.g. `["?principal"]` — the keys
+    ///     a link's `values` must fill.
+    ///   - `links`: the template-linked policies derived from this template,
+    ///     each `{"id": <new_id>, "values": {slot: entity_uid}}`. Empty until
+    ///     the template is linked. This is the filled-in view: it shows every
+    ///     concrete policy produced from the template and what each slot was
+    ///     bound to.
+    ///
+    /// Templates themselves are not counted by `len()` and authorize nothing;
+    /// their `links` are policies and do count.
+    fn templates<'py>(&self, py: Python<'py>) -> PyResult<Vec<Bound<'py, PyDict>>> {
+        // Group the set's template-linked policies by the template they came
+        // from (one pass over policies()), then attach each group to its
+        // template below.
+        let mut links_by_template: HashMap<String, Vec<Bound<'py, PyDict>>> = HashMap::new();
+        for p in self.inner.policies() {
+            let Some(template_pid) = p.template_id() else { continue };
+            let link = PyDict::new(py);
+            link.set_item("id", p.id().to_string())?;
+            let values = PyDict::new(py);
+            if let Some(slot_values) = p.template_links() {
+                for (slot, euid) in slot_values {
+                    values.set_item(slot.to_string(), euid.to_string())?;
+                }
+            }
+            link.set_item("values", values)?;
+            links_by_template
+                .entry(template_pid.to_string())
+                .or_default()
+                .push(link);
+        }
+
+        let mut out = Vec::new();
+        for t in self.inner.templates() {
+            let tid = t.id().to_string();
+            let d = PyDict::new(py);
+            // `@id` value, if declared (`""` for bare `@id` / `@id("")`); `None`
+            // when absent. Raw `&str` keys, like `lookup_id_annotation`.
+            let id_annotation = t
+                .annotations()
+                .find(|(k, _)| *k == "id")
+                .map(|(_, v)| v.to_string());
+            let slots: Vec<String> = t.slots().map(|s| s.to_string()).collect();
+            let links = links_by_template.remove(&tid).unwrap_or_default();
+            d.set_item("id", tid)?;
+            d.set_item("id_annotation", id_annotation)?;
+            d.set_item("slots", slots)?;
+            d.set_item("links", links)?;
+            out.push(d);
+        }
+        Ok(out)
+    }
+
+    /// Return a NEW `PolicySet` handle with the template-linked policy
+    /// `link_id` removed (the immutable counterpart to `with_linked`). The base
+    /// is cloned and left unchanged.
+    ///
+    /// :raises ValueError: if `link_id` is not a template-linked policy in the
+    ///     set (no such id, or it names a static policy or a template).
+    fn without_linked(&self, link_id: &str) -> PyResult<Self> {
+        let mut merged = self.inner.clone();
+        merged
+            .unlink(PolicyId::new(link_id))
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("unlink failed: {e}")))?;
+        Ok(PyPolicySet { inner: merged })
+    }
+
     /// The number of policies in the set.
     fn __len__(&self) -> usize {
         self.inner.policies().count()
@@ -156,6 +308,139 @@ impl PyPolicySet {
     fn __repr__(&self) -> String {
         format!("PolicySet(<{} policies>)", self.inner.policies().count())
     }
+}
+
+impl PyPolicySet {
+    /// Clone the base once and apply every link to the clone, returning a NEW
+    /// handle. Single and batch linking share this so they have identical
+    /// semantics and the batch case pays one clone. A failed link aborts the
+    /// whole operation: the partially-built clone is dropped and the base
+    /// (borrowed immutably) is untouched.
+    ///
+    /// `@id`-based `template_id` resolution is indexed once up front rather than
+    /// scanned per link: a batch of `L` links over a set of `T` templates costs
+    /// `O(T + L)`, not `O(T * L)`. Linking never adds or removes templates, so
+    /// the index stays valid across the whole batch.
+    fn apply_links(
+        &self,
+        specs: Vec<(String, String, HashMap<SlotId, EntityUid>)>,
+    ) -> PyResult<Self> {
+        let mut merged = self.inner.clone();
+        let id_index = build_template_id_index(&merged);
+        for (template_id, new_id, values) in specs {
+            let resolved = resolve_template_id(&merged, &id_index, &template_id)?;
+            merged
+                .link(resolved, PolicyId::new(new_id), values)
+                .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("template link failed: {e}")))?;
+        }
+        Ok(PyPolicySet { inner: merged })
+    }
+}
+
+/// Index each template's `@id` annotation value to its `PolicyId`, for cheap
+/// repeated resolution across a batch. A value declared by more than one
+/// template maps to `None` (ambiguous), so resolution can reject it rather than
+/// link an arbitrary one (cf. the duplicate-`@id` concern in #77).
+/// `Template::annotations()` yields raw `&str` keys, so this avoids Cedar's
+/// identifier-parse cost.
+fn build_template_id_index(pset: &PolicySet) -> HashMap<String, Option<PolicyId>> {
+    let mut index: HashMap<String, Option<PolicyId>> = HashMap::new();
+    for t in pset.templates() {
+        if let Some((_, v)) = t.annotations().find(|(k, _)| *k == "id") {
+            index
+                .entry(v.to_string())
+                .and_modify(|e| *e = None) // already seen this @id => ambiguous
+                .or_insert_with(|| Some(t.id().clone()));
+        }
+    }
+    index
+}
+
+/// Resolve a caller-supplied template id to a template's real `PolicyId`.
+///
+/// Cedar identifies a template by its parser-assigned `PolicyId` (`policy0`,
+/// …); an `@id("name")` annotation is inert and is NOT the id (the Cedar CLI
+/// applies `@id` as a labeling convention at load time; the library does not).
+/// To keep linking ergonomic and match that CLI convention, we accept either
+/// the literal template id (an `O(1)` lookup) or — when no template has that
+/// literal id — the value of a template's `@id` annotation, via the prebuilt
+/// `id_index` (also `O(1)`). An `@id` match must be unambiguous. Resolution
+/// never renames or rebuilds the set; it only maps the friendly name to the
+/// authoritative parser id.
+fn resolve_template_id(
+    pset: &PolicySet,
+    id_index: &HashMap<String, Option<PolicyId>>,
+    given: &str,
+) -> PyResult<PolicyId> {
+    let literal = PolicyId::new(given);
+    if pset.template(&literal).is_some() {
+        return Ok(literal);
+    }
+    match id_index.get(given) {
+        Some(Some(pid)) => Ok(pid.clone()),
+        Some(None) => Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "ambiguous template @id {given:?}: multiple templates declare it; link by the literal template id instead"
+        ))),
+        None => Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "no template with id or @id {given:?} in the policy set"
+        ))),
+    }
+}
+
+/// Map a Python slot key to a Cedar `SlotId`. Only the two GA template slots
+/// exist; anything else is a caller error.
+fn parse_slot_id(key: &str) -> PyResult<SlotId> {
+    match key {
+        "?principal" => Ok(SlotId::principal()),
+        "?resource" => Ok(SlotId::resource()),
+        other => Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "unknown template slot {other:?}; expected \"?principal\" or \"?resource\""
+        ))),
+    }
+}
+
+/// Parse a `values` dict — slot key (`"?principal"`/`"?resource"`) to an entity
+/// uid in either accepted form — into the `HashMap` `PolicySet::link` takes.
+fn parse_slot_values(values: &Bound<'_, PyDict>) -> PyResult<HashMap<SlotId, EntityUid>> {
+    let mut out: HashMap<SlotId, EntityUid> = HashMap::new();
+    for (k, v) in values.iter() {
+        let key: String = k.extract().map_err(|_| {
+            pyo3::exceptions::PyTypeError::new_err("template slot key must be a string")
+        })?;
+        let slot = parse_slot_id(&key)?;
+        let what = format!("template slot {key:?} value");
+        let euid = euid_input_from_value(&v, || what.clone())?
+            .parse(&what)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("{e:#}")))?;
+        out.insert(slot, euid);
+    }
+    Ok(out)
+}
+
+/// Parse one link spec dict — `{"template_id", "new_id", "values"}` — into the
+/// `(template_id, new_id, slot values)` tuple `apply_links` consumes. The ids
+/// stay as strings; `template_id` is resolved to a real template `PolicyId`
+/// later, against the live set (see `resolve_template_id`).
+fn parse_link_spec(
+    link: &Bound<'_, PyDict>,
+) -> PyResult<(String, String, HashMap<SlotId, EntityUid>)> {
+    let template_id: String = link
+        .get_item("template_id")?
+        .ok_or_else(|| pyo3::exceptions::PyKeyError::new_err("link dict missing 'template_id' key"))?
+        .extract()?;
+    let new_id: String = link
+        .get_item("new_id")?
+        .ok_or_else(|| pyo3::exceptions::PyKeyError::new_err("link dict missing 'new_id' key"))?
+        .extract()?;
+    let values_obj = link
+        .get_item("values")?
+        .ok_or_else(|| pyo3::exceptions::PyKeyError::new_err("link dict missing 'values' key"))?;
+    let values_dict = values_obj.cast::<PyDict>().map_err(|_| {
+        pyo3::exceptions::PyTypeError::new_err(
+            "link 'values' must be a dict mapping slot keys to entity uids",
+        )
+    })?;
+    Ok((template_id, new_id, parse_slot_values(values_dict)?))
 }
 
 /// An opaque, reusable handle wrapping a parsed Cedar entity set.
@@ -571,6 +856,40 @@ fn stringify_errors(errs: &Vec<Error>) -> Vec<String> {
     errs.iter().map(|e| e.to_string()).collect()
 }
 
+/// Classify a Python entity-uid value as a Cedar surface-syntax string
+/// (e.g. `User::"alice"`) or a structured `{"type": ..., "id": ...}` dict
+/// (parsed via `EntityUid::from_json`). `what` labels the value in error
+/// messages (e.g. `request[principal]` or `template slot "?principal" value`)
+/// and is computed lazily — it is only needed on an error, so the success path
+/// (the hot per-request case) allocates no label. Shared by request
+/// principal/action/resource extraction and template slot values, so both
+/// accept the same two forms.
+fn euid_input_from_value(
+    value: &Bound<'_, PyAny>,
+    what: impl Fn() -> String,
+) -> PyResult<EntityUidInput> {
+    if let Ok(s) = value.cast::<PyString>() {
+        Ok(EntityUidInput::Cedar(s.to_string()))
+    } else if let Ok(d) = value.cast::<PyDict>() {
+        let type_name: String = d
+            .get_item("type")?
+            .ok_or_else(|| pyo3::exceptions::PyKeyError::new_err(
+                format!("{} dict missing 'type' key", what())))?
+            .extract()?;
+        let id: String = d
+            .get_item("id")?
+            .ok_or_else(|| pyo3::exceptions::PyKeyError::new_err(
+                format!("{} dict missing 'id' key", what())))?
+            .extract()?;
+        Ok(EntityUidInput::Json(json!({"type": type_name, "id": id})))
+    } else {
+        Err(pyo3::exceptions::PyTypeError::new_err(format!(
+            "{} must be a string (e.g. 'User::\"alice\"') or a dict with 'type' and 'id' keys",
+            what(),
+        )))
+    }
+}
+
 /// Extract a principal/action/resource value from a Python request
 /// dict. Accepts either a string (Cedar surface syntax, e.g.
 /// `User::"alice"`) or a dict with `type` and `id` keys (the
@@ -582,25 +901,7 @@ fn extract_euid_field(
     let value = request
         .get_item(field)?
         .ok_or_else(|| pyo3::exceptions::PyKeyError::new_err(field.to_string()))?;
-    if let Ok(s) = value.cast::<PyString>() {
-        Ok(EntityUidInput::Cedar(s.to_string()))
-    } else if let Ok(d) = value.cast::<PyDict>() {
-        let type_name: String = d
-            .get_item("type")?
-            .ok_or_else(|| pyo3::exceptions::PyKeyError::new_err(
-                format!("request[{field}] dict missing 'type' key")))?
-            .extract()?;
-        let id: String = d
-            .get_item("id")?
-            .ok_or_else(|| pyo3::exceptions::PyKeyError::new_err(
-                format!("request[{field}] dict missing 'id' key")))?
-            .extract()?;
-        Ok(EntityUidInput::Json(json!({"type": type_name, "id": id})))
-    } else {
-        Err(pyo3::exceptions::PyTypeError::new_err(format!(
-            "request[{field}] must be a string (e.g. 'User::\"alice\"') or a dict with 'type' and 'id' keys",
-        )))
-    }
+    euid_input_from_value(&value, || format!("request[{field}]"))
 }
 
 fn to_request_args(request: &Bound<'_, PyDict>) -> PyResult<RequestArgs> {
