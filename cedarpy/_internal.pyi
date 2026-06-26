@@ -22,6 +22,13 @@ class PolicySet:
     ``PolicySet.from_json_str(cedar_json)``; both raise ``ValueError`` on parse
     errors. The handle is immutable, and its memory is released automatically
     when the last Python reference is dropped.
+
+    A set may also contain Cedar *templates* (policies with ``?principal`` /
+    ``?resource`` slots). A template authorizes nothing until it is linked to
+    concrete values: ``with_linked`` / ``with_linked_batch`` return a NEW handle
+    with the linked policy added (immutable, like ``with_added_str``).
+    ``templates`` (which lists each template's links) and ``without_linked``
+    round out the lifecycle.
     """
 
     @staticmethod
@@ -47,6 +54,76 @@ class PolicySet:
         renumbered to follow it, exactly as concatenation would. ``@id``
         annotations are preserved. Raises ``ValueError`` if ``fragment`` cannot
         be parsed.
+        """
+        ...
+
+    def with_linked_batch(self, links: List[Dict[str, Any]]) -> "PolicySet":
+        """Return a NEW ``PolicySet`` handle with ``links`` applied — the primary
+        template-linking entry point (``with_linked`` is the single-link sugar).
+        Each link instantiates a template already in this set into a concrete,
+        evaluatable policy by filling its slots.
+
+        Linking does not modify or rename the template: it creates a *new* policy
+        (the template with its slots filled) and adds it. The template stays in
+        the set and can be linked again under a different ``new_id`` — that is how
+        one template grants many principals.
+
+        ``links`` is a list of dicts, each with ``template_id`` (which template to
+        fill in), ``new_id`` (the id assigned to the new linked policy this
+        creates — the caller's to choose, neither a template id nor a principal,
+        mirroring the Cedar CLI's ``--new-id``), and ``values`` (a dict mapping
+        each slot — ``"?principal"`` / ``"?resource"`` — to an entity uid as a
+        Cedar string ``'User::"jane"'`` or a ``{"type": ..., "id": ...}`` dict,
+        the two forms a request principal accepts).
+
+        The base is cloned once and every link applied to the clone, so a batch
+        pays a single clone; the base is unchanged. All-or-nothing: if any link
+        fails, ``ValueError`` is raised and no handle is returned.
+
+        ``template_id`` resolves to the template's literal Cedar id first, then
+        — if none matches — to the value of a template's ``@id`` annotation
+        (which must be unambiguous; an ``@id`` is otherwise inert and is not the
+        template's id). Raises ``ValueError`` if a ``template_id`` resolves to no
+        template, a ``new_id`` collides with an existing policy id, a slot value
+        is unparseable, or the template's slots are not exactly filled; raises
+        ``KeyError`` if a link dict omits ``template_id``/``new_id``/``values``.
+        """
+        ...
+
+    def with_linked(self, template_id: str, new_id: str, values: Dict[str, Any]) -> "PolicySet":
+        """Return a NEW ``PolicySet`` handle with a single template linked. Sugar
+        for ``with_linked_batch`` with one link; see it for the ``values`` forms,
+        ``template_id`` resolution (literal id, else ``@id``), and errors.
+        """
+        ...
+
+    def templates(self) -> List[Dict[str, Any]]:
+        """The templates in this set — the linkable ``?principal`` / ``?resource``
+        policies — as a list of dicts, one per template:
+
+        - ``id``: the template's literal Cedar id (positional ``policy<N>``, or
+          an explicit id if assigned).
+        - ``id_annotation``: the value of its ``@id`` annotation, or ``None``.
+          **Prefer this when linking** — an ``@id`` is stable across parsing and
+          merging, the positional ``id`` is not (see ``with_linked``). Either is
+          accepted as ``template_id``.
+        - ``slots``: the slot keys it declares, e.g. ``["?principal"]`` — the
+          keys a link's ``values`` must fill.
+        - ``links``: the template-linked policies derived from this template,
+          each ``{"id": <new_id>, "values": {slot: entity_uid}}``; empty until
+          the template is linked. The filled-in view — every concrete policy
+          produced from the template and what each slot was bound to.
+
+        Templates themselves are not counted by ``len()``; their ``links`` are
+        policies and do count.
+        """
+        ...
+
+    def without_linked(self, link_id: str) -> "PolicySet":
+        """Return a NEW ``PolicySet`` handle with the template-linked policy
+        ``link_id`` removed (the immutable counterpart to ``with_linked``). The
+        base is cloned and left unchanged. Raises ``ValueError`` if ``link_id``
+        is not a template-linked policy in the set.
         """
         ...
 
