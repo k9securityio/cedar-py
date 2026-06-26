@@ -268,7 +268,7 @@ A slot value is given as a Cedar string (`'User::"alice"'`) or a `{"type": ..., 
 linked.templates()
 # [{'id': 'policy0',                       # positional id (the fragile one)
 #   'id_annotation': 'photo-access',       # the @id — the stable key to link by
-#   'slots': ['?principal', '?resource'],  # the slot keys a link must fill
+#   'slots': ['?principal', '?resource'],  # the set of slot keys a link must fill
 #   'links': [                             # the concrete policies produced from this template
 #       {'id': 'alice-vacation',
 #        'values': {'?principal': 'User::"alice"', '?resource': 'Photo::"vacation.jpg"'}},
@@ -287,7 +287,7 @@ revoked = linked.without_linked("bob-skyline")
 # revoked.templates()[0]['links'] now lists only alice-vacation
 ```
 
-`templates()` is the one introspection call you need: each template's `id` / `id_annotation` / `slots`, and the `links` produced from it (each link's `id` and bound `values`). To act on a single grant — e.g. revoke it — read its id from `links` and pass it to `without_linked(link_id)`. (Order within `templates` and `links` is not guaranteed.)
+`templates()` is the one introspection call you need to understand template declarations and links. `tempaltes` returns each template's `id`, `id_annotation`, and `slots` declarations plus the `links` produced from it (each link's `id` and bound `values`). To act on a single grant, e.g. revoke it, read its id from `links` and pass it to `without_linked(link_id)`.
 
 A linked policy carries two distinct labels, which matters when you read diagnostics. Its **id** is the `new_id` you gave it (`alice-vacation`) — unique to that link, and what appears in `result.diagnostics.reasons` when it fires. Its **`@id`** is *inherited from the template* (`photo-access`) — so every link of one template shares the same `@id` while keeping a distinct id. That is why a matched policy is identified by its id, not its `@id`: link a template for ten grants and ten policies share the `@id`, but each has its own id.
 

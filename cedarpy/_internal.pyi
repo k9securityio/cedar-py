@@ -107,8 +107,9 @@ class PolicySet:
           **Prefer this when linking** — an ``@id`` is stable across parsing and
           merging, the positional ``id`` is not (see ``with_linked``). Either is
           accepted as ``template_id``.
-        - ``slots``: the slot keys it declares, e.g. ``["?principal"]`` — the
-          keys a link's ``values`` must fill.
+        - ``slots``: the set of slot keys it declares, e.g. ``["?principal"]`` —
+          the keys a link's ``values`` must fill. Each slot appears at most once
+          and the order is not significant (returned sorted for determinism).
         - ``links``: the template-linked policies derived from this template,
           each ``{"id": <new_id>, "values": {slot: entity_uid}}``; empty until
           the template is linked. The filled-in view — every concrete policy

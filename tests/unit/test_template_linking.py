@@ -333,6 +333,20 @@ class TemplateIntrospectionTestCase(unittest.TestCase):
         # link_ids() helper flattens the same ids out of templates()
         self.assertEqual(["alice", "bob"], link_ids(linked))
 
+    def test_slots_is_a_set_returned_deterministically(self) -> None:
+        # A template's slots are a set: each of ?principal / ?resource appears at
+        # most once (a link's `values` is keyed by slot), so order is not part of
+        # the contract. templates() returns them sorted, so the result is
+        # deterministic (and the README example is reproducible).
+        both = PolicySet.from_str(
+            '@id("member")\n'
+            'permit(principal == ?principal, action == Action::"view", resource in ?resource);'
+        )
+        [t] = both.templates()
+        self.assertEqual({"?principal", "?resource"}, set(t["slots"]))  # the set contract
+        self.assertEqual(len(t["slots"]), len(set(t["slots"])))         # no duplicates
+        self.assertEqual(sorted(t["slots"]), t["slots"])                # deterministic, sorted
+
     def test_templates_id_annotation_none_when_absent(self) -> None:
         # a template with no @id reports id_annotation None (linkable by literal id)
         ps = PolicySet.from_str(

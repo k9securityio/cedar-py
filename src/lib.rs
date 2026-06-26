@@ -228,8 +228,9 @@ impl PyPolicySet {
     ///     has none. **Prefer this when linking** — an `@id` is stable across
     ///     parsing and merging, whereas the positional `id` is not (see
     ///     `with_linked`). Either is accepted as `template_id`.
-    ///   - `slots`: the slot keys it declares, e.g. `["?principal"]` — the keys
-    ///     a link's `values` must fill.
+    ///   - `slots`: the set of slot keys it declares, e.g. `["?principal"]` —
+    ///     the keys a link's `values` must fill. Each slot appears at most once
+    ///     and the order is not significant (returned sorted for determinism).
     ///   - `links`: the template-linked policies derived from this template,
     ///     each `{"id": <new_id>, "values": {slot: entity_uid}}`. Empty until
     ///     the template is linked. This is the filled-in view: it shows every
@@ -270,7 +271,12 @@ impl PyPolicySet {
                 .annotations()
                 .find(|(k, _)| *k == "id")
                 .map(|(_, v)| v.to_string());
-            let slots: Vec<String> = t.slots().map(|s| s.to_string()).collect();
+            // A template's slots are a set: each of `?principal` / `?resource`
+            // can appear at most once (a link's `values` is keyed by slot), so
+            // order carries no meaning. `Template::slots()` yields them in an
+            // unspecified order; sort for a deterministic, reproducible result.
+            let mut slots: Vec<String> = t.slots().map(|s| s.to_string()).collect();
+            slots.sort();
             let links = links_by_template.remove(&tid).unwrap_or_default();
             d.set_item("id", tid)?;
             d.set_item("id_annotation", id_annotation)?;
