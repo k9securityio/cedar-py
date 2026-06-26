@@ -175,19 +175,33 @@ for request in requests:
 
 ### Linking policy templates
 
-A Cedar [policy template](https://docs.cedarpolicy.com/policies/templates.html) is a policy with `?principal` / `?resource` *slots* — a rule written once and then *linked* to concrete entities to produce real, evaluatable policies. The canonical case is per-principal and per-resource grants — *allow this person to view this photo while their subscription is active*. You write that rule once as a template, then link it per grant.
+A Cedar [policy template](https://docs.cedarpolicy.com/policies/templates.html) is a policy with `?principal` / `?resource` *slots*. A **slot** is a placeholder that marks where a principal or resource is filled in later, when the template is *linked* to concrete entities to produce a real, evaluatable policy. So a template is a rule written once and linked per use. The canonical case is per-principal and per-resource grants — *allow this person to view this photo while their subscription is active*. You write that rule once as a template, then link it per grant.
 
 `PolicySet.from_str` already parses templates; they just authorize nothing until linked. `with_linked` fills a template's slots and returns a **new** `PolicySet` handle (immutable, like `with_added_str` — the base is left unchanged):
 
 ```python
 from cedarpy import PolicySet, is_authorized, Decision
 
-# one rule: a subscriber may view a photo that's been granted to them
-base = PolicySet.from_str(
-    '@id("photo-access")\n'
-    'permit(principal == ?principal, action == Action::"view", resource == ?resource)\n'
-    'when { principal.subscriptionActive };'
-)
+# two grant rules: an active subscriber may view a granted photo, and
+# editing also requires a non-free plan (trial users included)
+base = PolicySet.from_str("""
+    @id("photo-access")
+    permit (
+      principal == ?principal,
+      action == Action::"view",
+      resource == ?resource
+    )
+    when { principal.subscriptionActive };
+
+    @id("photo-edit")
+    permit (
+      principal == ?principal,
+      action == Action::"edit",
+      resource == ?resource
+    )
+    when
+    { principal.subscriptionActive && (!principal.freePlan || principal.inTrial) };
+""")
 
 # fill the slots to grant alice access to one photo
 linked = base.with_linked(
@@ -211,20 +225,42 @@ result.diagnostics.id_annotations_by_reason   # {'alice-vacation': 'photo-access
 
 Linking produces a *template-linked policy* — the slots filled with concrete values, which evaluates as a policy in its own right — and `new_id` is the id assigned to it. Linking does not rename or consume the template: the template stays in the set, so you can link it again under a different `new_id` to grant another principal (that's the whole point — one template, many grants). `new_id` is yours to choose; it is neither a template id nor a principal. (This mirrors the Cedar CLI's `link --template-id … --new-id …`.)
 
-To grant many principals at once, use `with_linked_batch`. It is the primary linking path: it clones the base **once** and applies every link to that clone, so a batch pays a single clone rather than one per link, and it is all-or-nothing (if any link fails the whole call raises and no handle is returned):
+To create many template-linked policies at once, use `with_linked_batch`. This is the primary linking path: in a single call it fills the slots of any templates in the `PolicySet` — the same one repeatedly or several different ones — with the entities you choose. If any link in the batch fails, the whole call raises and no handle is returned. It clones the base **once** rather than per link:
 
 ```python
 linked = base.with_linked_batch([
-    {"template_id": "photo-access", "new_id": "alice-vacation",
-     "values": {"?principal": 'User::"alice"', "?resource": 'Photo::"vacation.jpg"'}},
-    {"template_id": "photo-access", "new_id": "bob-skyline",
-     "values": {"?principal": {"type": "User", "id": "bob"}, "?resource": 'Photo::"skyline.jpg"'}},
+    # the same template, linked twice — two view grants
+    {
+        "template_id": "photo-access",
+        "new_id": "alice-vacation",
+        "values": {
+            "?principal": 'User::"alice"',
+            "?resource": 'Photo::"vacation.jpg"',
+        },
+    },
+    {
+        "template_id": "photo-access",
+        "new_id": "bob-skyline",
+        "values": {
+            "?principal": 'User::"bob"',
+            "?resource": 'Photo::"skyline.jpg"',
+        },
+    },
+    # a different template, but using dict assignment — an edit grant
+    {
+        "template_id": "photo-edit",
+        "new_id": "alice-edit-vacation",
+        "values": {
+            "?principal": {"type": "User", "id": "alice"},
+            "?resource": {"type": "Photo", "id": "vacation.jpg"},
+        },
+    },
 ])
 ```
 
 A slot value is given as a Cedar string (`'User::"alice"'`) or a `{"type": ..., "id": ...}` dict — the same two forms `is_authorized` accepts for a request principal/resource. A linked `PolicySet` is still just a `PolicySet`, so it works everywhere a policies string or handle does (`is_authorized`, `is_authorized_batch`, `is_authorized_partial`), and existing callers are untouched. Note that the slots fill only the principal and resource; the `when { principal.subscriptionActive }` condition is fixed in the template and shared by every link — write the rule (and its conditions) once, vary only who and what.
 
-**Identify a template by its `@id`, not its positional id.** Cedar assigns a surface-syntax policy a positional id — `policy0`, `policy1`, … — per parse, and that position can shift (`with_added_str`, for example, renumbers an incoming fragment's ids when it layers them onto a base). A template's `@id` annotation is invariant across parsing and merging, so it is the stable key to link against. `with_linked` accepts either — it matches the literal id first, then the `@id` — but prefer the `@id`. The match must be unambiguous; two templates sharing one `@id` raises rather than guessing. (An `@id` is [otherwise inert](https://docs.cedarpolicy.com/policies/syntax-policy.html#term-parc-annotations) and is not the template's id; cedarpy resolves it the way the Cedar CLI's `link` command does.)
+**Identify a template by its `@id`, not its positional id.** Cedar assigns a policy id by position — `policy0`, `policy1`, … — per parse. That position can shift: `with_added_str`, for example, renumbers an incoming fragment's ids when it layers them onto a base. A template's `@id` annotation is invariant across parsing and merging, so it is the stable key to link against. `with_linked` accepts either — it matches the literal id first, then the `@id` — but prefer the `@id`. The match must be unambiguous; two templates sharing one `@id` raises rather than guessing. (An `@id` is [otherwise inert](https://docs.cedarpolicy.com/policies/syntax-policy.html#term-parc-annotations) and is not the template's id; cedarpy resolves it the way the Cedar CLI's `link` command does.)
 
 `templates()` returns the full picture — each template's ids, the slots it needs, and the links (fillings) produced from it:
 
@@ -237,7 +273,13 @@ linked.templates()
 #       {'id': 'alice-vacation',
 #        'values': {'?principal': 'User::"alice"', '?resource': 'Photo::"vacation.jpg"'}},
 #       {'id': 'bob-skyline',
-#        'values': {'?principal': 'User::"bob"', '?resource': 'Photo::"skyline.jpg"'}}]}]
+#        'values': {'?principal': 'User::"bob"', '?resource': 'Photo::"skyline.jpg"'}}]},
+#  {'id': 'policy1',                        # the second template, linked once
+#   'id_annotation': 'photo-edit',
+#   'slots': ['?principal', '?resource'],
+#   'links': [
+#       {'id': 'alice-edit-vacation',
+#        'values': {'?principal': 'User::"alice"', '?resource': 'Photo::"vacation.jpg"'}}]}]
 
 # the link ids live under each template's 'links'; pass one to without_linked
 # to revoke that grant — returns a NEW handle; `linked` is unchanged

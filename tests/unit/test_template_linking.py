@@ -51,6 +51,11 @@ BOB_VIEW = {
     "action": 'Action::"view"',
     "resource": 'Photo::"vacation.jpg"',
 }
+BOB_EDIT = {
+    "principal": 'User::"bob"',
+    "action": 'Action::"edit"',
+    "resource": 'Photo::"vacation.jpg"',
+}
 
 
 def _link_alice(base: PolicySet) -> PolicySet:
@@ -152,17 +157,28 @@ class TemplateLinkingTestCase(unittest.TestCase):
 class TemplateBatchLinkingTestCase(unittest.TestCase):
     """with_linked_batch is the primary path; single linking is sugar over it."""
 
-    def test_batch_links_many_in_one_call(self) -> None:
-        base = PolicySet.from_str(PRINCIPAL_TEMPLATE)
+    def test_batch_links_many_across_different_templates(self) -> None:
+        # one batch links several templates at once, including *different* ones —
+        # here a view grant and an edit grant from two distinct templates
+        base = PolicySet.from_str(
+            '@id("grant-view")\n'
+            'permit(principal == ?principal, action == Action::"view", resource);\n'
+            '@id("grant-edit")\n'
+            'permit(principal == ?principal, action == Action::"edit", resource);'
+        )
         linked = base.with_linked_batch([
-            {"template_id": "grant-view", "new_id": "alice",
+            {"template_id": "grant-view", "new_id": "alice-view",
              "values": {"?principal": 'User::"alice"'}},
-            {"template_id": "grant-view", "new_id": "bob",
+            {"template_id": "grant-edit", "new_id": "bob-edit",
              "values": {"?principal": 'User::"bob"'}},
         ])
-        self.assertEqual(["alice", "bob"], link_ids(linked))
+        self.assertEqual(["alice-view", "bob-edit"], link_ids(linked))
+        # each link authorizes only its own template's action
         self.assertEqual(Decision.Allow, is_authorized(ALICE_VIEW, linked, ENTITIES).decision)
-        self.assertEqual(Decision.Allow, is_authorized(BOB_VIEW, linked, ENTITIES).decision)
+        self.assertEqual(Decision.Allow, is_authorized(BOB_EDIT, linked, ENTITIES).decision)
+        # cross action denied: bob holds an edit grant, not a view grant — proof
+        # the two links came from genuinely different templates
+        self.assertEqual(Decision.Deny, is_authorized(BOB_VIEW, linked, ENTITIES).decision)
 
     def test_single_and_batch_produce_identical_decisions(self) -> None:
         base = PolicySet.from_str(PRINCIPAL_TEMPLATE)
