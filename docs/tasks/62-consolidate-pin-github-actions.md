@@ -191,6 +191,15 @@ plus `env: GH_TOKEN: ${{ github.token }}` for online audits (or `--offline` for 
   (checkout without `persist-credentials:false`) are exactly what would fail *before* Phase C — which
   is why the lint job is added in the same edit that SHA-pins everything and adds `persist-credentials:false`.
 
+**Phase C outcome (verified):** After SHA-pinning + `persist-credentials:false`, zizmor surfaced 3
+`cache-poisoning` findings (Low confidence) on the `sccache: 'true'` maturin build steps — runtime
+caching in a workflow that publishes artifacts. **Resolved by removing `sccache: 'true'` from the 3
+build steps** (chosen over suppressing or conditionally enabling): cleanest hardening story, no
+suppression, removes the cross-run-cache vector from the build that produces published wheels. Trade-off
+accepted: cold Rust compiles in CI. Final local verification all green — `ruby -ryaml` parse OK,
+`zizmor==1.25.2` exit 0 (no findings, 6 below-threshold suppressed), `actionlint` (Docker) exit 0,
+20 `uses:` lines all SHA-pinned (zero bare tags), `persist-credentials: false` ×5.
+
 ## Phase B: resolved commit-SHA pins (2026-06-27)
 
 Cooldown re-checked (cutoff = published on/before 2026-06-20): `setup-python` v6.3.0 (2026-06-24)
