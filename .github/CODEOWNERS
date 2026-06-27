@@ -1,0 +1,24 @@
+# Code owners for cedar-py.
+# https://docs.github.com/articles/about-code-owners
+#
+# Owners listed here are AUTO-REQUESTED for review on pull requests that
+# touch the matching paths. The goal is to protect the CI/CD trusted
+# computing base — the workflows that build, test, and publish the package,
+# and the automation policy around them — from unreviewed changes.
+#
+# NOTE: this file only auto-requests review. To make code-owner review a
+# *merge requirement*, enable "Require review from Code Owners" in the
+# branch protection rule / ruleset for `main` (a repo setting, not
+# expressible here). For a solo maintainer that toggle will block your own
+# PRs (you can't review your own), so leave it advisory until there's a
+# second reviewer; the auto-request is still valuable for outside-contributor PRs.
+
+# GitHub Actions workflows — build, test, and OIDC publish to PyPI.
+# SHA-pinned and zizmor-linted; changes here alter the trusted build/release path.
+/.github/workflows/       @skuenzli
+
+# Dependency + automation policy (Dependabot config).
+/.github/dependabot.yml   @skuenzli
+
+# This file itself — changing code ownership requires the owner's review.
+/.github/CODEOWNERS        @skuenzli
