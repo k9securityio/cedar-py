@@ -191,6 +191,26 @@ plus `env: GH_TOKEN: ${{ github.token }}` for online audits (or `--offline` for 
   (checkout without `persist-credentials:false`) are exactly what would fail *before* Phase C — which
   is why the lint job is added in the same edit that SHA-pins everything and adds `persist-credentials:false`.
 
+## Phase B: resolved commit-SHA pins (2026-06-27)
+
+Cooldown re-checked (cutoff = published on/before 2026-06-20): `setup-python` v6.3.0 (2026-06-24)
+and `attest-build-provenance` v4.1.1 (2026-06-26) are still too new, so targets stay v6.2.0 /
+v4.1.0. Each SHA below was resolved via `gh api repos/<o>/<r>/commits/<tag>` (dereferences
+annotated tags to the commit) and verified to be a real 40-hex commit on the repo.
+
+| Action | Tag | Commit SHA |
+|---|---|---|
+| `actions/checkout` | v7.0.0 | `9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0` |
+| `actions/setup-python` | v6.2.0 | `a309ff8b426b58ec0e2a45f0f869d46889d02405` |
+| `actions/upload-artifact` | v7.0.1 | `043fb46d1a93c77aae656e7c1c64a875d1fc6a0a` |
+| `actions/download-artifact` | v8.0.1 | `3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c` |
+| `actions/attest-build-provenance` | v4.1.0 | `a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32` |
+| `PyO3/maturin-action` | v1.51.0 | `e83996d129638aa358a18fbd1dfb82f0b0fb5d3b` |
+| `uraimo/run-on-arch-action` | v3.1.0 | `f9b26e3a1a408d5fd530d20c17b9f3f4428ff8d9` |
+
+zizmor: PyPI pin `zizmor==1.25.2` (2026-05-16, eligible; 1.26.x too new) run via `pipx run`;
+the lint job's `checkout` reuses the v7.0.0 SHA above.
+
 ## Detailed implementation steps
 
 Branch `chore/consolidate-pin-github-actions` is already cut and carries the task doc +
