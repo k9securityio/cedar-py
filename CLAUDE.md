@@ -19,6 +19,12 @@ Project-specific guidance for Claude Code sessions working in `cedar-py`.
 
 ## Dependency management
 
+### Version-selection policy (all ecosystems)
+
+- **Prefer the latest version, subject to a 7-day cooldown.** When manually choosing a version to adopt (a `cargo update`, a `pip-compile --upgrade-package`, a GitHub Actions tag/SHA bump), pick the newest release that was **published at least 7 days ago** (14 days for a semver-major). If the latest release is inside the cooldown, step back to the most recent eligible one and re-check at implementation time — the window slides, so a too-new release usually ages into eligibility within days.
+- This matches the `cooldown` blocks in `.github/dependabot.yml` (7d minor/patch, 14d major), extending the same rule to the on-demand updates we actually do by hand. **Caveat — it does not yet hold automatically:** Dependabot version-updates are disabled, so those cooldown blocks are dormant; `cargo update` and `pip-compile --upgrade` have no built-in age gate; and security-update PRs intentionally bypass cooldown (ship the fix promptly). So the 7-day rule is a **manual discipline** for routine version bumps — verify publish dates yourself (e.g. `gh api repos/<o>/<r>/releases/latest --jq .published_at`).
+- **Security updates are exempt** — take the fix as soon as it's available regardless of age.
+
 ### Python
 
 - `make fresh-requirements` regenerates `requirements*.txt` via `pip-compile`, but **without** `--upgrade`. pip-compile is sticky: it reuses the versions already in the lockfile wherever constraints still permit. To actually move a version, pass `--upgrade-package <name>` or `--upgrade`.
@@ -31,6 +37,15 @@ Project-specific guidance for Claude Code sessions working in `cedar-py`.
 - **Pinning a specific transitive version:** prefer `cargo update --precise <ver> -p <crate>` over a `=X.Y.Z` manifest pin. Belt-and-suspenders (caret in `Cargo.toml` + precise in `Cargo.lock`) keeps the lock authoritative without freezing the manifest.
 - **Outside-contributor PRs and `Cargo.lock`:** be deliberate about transitive churn. If a contributor's PR adds/removes many lockfile entries beyond what the change requires, restore `Cargo.lock` from `main` (`git checkout main -- Cargo.lock`) and re-apply only the intended pins on top. We've done this once (PR #82) — small lockfile diffs are easier to audit and review.
 - **Collapsing a stale duplicate transitive version.** `Cargo.lock` can carry a semver-incompatible duplicate (e.g. `windows-sys 0.48` *and* `0.59`) when one consumer's version requirement is a *range* spanning both lines and the lock has a sticky old pin on that edge. Cargo only re-picks the highest in-range version when the consuming node itself changes — so `cargo update <the-consumer>` (which bumps that crate and re-resolves its edges) collapses the duplicate onto the version already in the tree. Targeted, minimal diff; prefer it over a blanket `cargo update`. PR #98 did exactly this: `cargo update winapi-util` (0.1.9→0.1.11) dropped 9 stale `windows-sys 0.48` entries by unifying onto the `0.59.0` already pulled by clap/miette/rustix/term. `cargo update -p <dup>@<oldver> --precise <newver>` is an equivalent lever but leaves a precise pin nobody later understands.
+
+### GitHub Actions (`.github/workflows/CI.yml`)
+
+- **Every `uses:` ref is pinned to a commit SHA** with the version tag in a trailing comment (`@<sha>  # v7.0.0`). SHA-pinning + workflow hardening landed in PR #100 (GH #62). The `lint-workflows` job runs **zizmor** (`pipx run zizmor==<ver>`) on every PR and **fails** on any unpinned action, script injection, dangerous trigger, or over-broad permission — a bare `@vN` ref will not pass CI.
+- **Bumping an action:** pick the cooldown-eligible version (see Version-selection policy), then resolve the tag to a commit SHA with `gh api repos/<o>/<r>/commits/<tag> --jq .sha` — this dereferences annotated tags to the underlying commit; pin the **commit**, not the tag object. Update both the SHA and the `# vX.Y.Z` comment.
+- **Do not regenerate `CI.yml` with `maturin generate-ci`** — it clobbers the SHA pins (the file header warns about this). The file is hand-maintained.
+- **`sccache` is intentionally absent from the wheel-build steps.** Removed in PR #100 because zizmor flagged `cache-poisoning` (a cross-run cache feeding the jobs that produce published wheels). Do **not** re-add caching to the build/publish jobs without resolving that finding — CI builds are cold Rust compiles by design (the macOS x86_64 build is the long pole, ~15 min).
+- **The zizmor job passes `GH_TOKEN: ${{ github.token }}`** on purpose, to enable zizmor's *online* audits — notably `known-vulnerable-actions` (cross-checks pinned SHAs against GitHub advisories). It's the auto-provided least-privilege `GITHUB_TOKEN`, not a PAT; without it zizmor still runs the static audits offline. Keep it.
+- **Release-job actions are PR-skipped.** `download-artifact`, `attest-build-provenance`, and `maturin upload` only run in the `release` job (tag / `workflow_dispatch`-gated), so a green PR does **not** validate them — they're first exercised on a real release. Note `attest-build-provenance@v4` emits a single combined attestation over `wheels-*/*` (v1 emitted one per wheel).
 
 ### Dependabot policy (`.github/dependabot.yml`)
 
@@ -62,6 +77,6 @@ Documented in `docs/release-process.md`. Highlights:
 
 ## Follow-on work to be aware of
 
-- **GitHub Actions consolidation (GH issue #62):** 6 actions in `CI.yml` are on outdated major versions (e.g. `actions/upload-artifact@v4` when v7 is current). Planned approach: one consolidated PR pinning all actions to commit SHAs with tag comments. Defer until there's time to review the cross-major changelogs, and do not bundle with a release.
+- **GitHub Actions consolidation + supply-chain hardening (GH #62):** Implemented in PR #100 (CI green; pending merge as of this writing). All `CI.yml` actions SHA-pinned to cooldown-eligible versions, `persist-credentials: false` on checkouts, a zizmor lint gate added, and `sccache` removed (cache-poisoning) — see the "GitHub Actions" subsection above. **Remaining out-of-band follow-ups** (repo/org settings that can't be expressed in the workflow file) are listed in the gitignored `out/62-out-of-band-hardening.md` — may be local-only: CODEOWNERS on `.github/workflows/`, disable "Allow GitHub Actions to create and approve PRs", org action-allowlist + SHA-pin enforcement, and optionally re-enabling Dependabot version-updates so the dormant cooldown auto-enforces. The release-path actions (`download-artifact@v8`, `attest@v4`, `maturin upload`) still validate on the next real release.
 - **Benchmark process improvements (GH issue #69):** Goals 2 and 3 have landed (PR #71 for the historical record + tooling; PR #84 for the median-of-N gate in `make benchmark-compare`). **Goal 1 remains open** — switching `make benchmark` / `benchmark-save` to release mode (currently debug). `benchmark-compare` is already release-mode as of PR #84.
   - **Empirical finding from PR #71's data:** medians are robust at N=5 (N=7 backfill shifted Δ by <1.3 pp on every benchmark we checked); max grows monotonically with N as more samples capture rare tail outliers and shouldn't be used for cross-state gating. The Δ max column in `HISTORY.md` is informational only.
