@@ -156,6 +156,41 @@ and the `maturin upload` (L211) — only run in the `release` job, which is skip
    one stating the file is hand-maintained, actions are pinned to commit SHAs (per the
    `# vX.Y.Z` tag comments), and `maturin generate-ci` must not be used to regenerate it.
 
+## Phase A research findings (2026-06-27)
+
+Per-action changelog review (sources in the eventual PR body). All bumps are **SAFE** for
+cedar-py's usage; CI is fully GitHub-hosted so the Node-24 / runner ≥ v2.327.1 floor that
+several majors introduce is already satisfied (it only bites self-hosted runners).
+
+| Action | Target | Verdict | Notes |
+|---|---|---|---|
+| `actions/checkout` | v7.0.0 | SAFE | v7's only behavior change blocks fork-PR checkout for `pull_request_target`/`workflow_run` — we use neither. `submodules:'true'` unchanged. |
+| `actions/setup-python` | v6.x | SAFE | `architecture` + `python-version` inputs unchanged; 3.13 resolves on all runners; no required inputs. We don't set `cache`, so v6 cache-key changes are moot. |
+| `actions/upload-artifact` | v7.0.1 | SAFE | Default `archive:true` still zips → keeps download compat. Distinct `name:`s, no collisions. |
+| `actions/download-artifact` | v8.0.1 | SAFE | No-input "download all" still creates one `wheels-*/` dir per artifact (glob intact). v8 errors on hash-mismatch (non-event for valid artifacts) and skips unzip only for non-zipped content (ours is zipped). |
+| `actions/attest-build-provenance` | v4.x | SAFE (1 change) | **v2+ emits a single combined attestation over `wheels-*/*` instead of one-per-wheel.** Accepted — it's the current recommended pattern. Permissions (`id-token`/`attestations: write`) unchanged. |
+| `PyO3/maturin-action` | v1.51.0 | SAFE | No v2 exists. `--find-interpreter`/`sccache`/`manylinux:auto`/`command:sdist`/`command:upload` (OIDC) unchanged through v1.51.0. |
+| `uraimo/run-on-arch-action` | v3.1.0 | SAFE | `arch`/`distro:ubuntu22.04`/`githubToken`/`install`/`run` all unchanged; v3 is a QEMU 9.2.2 upgrade that *improves* aarch64 emulation reliability. |
+
+**Non-version hardening confirmations:**
+- `persist-credentials: false` is safe on every checkout — nothing in CI git-pushes/commits, and
+  the submodule is public so its clone needs no token. (checkout v6+ also moved any persisted
+  cred to `$RUNNER_TEMP`, but with `false` none is persisted at all.)
+- No untrusted `${{ github.event.* }}` shell interpolation exists to fix (audit found only an `if:` expression).
+
+**zizmor decision (resolved):** run via **`pipx run zizmor==1.25.2`** in a `run:` step (pipx is
+preinstalled on `ubuntu-latest`), with only `actions/checkout` as a SHA-pinned action — smallest
+third-party surface, hard pass/fail via exit code. The official `zizmorcore/zizmor-action` (SARIF
+integration) was considered and declined for surface reasons. Job needs `permissions: contents: read`
+plus `env: GH_TOKEN: ${{ github.token }}` for online audits (or `--offline` for zero-network).
+- **Version cooldown:** `zizmor==1.25.2` (published 2026-05-16) is eligible; `1.26.x` (2026-06-21)
+  is too new under the on/before-2026-06-20 cutoff — re-check at implementation and take the newest eligible.
+- **Expected zizmor result:** a fully SHA-pinned workflow with `persist-credentials:false`,
+  `pull_request` triggers, least-privilege `permissions`, and OIDC produces **no findings** in the
+  default `regular` persona. zizmor's `unpinned-uses` (all actions, since v1.20.0) and `artipacked`
+  (checkout without `persist-credentials:false`) are exactly what would fail *before* Phase C — which
+  is why the lint job is added in the same edit that SHA-pins everything and adds `persist-credentials:false`.
+
 ## Detailed implementation steps
 
 Branch `chore/consolidate-pin-github-actions` is already cut and carries the task doc +
@@ -184,10 +219,10 @@ the target version and flagging any breaking change or newly-required input.
    - `uraimo/run-on-arch-action` v2→v3: review the major bump for input/behavior changes
      to `arch`/`distro`/`githubToken`/`install`/`run`.
 
-2. **Pick the zizmor action** for the new lint job and its cooldown-eligible version:
-   the official `zizmorcore/zizmor-action` (preferred — GitHub-owned-equivalent, maintained
-   by the zizmor project) vs running the `zizmor` PyPI/binary directly via a `run:` step.
-   Note its inputs (paths, min-severity, fail-on). It becomes the 8th action to SHA-pin.
+2. **zizmor lint approach (RESOLVED — see Phase A findings):** run `pipx run zizmor==<eligible>`
+   in a `run:` step (no zizmor action; only `actions/checkout` is SHA-pinned in that job).
+   Re-confirm the cooldown-eligible zizmor version at implementation (1.25.2 as of research;
+   1.26.x once it clears 7 days).
 
 3. **Confirm the two non-version hardening changes are safe for our usage:**
    - `persist-credentials: false` on `checkout`: we never `git push`/commit from CI and publish
@@ -234,13 +269,14 @@ zizmor lint job, and a corrected header.
     existing `submodules: 'true'` where present; the sdist checkout at L174 has no `with:` —
     add one).
 12. Add a `lint-workflows` job (runs on `pull_request`/`push`, `permissions: contents: read`):
-    `checkout` (SHA-pinned, `persist-credentials: false`) then the chosen SHA-pinned zizmor
-    action over `.github/workflows/`. This job both pins its own actions and enforces pinning
-    on the rest going forward — confirm zizmor passes against the just-edited file (triage any
-    findings; suppress with justification only if a finding is a false positive for our setup).
+    SHA-pinned `checkout` (`persist-credentials: false`) then a `run:` step
+    `pipx run zizmor==<eligible> .github/workflows/` with `env: GH_TOKEN: ${{ github.token }}`.
+    This enforces SHA-pinning on every future PR — confirm zizmor passes against the just-edited
+    file (triage any findings; only suppress via `zizmor.yml` with justification if a finding is a
+    genuine false positive for our setup).
 13. **Verify Phase C (local):**
     - `grep -nE 'uses:' .github/workflows/CI.yml` shows every line ending in a 40-hex SHA + `# v…`
-      comment; **zero** bare `@vN` tag refs remain (now ~21 `uses:` lines: 19 + 2 in the lint job).
+      comment; **zero** bare `@vN` tag refs remain (now 20 `uses:` lines: 19 + the lint job's checkout).
     - `grep -c 'persist-credentials: false'` returns 5 (4 build/release checkouts + lint job checkout).
     - Syntax: `python3 -c "import yaml; yaml.safe_load(open('.github/workflows/CI.yml'))"`.
     - actionlint (not installed locally) via Docker:
