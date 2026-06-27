@@ -19,6 +19,12 @@ Project-specific guidance for Claude Code sessions working in `cedar-py`.
 
 ## Dependency management
 
+### Version-selection policy (all ecosystems)
+
+- **Prefer the latest version, subject to a 7-day cooldown.** When manually choosing a version to adopt (a `cargo update`, a `pip-compile --upgrade-package`, a GitHub Actions tag/SHA bump), pick the newest release that was **published at least 7 days ago** (14 days for a semver-major). If the latest release is inside the cooldown, step back to the most recent eligible one and re-check at implementation time — the window slides, so a too-new release usually ages into eligibility within days.
+- This matches the `cooldown` blocks in `.github/dependabot.yml` (7d minor/patch, 14d major), extending the same rule to the on-demand updates we actually do by hand. **Caveat — it does not yet hold automatically:** Dependabot version-updates are disabled, so those cooldown blocks are dormant; `cargo update` and `pip-compile --upgrade` have no built-in age gate; and security-update PRs intentionally bypass cooldown (ship the fix promptly). So the 7-day rule is a **manual discipline** for routine version bumps — verify publish dates yourself (e.g. `gh api repos/<o>/<r>/releases/latest --jq .published_at`).
+- **Security updates are exempt** — take the fix as soon as it's available regardless of age.
+
 ### Python
 
 - `make fresh-requirements` regenerates `requirements*.txt` via `pip-compile`, but **without** `--upgrade`. pip-compile is sticky: it reuses the versions already in the lockfile wherever constraints still permit. To actually move a version, pass `--upgrade-package <name>` or `--upgrade`.
