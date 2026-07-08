@@ -5,8 +5,9 @@ from typing import Union, List, Optional, Any
 
 from cedarpy import _internal
 
-# Re-export the Rust-implemented PolicySet handle (see help(PolicySet) for usage).
+# Re-export the Rust-implemented PolicySet and Schema handles.
 PolicySet = _internal.PolicySet
+Schema = _internal.Schema
 
 
 class Entities:
@@ -39,11 +40,12 @@ class Entities:
         self._inner = _inner
 
     @staticmethod
-    def from_json_str(s: str, schema: Union[str, dict, None] = None) -> "Entities":
+    def from_json_str(s: str, schema: Union[str, dict, 'Schema', None] = None) -> "Entities":
         """Parse an ``Entities`` handle from a Cedar JSON entities document.
 
-        :param schema: (optional) a Cedar schema as a JSON/Cedar string or a
-            dict; when supplied, the entities are validated against it.
+        :param schema: (optional) a Cedar schema as a JSON/Cedar string, a
+            dict, or a pre-parsed ``Schema`` handle; when supplied, the entities
+            are validated against it.
         :raises ValueError: if the entities (or schema) cannot be parsed, or the
             entities do not conform to ``schema``.
         """
@@ -51,14 +53,15 @@ class Entities:
             schema = json.dumps(schema)
         return Entities(_internal.Entities.from_json_str(s, schema))
 
-    def with_added_json_str(self, delta: str, schema: Union[str, dict, None] = None) -> "Entities":
+    def with_added_json_str(self, delta: str, schema: Union[str, dict, 'Schema', None] = None) -> "Entities":
         """Return a NEW ``Entities`` handle: this base plus the entities parsed
         from ``delta``. The base is cloned, not re-parsed — only ``delta`` is
         parsed. The merge is a disjoint union: a ``delta`` entity whose uid
         duplicates a non-identical base uid raises ``ValueError``.
 
-        :param schema: (optional) a Cedar schema as a JSON/Cedar string or a
-            dict; when supplied, validates the combined set.
+        :param schema: (optional) a Cedar schema as a JSON/Cedar string, a
+            dict, or a pre-parsed ``Schema`` handle; when supplied, validates
+            the combined set.
         :raises ValueError: if ``delta`` (or ``schema``) cannot be parsed, a
             ``delta`` uid duplicates a non-identical base uid, or the result
             violates ``schema``.
@@ -219,7 +222,7 @@ class ValidationResult:
 def is_authorized(request: dict,
                   policies: Union[str, PolicySet],
                   entities: Union[str, List[dict], Entities],
-                  schema: Union[str, dict, None] = None,
+                  schema: Union[str, dict, 'Schema', None] = None,
                   verbose: bool = False) -> AuthzResult:
     """Evaluate whether the request is authorized given the parameters.
 
@@ -252,7 +255,7 @@ def is_authorized(request: dict,
 def is_authorized_batch(requests: List[dict],
                         policies: Union[str, PolicySet],
                         entities: Union[str, List[dict], Entities],
-                        schema: Union[str, dict, None] = None,
+                        schema: Union[str, dict, 'Schema', None] = None,
                         verbose: bool = False) -> List[AuthzResult]:
     """Evaluate whether a batch of requests are authorized given the other parameters.  Each request is evaluated
     independently and results in an AuthzResult per request.
@@ -298,10 +301,9 @@ def is_authorized_batch(requests: List[dict],
         internal_entities = internal_entities._inner
 
     if schema is not None:
-        if isinstance(schema, str):
-            pass
-        elif isinstance(schema, dict):
+        if isinstance(schema, dict):
             schema = json.dumps(schema)
+        # str and Schema handles pass through directly to Rust's SchemaArg
 
     authz_result_strs: List[str] = _internal.is_authorized_batch(requests_local, policies, internal_entities, schema, verbose)
     authz_result_objs: List[dict] = []
@@ -433,7 +435,7 @@ class PartialAuthzResult:
 def is_authorized_partial(request: dict,
                           policies: Union[str, PolicySet],
                           entities: Union[str, List[dict], Entities],
-                          schema: Union[str, dict, None] = None,
+                          schema: Union[str, dict, 'Schema', None] = None,
                           verbose: bool = False) -> PartialAuthzResult:
     """Partially evaluate an authorization request with unknowns.
 
@@ -494,8 +496,9 @@ def is_authorized_partial(request: dict,
     elif isinstance(internal_entities, Entities):
         internal_entities = internal_entities._inner
 
-    if schema is not None and isinstance(schema, dict):
+    if isinstance(schema, dict):
         schema = json.dumps(schema)
+    # str, Schema handles, and None pass through directly to Rust's SchemaArg
 
     result_str = _internal.is_authorized_partial(
         request_local, policies, internal_entities, schema, verbose)
@@ -504,7 +507,7 @@ def is_authorized_partial(request: dict,
 
 
 def validate_policies(policies: str,
-                      schema: Union[str, dict]) -> ValidationResult:
+                      schema: Union[str, dict, 'Schema']) -> ValidationResult:
     """Validate Cedar policies against a schema.
 
     This function checks that policies are valid according to the provided schema,
@@ -512,7 +515,8 @@ def validate_policies(policies: str,
     expressions in policy conditions.
 
     :param policies: Cedar policies as a string
-    :param schema: Cedar schema (JSON dict, JSON string, or Cedar schema string)
+    :param schema: Cedar schema (JSON dict, JSON string, Cedar schema string,
+        or a pre-parsed ``Schema`` handle)
 
     :returns: ValidationResult with validation_passed boolean and list of errors
 
@@ -526,6 +530,7 @@ def validate_policies(policies: str,
     """
     if isinstance(schema, dict):
         schema = json.dumps(schema)
+    # str and Schema handles pass through directly to Rust's SchemaArg
 
     result_str = _internal.validate_policies(policies, schema)
     result_dict = json.loads(result_str)
