@@ -757,7 +757,7 @@ impl EntitiesArg {
     fn resolve<'a>(
         &'a self,
         slot: &'a mut Option<Entities>,
-        schema: &Option<Schema>,
+        schema: Option<&Schema>,
         errs: &mut Vec<Error>,
     ) -> &'a Entities {
         match self {
@@ -773,7 +773,7 @@ impl EntitiesArg {
     /// (still cheaper than re-deserializing the base JSON); the source path
     /// parses as usual. Either way the result is owned, matching the prior
     /// string-path local.
-    fn resolve_partial(&self, schema: &Option<Schema>, errs: &mut Vec<Error>) -> Entities {
+    fn resolve_partial(&self, schema: Option<&Schema>, errs: &mut Vec<Error>) -> Entities {
         match self {
             EntitiesArg::Handle(handle) => handle.get().inner.clone().partial(),
             EntitiesArg::Source(entities) => {
@@ -903,16 +903,11 @@ fn is_authorized_batch(requests: Vec<Bound<'_, PyDict>>,
     let mut schema_slot: Option<Schema> = None;
     let schema_ref = resolve_schema_arg(&schema, &mut schema_slot, &mut errs, verbose);
     let t_parse_schema_duration = t_start_schema.elapsed();
-    // Wrap in Option<Schema> for the entities path that needs &Option<Schema>.
-    // The authz path uses schema_ref directly.
-    let schema_opt_for_entities: Option<&Schema> = schema_ref;
-
     // load entities (or borrow the pre-parsed Entities handle, skipping the parse)
     let entities_pre_parsed = matches!(&entities, EntitiesArg::Handle(_));
     let t_load_entities = Instant::now();
     let mut entities_slot: Option<Entities> = None;
-    let schema_as_option = schema_opt_for_entities.cloned();
-    let entities = entities.resolve(&mut entities_slot, &schema_as_option, &mut errs);
+    let entities = entities.resolve(&mut entities_slot, schema_ref, &mut errs);
     let t_load_entities_duration = t_load_entities.elapsed();
 
     // build a list of RequestArgs
@@ -929,7 +924,7 @@ fn is_authorized_batch(requests: Vec<Bound<'_, PyDict>>,
             let ans = execute_authorization_request(&request_args,
                                                     policy_set,
                                                     entities,
-                                                    &schema_as_option,
+                                                    schema_ref,
                                                     verbose);
             let response_string: String = match ans {
                 Ok(mut ans) => {
@@ -1188,14 +1183,14 @@ fn execute_authorization_request(
     request_args: &RequestArgs,
     policy_set: &PolicySet,
     entities: &Entities,
-    schema: &Option<Schema>,
+    schema: Option<&Schema>,
     verbose: bool
 ) -> Result<AuthzResponse, Vec<Error>> {
     let mut errs: Vec<Error> = vec![];
     let t_build_request = Instant::now();
 
     // may want to create request in calling method; then we could get relocate errs
-    let request = match request_args.get_request(schema.as_ref()) {
+    let request = match request_args.get_request(schema) {
         Ok(q) => Some(q),
         Err(e) => {
             errs.push(e.context("failed to parse schema from request"));
@@ -1223,8 +1218,8 @@ fn execute_authorization_request(
     }
 }
 
-fn make_entities(entities_str: &str, schema: &Option<Schema>, errs: &mut Vec<Error>) -> Entities {
-    match load_entities(entities_str, schema.as_ref()) {
+fn make_entities(entities_str: &str, schema: Option<&Schema>, errs: &mut Vec<Error>) -> Entities {
+    match load_entities(entities_str, schema) {
         Ok(entities) => entities,
         Err(e) => {
             errs.push(e);
@@ -1376,11 +1371,11 @@ fn is_authorized_partial(
     let mut schema_slot: Option<Schema> = None;
     let schema_ref = resolve_schema_arg(&schema, &mut schema_slot, &mut errs, verbose);
     let t_parse_schema_duration = t_start_schema.elapsed();
-    let schema = schema_ref.cloned();
+    let schema = schema_ref;
 
     let entities_pre_parsed = matches!(&entities, EntitiesArg::Handle(_));
     let t_load_entities = Instant::now();
-    let entities = entities.resolve_partial(&schema, &mut errs);
+    let entities = entities.resolve_partial(schema, &mut errs);
     let t_load_entities_duration = t_load_entities.elapsed();
 
     if !errs.is_empty() {
@@ -1428,7 +1423,7 @@ fn is_authorized_partial(
 
     if let Some(ctx_json) = context_str {
         let action_uid: Option<EntityUid> = action_str.and_then(|a| a.parse().ok());
-        match Context::from_json_str(ctx_json, schema.as_ref().and_then(|s| action_uid.as_ref().map(|a| (s, a)))) {
+        match Context::from_json_str(ctx_json, schema.and_then(|s| action_uid.as_ref().map(|a| (s, a)))) {
             Ok(ctx) => { builder = builder.context(ctx); }
             Err(e) => {
                 errs.push(Error::msg(format!("Failed to parse context: {}", e)));
@@ -1437,7 +1432,7 @@ fn is_authorized_partial(
         }
     }
 
-    let cedar_request = match &schema {
+    let cedar_request = match schema {
         Some(s) => match builder.schema(s).build() {
             Ok(r) => r,
             Err(e) => {
