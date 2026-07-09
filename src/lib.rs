@@ -486,17 +486,19 @@ struct PyEntities {
 impl PyEntities {
     /// Parse an `Entities` handle from a Cedar JSON entities document.
     ///
-    /// `schema` (optional) is Cedar schema text or JSON; when supplied, the
-    /// entities are validated against it at construction time. Parse errors are
-    /// raised eagerly here rather than folded into an authorization result.
+    /// `schema` (optional) is Cedar schema text, JSON, or a pre-parsed `Schema`
+    /// handle; when supplied, the entities are validated against it at
+    /// construction time. Parse errors are raised eagerly here rather than
+    /// folded into an authorization result.
     ///
     /// :raises ValueError: if the entities (or schema) cannot be parsed, or the
     ///     entities do not conform to `schema`.
     #[staticmethod]
     #[pyo3(signature = (s, schema = None))]
-    fn from_json_str(s: &str, schema: Option<&str>) -> PyResult<Self> {
-        let schema = parse_schema_arg(schema)?;
-        match Entities::from_json_str(s, schema.as_ref()) {
+    fn from_json_str(s: &str, schema: Option<SchemaArg>) -> PyResult<Self> {
+        let mut slot: Option<Schema> = None;
+        let schema_ref = resolve_schema_arg_eager(&schema, &mut slot)?;
+        match Entities::from_json_str(s, schema_ref) {
             Ok(inner) => Ok(PyEntities { inner }),
             Err(e) => Err(pyo3::exceptions::PyValueError::new_err(format!("{:#}", e))),
         }
@@ -513,12 +515,13 @@ impl PyEntities {
     /// :raises ValueError: if `delta` (or `schema`) cannot be parsed, if a
     ///     `delta` uid duplicates a base uid, or the result violates `schema`.
     #[pyo3(signature = (delta, schema = None))]
-    fn with_added_json_str(&self, delta: &str, schema: Option<&str>) -> PyResult<Self> {
-        let schema = parse_schema_arg(schema)?;
+    fn with_added_json_str(&self, delta: &str, schema: Option<SchemaArg>) -> PyResult<Self> {
+        let mut slot: Option<Schema> = None;
+        let schema_ref = resolve_schema_arg_eager(&schema, &mut slot)?;
         // Clone keeps the handle immutable; `add_entities_from_json_str` consumes
         // the clone and parses only `delta` (not the base) before recomputing the
         // transitive closure.
-        match self.inner.clone().add_entities_from_json_str(delta, schema.as_ref()) {
+        match self.inner.clone().add_entities_from_json_str(delta, schema_ref) {
             Ok(inner) => Ok(PyEntities { inner }),
             Err(e) => Err(pyo3::exceptions::PyValueError::new_err(format!("{:#}", e))),
         }
@@ -545,13 +548,169 @@ impl PyEntities {
     }
 }
 
+/// An opaque, reusable handle wrapping a parsed Cedar schema.
+///
+/// Parsing a schema is a per-call cost in `is_authorized` (and
+/// `validate_policies`). Callers whose schema is static can parse it once
+/// into a `Schema` and reuse the handle across many calls, avoiding the
+/// re-parse each time:
+///
+///     schema = Schema.from_str(cedar_schema_text)   # parse once
+///     for req in requests:
+///         is_authorized(req, ps, entities, schema)  # reuse — no re-parse
+///
+/// A `Schema` is accepted anywhere a schema string is accepted:
+/// `is_authorized`, `is_authorized_batch`, `is_authorized_partial`,
+/// `validate_policies`, and the `schema` parameter of
+/// `Entities.from_json_str` / `Entities.with_added_json_str`.
+///
+/// Construct with `Schema.from_str(cedar_text)` for the Cedar human-readable
+/// schema syntax, or `Schema.from_json_str(json_text)` for the JSON schema
+/// format. Both raise `ValueError` on parse errors. The handle is immutable,
+/// and its memory is released automatically when the last Python reference is
+/// dropped. `str()` renders the schema to Cedar schema syntax (suitable for
+/// `Schema.from_str`, whichever format it was constructed from).
+#[pyclass(name = "Schema", frozen)]
+struct PySchema {
+    inner: Schema,
+    // The pre-compilation fragment. `Schema` is a one-way compilation with no
+    // render-back API, but `SchemaFragment` round-trips — keep it so `__str__`
+    // can render the schema.
+    fragment: SchemaFragment,
+}
+
+impl PySchema {
+    /// Compile `fragment` into the validated `Schema` and build the handle,
+    /// keeping the fragment for `__str__`. Compilation errors (e.g. an
+    /// undeclared entity type) raise `ValueError`, like the parse errors in
+    /// the constructors.
+    fn from_fragment(fragment: SchemaFragment) -> PyResult<Self> {
+        match Schema::from_schema_fragments([fragment.clone()]) {
+            Ok(inner) => Ok(PySchema { inner, fragment }),
+            Err(e) => Err(pyo3::exceptions::PyValueError::new_err(format!("{:#}", e))),
+        }
+    }
+}
+
+#[pymethods]
+impl PySchema {
+    /// Parse a `Schema` from Cedar human-readable schema syntax.
+    ///
+    /// :raises ValueError: if the schema cannot be parsed.
+    #[staticmethod]
+    fn from_str(s: &str) -> PyResult<Self> {
+        // Parse to a fragment first (rather than `Schema::from_str`) so the
+        // handle can render itself; `Schema`'s own constructors go through the
+        // same fragment parse internally. Schema warnings are dropped, as
+        // `Schema::from_str` drops them.
+        match SchemaFragment::from_cedarschema_str(s) {
+            Ok((fragment, _warnings)) => Self::from_fragment(fragment),
+            Err(e) => Err(pyo3::exceptions::PyValueError::new_err(format!("{:#}", e))),
+        }
+    }
+
+    /// Parse a `Schema` from the Cedar JSON schema format.
+    ///
+    /// :raises ValueError: if the JSON schema cannot be parsed.
+    #[staticmethod]
+    fn from_json_str(s: &str) -> PyResult<Self> {
+        match SchemaFragment::from_json_str(s) {
+            Ok(fragment) => Self::from_fragment(fragment),
+            Err(e) => Err(pyo3::exceptions::PyValueError::new_err(format!("{:#}", e))),
+        }
+    }
+
+    /// The schema rendered to Cedar schema syntax (suitable for
+    /// `Schema.from_str`), whichever format the handle was constructed from.
+    fn __str__(&self) -> String {
+        // `to_cedarschema` can fail on JSON-schema constructs with no Cedar
+        // syntax spelling; report rather than raise, as `Entities.__str__` does.
+        match self.fragment.to_cedarschema() {
+            Ok(rendered) => rendered,
+            Err(e) => format!("<unrenderable Schema: {e}>"),
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Schema(<{} entity types, {} actions>)",
+            self.inner.entity_types().count(),
+            self.inner.actions().count()
+        )
+    }
+}
+
+/// The `schema` argument accepted by the authorization and validation
+/// functions: either Cedar schema text / JSON (`str`) or a pre-parsed
+/// `Schema` handle. `Source` is tried first so a `str` argument pays no
+/// failed handle extraction; a `Schema` handle falls through to `Handle`.
+#[derive(FromPyObject)]
+enum SchemaArg {
+    Source(String),
+    Handle(Py<PySchema>),
+}
+
+/// Resolve an optional `SchemaArg` on the authorization path: parse errors
+/// are collected in `errs` (the authz path folds schema errors into the
+/// response). Returns `None` when no schema is provided, when the source is
+/// empty, or on parse failure.
+fn resolve_schema_arg<'a>(
+    arg: &'a Option<SchemaArg>,
+    slot: &'a mut Option<Schema>,
+    errs: &mut Vec<Error>,
+    verbose: bool,
+) -> Option<&'a Schema> {
+    match arg {
+        None => None,
+        Some(SchemaArg::Handle(handle)) => Some(&handle.get().inner),
+        Some(SchemaArg::Source(s)) => {
+            if verbose { println!("schema: {}", s); }
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                return None;
+            }
+            match parse_schema_src(trimmed) {
+                Ok(schema) => {
+                    *slot = Some(schema);
+                    slot.as_ref()
+                }
+                Err((was_json, e)) => {
+                    if verbose {
+                        println!("!!! could not construct schema from {}: {}",
+                                 if was_json { "JSON" } else { "str" }, e);
+                    }
+                    errs.push(Error::msg(format!("failed to parse schema from {}: {}",
+                                                 if was_json { "JSON" } else { "Cedar" }, e)));
+                    None
+                }
+            }
+        }
+    }
+}
+
+/// Resolve an optional `SchemaArg` on the constructor path: parse errors
+/// raise `ValueError` eagerly.
+fn resolve_schema_arg_eager<'a>(
+    arg: &'a Option<SchemaArg>,
+    slot: &'a mut Option<Schema>,
+) -> PyResult<Option<&'a Schema>> {
+    match arg {
+        None => Ok(None),
+        Some(SchemaArg::Handle(handle)) => Ok(Some(&handle.get().inner)),
+        Some(SchemaArg::Source(s)) => {
+            *slot = parse_schema_arg(Some(s.as_str()))?;
+            Ok(slot.as_ref())
+        }
+    }
+}
+
 /// Dispatch a trimmed, non-empty schema source to the right Cedar parser:
 /// a `{...}` source is parsed as JSON, anything else as Cedar schema syntax.
 /// Returns the parsed `Schema`, or `(was_json, error_string)` so each caller
 /// can format its own message and tell which parser was attempted. The
 /// empty/`None` source and how the error is surfaced (raise / collect /
-/// serialize) are the caller's concern — see `parse_schema_arg`, `make_schema`,
-/// and `validate_policies`.
+/// serialize) are the caller's concern — see `parse_schema_arg`,
+/// `resolve_schema_arg`, and `validate_policies`.
 fn parse_schema_src(trimmed: &str) -> Result<Schema, (bool, String)> {
     if trimmed.starts_with('{') {
         Schema::from_json_str(trimmed).map_err(|e| (true, e.to_string()))
@@ -635,7 +794,7 @@ impl EntitiesArg {
     fn resolve<'a>(
         &'a self,
         slot: &'a mut Option<Entities>,
-        schema: &Option<Schema>,
+        schema: Option<&Schema>,
         errs: &mut Vec<Error>,
     ) -> &'a Entities {
         match self {
@@ -651,7 +810,7 @@ impl EntitiesArg {
     /// (still cheaper than re-deserializing the base JSON); the source path
     /// parses as usual. Either way the result is owned, matching the prior
     /// string-path local.
-    fn resolve_partial(&self, schema: &Option<Schema>, errs: &mut Vec<Error>) -> Entities {
+    fn resolve_partial(&self, schema: Option<&Schema>, errs: &mut Vec<Error>) -> Entities {
         match self {
             EntitiesArg::Handle(handle) => handle.get().inner.clone().partial(),
             EntitiesArg::Source(entities) => {
@@ -730,7 +889,7 @@ impl RequestArgs {
 fn is_authorized(request: Bound<'_, PyDict>,
                  policies: PoliciesArg,
                  entities: EntitiesArg,
-                 schema: Option<String>,
+                 schema: Option<SchemaArg>,
                  verbose: Option<bool>)
                  -> PyResult<String> {
     Ok(is_authorized_batch(vec![request], policies, entities, schema, verbose)?[0].clone())
@@ -741,7 +900,7 @@ fn is_authorized(request: Bound<'_, PyDict>,
 fn is_authorized_batch(requests: Vec<Bound<'_, PyDict>>,
                        policies: PoliciesArg,
                        entities: EntitiesArg,
-                       schema: Option<String>,
+                       schema: Option<SchemaArg>,
                        verbose: Option<bool>)
                        -> PyResult<Vec<String>> {
     // CLI AuthorizeArgs: https://github.com/cedar-policy/cedar/blob/main/cedar-policy-cli/src/lib.rs#L183
@@ -756,7 +915,11 @@ fn is_authorized_batch(requests: Vec<Bound<'_, PyDict>>,
             EntitiesArg::Source(e) => println!("entities: {}", e),
             EntitiesArg::Handle(_) => println!("entities: <pre-parsed Entities handle>"),
         }
-        println!("schema: {}", schema.clone().unwrap_or(String::from("<none>")));
+        match &schema {
+            None => println!("schema: <none>"),
+            Some(SchemaArg::Source(s)) => println!("schema: {}", s),
+            Some(SchemaArg::Handle(_)) => println!("schema: <pre-parsed Schema handle>"),
+        }
     }
     let mut errs: Vec<Error> = vec![];
 
@@ -771,16 +934,17 @@ fn is_authorized_batch(requests: Vec<Bound<'_, PyDict>>,
     let policy_set = policies.resolve(&mut policy_set_slot, &mut errs, verbose);
     let t_parse_policies_duration = t_parse_policies.elapsed();
 
-    // parse schema
+    // parse schema (or borrow the pre-parsed Schema handle, skipping the parse)
+    let schema_pre_parsed = matches!(&schema, Some(SchemaArg::Handle(_)));
     let t_start_schema = Instant::now();
-    let schema = make_schema(&schema, verbose, &mut errs);
+    let mut schema_slot: Option<Schema> = None;
+    let schema_ref = resolve_schema_arg(&schema, &mut schema_slot, &mut errs, verbose);
     let t_parse_schema_duration = t_start_schema.elapsed();
-
     // load entities (or borrow the pre-parsed Entities handle, skipping the parse)
     let entities_pre_parsed = matches!(&entities, EntitiesArg::Handle(_));
     let t_load_entities = Instant::now();
     let mut entities_slot: Option<Entities> = None;
-    let entities = entities.resolve(&mut entities_slot, &schema, &mut errs);
+    let entities = entities.resolve(&mut entities_slot, schema_ref, &mut errs);
     let t_load_entities_duration = t_load_entities.elapsed();
 
     // build a list of RequestArgs
@@ -797,7 +961,7 @@ fn is_authorized_batch(requests: Vec<Bound<'_, PyDict>>,
             let ans = execute_authorization_request(&request_args,
                                                     policy_set,
                                                     entities,
-                                                    &schema,
+                                                    schema_ref,
                                                     verbose);
             let response_string: String = match ans {
                 Ok(mut ans) => {
@@ -807,6 +971,8 @@ fn is_authorized_batch(requests: Vec<Bound<'_, PyDict>>,
                                        policies_pre_parsed as u128);
                     ans.metrics.insert(String::from("parse_schema_duration_micros"),
                                        t_parse_schema_duration.as_micros());
+                    ans.metrics.insert(String::from("schema_pre_parsed"),
+                                       schema_pre_parsed as u128);
                     ans.metrics.insert(String::from("load_entities_duration_micros"),
                                        t_load_entities_duration.as_micros());
                     ans.metrics.insert(String::from("entities_pre_parsed"),
@@ -1054,14 +1220,14 @@ fn execute_authorization_request(
     request_args: &RequestArgs,
     policy_set: &PolicySet,
     entities: &Entities,
-    schema: &Option<Schema>,
+    schema: Option<&Schema>,
     verbose: bool
 ) -> Result<AuthzResponse, Vec<Error>> {
     let mut errs: Vec<Error> = vec![];
     let t_build_request = Instant::now();
 
     // may want to create request in calling method; then we could get relocate errs
-    let request = match request_args.get_request(schema.as_ref()) {
+    let request = match request_args.get_request(schema) {
         Ok(q) => Some(q),
         Err(e) => {
             errs.push(e.context("failed to parse schema from request"));
@@ -1089,8 +1255,8 @@ fn execute_authorization_request(
     }
 }
 
-fn make_entities(entities_str: &str, schema: &Option<Schema>, errs: &mut Vec<Error>) -> Entities {
-    match load_entities(entities_str, schema.as_ref()) {
+fn make_entities(entities_str: &str, schema: Option<&Schema>, errs: &mut Vec<Error>) -> Entities {
+    match load_entities(entities_str, schema) {
         Ok(entities) => entities,
         Err(e) => {
             errs.push(e);
@@ -1099,37 +1265,6 @@ fn make_entities(entities_str: &str, schema: &Option<Schema>, errs: &mut Vec<Err
     }
 }
 
-fn make_schema(schema_str: &Option<String>, verbose: bool, errs: &mut Vec<Error>) -> Option<Schema> {
-    let schema: Option<Schema> = match &schema_str {
-        None => None,
-        Some(schema_src) => {
-            if verbose {
-                println!("schema: {}", schema_src);
-            }
-
-            let trimmed_schema_src = schema_src.trim();
-
-            if trimmed_schema_src.is_empty() {
-                return None;
-            }
-
-            match parse_schema_src(trimmed_schema_src) {
-                Ok(schema) => Some(schema),
-                Err((was_json, e)) => {
-                    if verbose {
-                        // verbose uses "str" for the Cedar path (legacy wording)
-                        println!("!!! could not construct schema from {}: {}",
-                                 if was_json { "JSON" } else { "str" }, e);
-                    }
-                    errs.push(Error::msg(format!("failed to parse schema from {}: {}",
-                                                 if was_json { "JSON" } else { "Cedar" }, e)));
-                    None
-                }
-            }
-        }
-    };
-    schema
-}
 
 /// Load an `Entities` object from the given JSON string and optional schema.
 fn load_entities(entities_str: &str, schema: Option<&Schema>) -> Result<Entities> {
@@ -1157,7 +1292,7 @@ fn lookup_id_annotation(policy_set: &PolicySet, pid: &PolicyId) -> Option<String
 /// Validate Cedar policies against a schema and return a JSON result.
 #[pyfunction]
 #[pyo3(signature = (policies, schema))]
-fn validate_policies(policies: String, schema: String) -> String {
+fn validate_policies(policies: String, schema: SchemaArg) -> String {
     // Parse policies
     let policy_set = match PolicySet::from_str(&policies) {
         Ok(pset) => pset,
@@ -1174,33 +1309,36 @@ fn validate_policies(policies: String, schema: String) -> String {
         }
     };
 
-    // Parse schema (required for validation)
-    let trimmed_schema = schema.trim();
-    if trimmed_schema.is_empty() {
-        let result = ValidationResultSer {
-            validation_passed: false,
-            errors: vec![ValidationErrorSer {
-                policy_id: String::new(),
-                error: "Schema is required for validation".to_string(),
-            }],
-            id_annotations_by_policy_id: HashMap::new(),
-        };
-        return serde_json::to_string(&result).unwrap();
-    }
-
-    // Parse schema (JSON `{...}` vs Cedar syntax dispatched by `parse_schema_src`)
-    let cedar_schema: Schema = match parse_schema_src(trimmed_schema) {
-        Ok(s) => s,
-        Err((_, e)) => {
-            let result = ValidationResultSer {
-                validation_passed: false,
-                errors: vec![ValidationErrorSer {
-                    policy_id: String::new(),
-                    error: format!("Schema parse error: {}", e),
-                }],
-                id_annotations_by_policy_id: HashMap::new(),
-            };
-            return serde_json::to_string(&result).unwrap();
+    // Resolve schema (required for validation)
+    let cedar_schema: Schema = match schema {
+        SchemaArg::Handle(handle) => handle.get().inner.clone(),
+        SchemaArg::Source(s) => {
+            let trimmed_schema = s.trim();
+            if trimmed_schema.is_empty() {
+                let result = ValidationResultSer {
+                    validation_passed: false,
+                    errors: vec![ValidationErrorSer {
+                        policy_id: String::new(),
+                        error: "Schema is required for validation".to_string(),
+                    }],
+                    id_annotations_by_policy_id: HashMap::new(),
+                };
+                return serde_json::to_string(&result).unwrap();
+            }
+            match parse_schema_src(trimmed_schema) {
+                Ok(s) => s,
+                Err((_, e)) => {
+                    let result = ValidationResultSer {
+                        validation_passed: false,
+                        errors: vec![ValidationErrorSer {
+                            policy_id: String::new(),
+                            error: format!("Schema parse error: {}", e),
+                        }],
+                        id_annotations_by_policy_id: HashMap::new(),
+                    };
+                    return serde_json::to_string(&result).unwrap();
+                }
+            }
         }
     };
 
@@ -1253,7 +1391,7 @@ fn is_authorized_partial(
     request: HashMap<String, Option<String>>,
     policies: PoliciesArg,
     entities: EntitiesArg,
-    schema: Option<String>,
+    schema: Option<SchemaArg>,
     verbose: Option<bool>,
 ) -> String {
     let verbose = verbose.unwrap_or(false);
@@ -1265,13 +1403,16 @@ fn is_authorized_partial(
     let policy_set = policies.resolve(&mut policy_set_slot, &mut errs, verbose);
     let t_parse_policies_duration = t_parse_policies.elapsed();
 
+    let schema_pre_parsed = matches!(&schema, Some(SchemaArg::Handle(_)));
     let t_start_schema = Instant::now();
-    let schema = make_schema(&schema, verbose, &mut errs);
+    let mut schema_slot: Option<Schema> = None;
+    let schema_ref = resolve_schema_arg(&schema, &mut schema_slot, &mut errs, verbose);
     let t_parse_schema_duration = t_start_schema.elapsed();
+    let schema = schema_ref;
 
     let entities_pre_parsed = matches!(&entities, EntitiesArg::Handle(_));
     let t_load_entities = Instant::now();
-    let entities = entities.resolve_partial(&schema, &mut errs);
+    let entities = entities.resolve_partial(schema, &mut errs);
     let t_load_entities_duration = t_load_entities.elapsed();
 
     if !errs.is_empty() {
@@ -1319,7 +1460,7 @@ fn is_authorized_partial(
 
     if let Some(ctx_json) = context_str {
         let action_uid: Option<EntityUid> = action_str.and_then(|a| a.parse().ok());
-        match Context::from_json_str(ctx_json, schema.as_ref().and_then(|s| action_uid.as_ref().map(|a| (s, a)))) {
+        match Context::from_json_str(ctx_json, schema.and_then(|s| action_uid.as_ref().map(|a| (s, a)))) {
             Ok(ctx) => { builder = builder.context(ctx); }
             Err(e) => {
                 errs.push(Error::msg(format!("Failed to parse context: {}", e)));
@@ -1328,7 +1469,7 @@ fn is_authorized_partial(
         }
     }
 
-    let cedar_request = match &schema {
+    let cedar_request = match schema {
         Some(s) => match builder.schema(s).build() {
             Ok(r) => r,
             Err(e) => {
@@ -1396,6 +1537,7 @@ fn is_authorized_partial(
         (String::from("parse_policies_duration_micros"), t_parse_policies_duration.as_micros()),
         (String::from("policies_pre_parsed"), policies_pre_parsed as u128),
         (String::from("parse_schema_duration_micros"), t_parse_schema_duration.as_micros()),
+        (String::from("schema_pre_parsed"), schema_pre_parsed as u128),
         (String::from("load_entities_duration_micros"), t_load_entities_duration.as_micros()),
         (String::from("entities_pre_parsed"), entities_pre_parsed as u128),
         (String::from("build_request_duration_micros"), build_request_duration.as_micros()),
@@ -1422,6 +1564,7 @@ fn is_authorized_partial(
 fn _internal(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyPolicySet>()?;
     m.add_class::<PyEntities>()?;
+    m.add_class::<PySchema>()?;
     m.add_function(wrap_pyfunction!(echo, m)?)?;
     m.add_function(wrap_pyfunction!(is_authorized, m)?)?;
     m.add_function(wrap_pyfunction!(is_authorized_batch, m)?)?;

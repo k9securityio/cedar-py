@@ -171,7 +171,34 @@ for request in requests:
 
 `with_added_json_str` is a disjoint union: a delta entity whose uid already exists in the base (and is not identical) raises `ValueError`. An optional `schema` argument to `from_json_str` / `with_added_json_str` validates the entities at construction. The handle is accepted anywhere an entities string/list is accepted (`is_authorized`, `is_authorized_batch`, `is_authorized_partial`), supports `len()` and `str()`, and sets `metrics["entities_pre_parsed"]` to `1` on the reuse path. As with the `PolicySet` handle, passing a string or list still works unchanged — the handle is purely opt-in.
 
-> Note: the `Entities` and `PolicySet` handles are independent and compose — reuse whichever inputs are stable for your workload, or both. Schema is still parsed on each call.
+> Note: the `Entities`, `PolicySet`, and `Schema` handles are independent and compose — reuse whichever inputs are stable for your workload, or all three.
+
+### Reusing parsed schema for performance
+
+The schema is parsed on each call too.
+When your schema is stable (it usually is),
+you can parse it once into a reusable `Schema` handle
+and pass it wherever you'd pass a schema string:
+
+```python
+from cedarpy import Schema, PolicySet, Entities, is_authorized
+
+schema = Schema.from_str(cedar_schema_text)          # Cedar human-readable syntax
+# or
+schema = Schema.from_json_str(cedar_schema_json)     # Cedar JSON format
+
+authz_result = is_authorized(request, policy_set, entities, schema=schema)
+```
+
+The handle is accepted anywhere a schema string or dict was accepted:
+`is_authorized`, `is_authorized_batch`, `is_authorized_partial`,
+`validate_policies`, and the `schema` argument to
+`Entities.from_json_str` / `Entities.with_added_json_str`.
+Passing a plain string or dict still works unchanged — the handle is purely opt-in.
+
+When a `Schema` handle is used,
+the authorization response sets `metrics["schema_pre_parsed"]` to `1`
+(vs. `0` when a string is parsed on the fly).
 
 ### Linking policy templates
 
@@ -361,10 +388,10 @@ This is particularly useful in CI/CD pipelines to catch policy errors before the
 Here's an example of basic use:
 
 ```python
-from cedarpy import validate_policies, ValidationResult
+from cedarpy import validate_policies, Schema, ValidationResult
 
 policies: str = "// a string containing Cedar policies"
-schema: str = "// a Cedar schema as JSON string, Cedar schema string, or Python dict"
+schema = Schema.from_str(cedar_schema_text)  # or a JSON string, Cedar string, or dict
 
 result: ValidationResult = validate_policies(policies, schema)
 
