@@ -239,7 +239,9 @@ def is_authorized(request: dict,
     :param entities a list of entities, a json-formatted string containing the list of entities, or a
     pre-parsed ``Entities`` handle (``Entities.from_json_str(...)``). Reusing a handle across calls
     avoids re-parsing the entity graph on every call; see the ``Entities`` class for details.
-    :param schema (optional) dictionary or json-formatted string containing the Cedar schema
+    :param schema (optional) a Cedar schema as a JSON dict, JSON string, Cedar schema string, or a
+    pre-parsed ``Schema`` handle (``Schema.from_str(...)``). Reusing a handle across calls avoids
+    re-parsing the schema on every call; see the ``Schema`` class for details.
     :param verbose (optional) boolean determining whether to enable verbose logging output within the library
 
     :returns an AuthzResult
@@ -271,7 +273,9 @@ def is_authorized_batch(requests: List[dict],
     :param entities a list of entities, a json-formatted string containing the list of entities, or a
     pre-parsed ``Entities`` handle (``Entities.from_json_str(...)``). Reusing a handle across calls
     avoids re-parsing the entity graph on every call; see the ``Entities`` class for details.
-    :param schema (optional) dictionary or json-formatted string containing the Cedar schema
+    :param schema (optional) a Cedar schema as a JSON dict, JSON string, Cedar schema string, or a
+    pre-parsed ``Schema`` handle (``Schema.from_str(...)``). Reusing a handle across calls avoids
+    re-parsing the schema on every call; see the ``Schema`` class for details.
     :param verbose (optional) boolean determining whether to enable verbose logging output within the library
 
     :returns a list of AuthzResults, in same order as the requests
@@ -470,7 +474,9 @@ def is_authorized_partial(request: dict,
     :param entities a list of entities, a json-formatted string containing the list of entities, or a
     pre-parsed ``Entities`` handle (``Entities.from_json_str(...)``). Reusing a handle across calls
     avoids re-parsing the entity graph on every call; see the ``Entities`` class for details.
-    :param schema (optional) dictionary or json-formatted string containing the Cedar schema
+    :param schema (optional) a Cedar schema as a JSON dict, JSON string, Cedar schema string, or a
+    pre-parsed ``Schema`` handle (``Schema.from_str(...)``). Reusing a handle across calls avoids
+    re-parsing the schema on every call; see the ``Schema`` class for details.
     :param verbose (optional) boolean determining whether to enable verbose logging output within the library
 
     :returns a PartialAuthzResult
