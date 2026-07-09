@@ -164,16 +164,17 @@ class Entities:
     """
 
     @staticmethod
-    def from_json_str(s: str, schema: Optional[str] = ...) -> "Entities":
+    def from_json_str(s: str, schema: Union[str, "Schema", None] = ...) -> "Entities":
         """Parse an ``Entities`` handle from a Cedar JSON entities document.
 
-        ``schema`` (optional) is Cedar schema text or JSON; when supplied, the
-        entities are validated against it. Raises ``ValueError`` if the entities
-        (or schema) cannot be parsed, or the entities violate ``schema``.
+        ``schema`` (optional) is Cedar schema text or JSON, or a pre-parsed
+        ``Schema`` handle; when supplied, the entities are validated against it.
+        Raises ``ValueError`` if the entities (or schema) cannot be parsed, or
+        the entities violate ``schema``.
         """
         ...
 
-    def with_added_json_str(self, delta: str, schema: Optional[str] = ...) -> "Entities":
+    def with_added_json_str(self, delta: str, schema: Union[str, "Schema", None] = ...) -> "Entities":
         """Return a NEW ``Entities`` handle: this base set plus the entities
         parsed from ``delta``. The base is cloned, not re-parsed — only ``delta``
         is parsed. The merge is a disjoint union: a ``delta`` entity whose uid
@@ -191,6 +192,41 @@ class Entities:
     def __repr__(self) -> str: ...
 
 
+class Schema:
+    """An opaque, reusable handle wrapping a parsed Cedar schema.
+
+    Parsing and validating a schema is expensive. Callers whose schema is
+    static can parse it once into a ``Schema`` and reuse the handle across many
+    authorization or validation calls, avoiding the re-parse each time::
+
+        schema = Schema.from_str(cedar_schema_text)   # parse once
+        for req in requests:
+            is_authorized(req, policies, entities, schema=schema)  # reuse
+
+    A ``Schema`` is accepted anywhere a schema string is accepted:
+    ``is_authorized``, ``is_authorized_batch``, ``is_authorized_partial``,
+    ``validate_policies``, ``Entities.from_json_str``, and
+    ``Entities.with_added_json_str``.
+
+    Construct with ``Schema.from_str(cedar_text)`` or
+    ``Schema.from_json_str(cedar_json)``; both raise ``ValueError`` on parse
+    errors. The handle is immutable, and its memory is released automatically
+    when the last Python reference is dropped.
+    """
+
+    @staticmethod
+    def from_str(s: str) -> "Schema":
+        """Parse a ``Schema`` from Cedar human-readable schema syntax. Raises ``ValueError`` on parse errors."""
+        ...
+
+    @staticmethod
+    def from_json_str(s: str) -> "Schema":
+        """Parse a ``Schema`` from the Cedar JSON schema format. Raises ``ValueError`` on parse errors."""
+        ...
+
+    def __repr__(self) -> str: ...
+
+
 def echo(s: str) -> str: ...
 
 
@@ -198,7 +234,7 @@ def is_authorized(
     request: Dict[str, Any],
     policies: Union[str, PolicySet],
     entities: Union[str, Entities],
-    schema: Optional[str] = ...,
+    schema: Union[str, "Schema", None] = ...,
     verbose: Optional[bool] = ...,
 ) -> str: ...
 
@@ -207,7 +243,7 @@ def is_authorized_batch(
     requests: List[Dict[str, Any]],
     policies: Union[str, PolicySet],
     entities: Union[str, Entities],
-    schema: Optional[str] = ...,
+    schema: Union[str, "Schema", None] = ...,
     verbose: Optional[bool] = ...,
 ) -> List[str]: ...
 
@@ -216,7 +252,7 @@ def is_authorized_partial(
     request: Dict[str, Optional[str]],
     policies: Union[str, PolicySet],
     entities: Union[str, Entities],
-    schema: Optional[str] = ...,
+    schema: Union[str, "Schema", None] = ...,
     verbose: Optional[bool] = ...,
 ) -> str: ...
 
@@ -230,4 +266,4 @@ def policies_to_json_str(s: str) -> str: ...
 def policies_from_json_str(s: str) -> str: ...
 
 
-def validate_policies(policies: str, schema: str) -> str: ...
+def validate_policies(policies: str, schema: Union[str, "Schema"]) -> str: ...
