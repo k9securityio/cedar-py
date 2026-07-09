@@ -85,9 +85,34 @@ class SchemaConstructionTestCase(unittest.TestCase):
         with self.assertRaises(ValueError):
             Schema.from_json_str('{"not_a_valid": "cedar json schema"}')
 
-    def test_repr(self) -> None:
+    def test_repr_reports_entity_type_and_action_counts(self) -> None:
         s = Schema.from_str(SCHEMA_CEDAR)
-        self.assertIn("Schema", repr(s))
+        self.assertEqual("Schema(<2 entity types, 2 actions>)", repr(s))
+
+
+class SchemaStrTestCase(unittest.TestCase):
+    """str() renders the schema to Cedar schema syntax, whichever format the
+    handle was constructed from, and the rendering round-trips through
+    Schema.from_str."""
+
+    def test_str_renders_cedar_syntax(self) -> None:
+        rendered = str(Schema.from_str(SCHEMA_CEDAR))
+        self.assertIn("entity User", rendered)
+        self.assertIn("entity Photo", rendered)
+        self.assertIn('action "view"', rendered)
+
+    def test_str_of_json_constructed_schema_renders_cedar_syntax(self) -> None:
+        rendered = str(Schema.from_json_str(SCHEMA_JSON))
+        self.assertIn("entity User", rendered)
+        self.assertIn('action "view"', rendered)
+
+    def test_str_round_trips_through_from_str(self) -> None:
+        for original in (Schema.from_str(SCHEMA_CEDAR), Schema.from_json_str(SCHEMA_JSON)):
+            reparsed = Schema.from_str(str(original))
+            from_original = is_authorized(ALICE_VIEW, OWNER_POLICY, ENTITIES_JSON, schema=original)
+            from_reparsed = is_authorized(ALICE_VIEW, OWNER_POLICY, ENTITIES_JSON, schema=reparsed)
+            self.assertEqual(Decision.Allow, from_reparsed.decision)
+            self.assertEqual(from_original.decision, from_reparsed.decision)
 
 
 class SchemaAuthzEquivalenceTestCase(unittest.TestCase):

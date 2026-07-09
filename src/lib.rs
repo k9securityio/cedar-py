@@ -568,10 +568,28 @@ impl PyEntities {
 /// schema syntax, or `Schema.from_json_str(json_text)` for the JSON schema
 /// format. Both raise `ValueError` on parse errors. The handle is immutable,
 /// and its memory is released automatically when the last Python reference is
-/// dropped.
+/// dropped. `str()` renders the schema to Cedar schema syntax (suitable for
+/// `Schema.from_str`, whichever format it was constructed from).
 #[pyclass(name = "Schema", frozen)]
 struct PySchema {
     inner: Schema,
+    // The pre-compilation fragment. `Schema` is a one-way compilation with no
+    // render-back API, but `SchemaFragment` round-trips — keep it so `__str__`
+    // can render the schema.
+    fragment: SchemaFragment,
+}
+
+impl PySchema {
+    /// Compile `fragment` into the validated `Schema` and build the handle,
+    /// keeping the fragment for `__str__`. Compilation errors (e.g. an
+    /// undeclared entity type) raise `ValueError`, like the parse errors in
+    /// the constructors.
+    fn from_fragment(fragment: SchemaFragment) -> PyResult<Self> {
+        match Schema::from_schema_fragments([fragment.clone()]) {
+            Ok(inner) => Ok(PySchema { inner, fragment }),
+            Err(e) => Err(pyo3::exceptions::PyValueError::new_err(format!("{:#}", e))),
+        }
+    }
 }
 
 #[pymethods]
@@ -581,8 +599,12 @@ impl PySchema {
     /// :raises ValueError: if the schema cannot be parsed.
     #[staticmethod]
     fn from_str(s: &str) -> PyResult<Self> {
-        match Schema::from_str(s) {
-            Ok(inner) => Ok(PySchema { inner }),
+        // Parse to a fragment first (rather than `Schema::from_str`) so the
+        // handle can render itself; `Schema`'s own constructors go through the
+        // same fragment parse internally. Schema warnings are dropped, as
+        // `Schema::from_str` drops them.
+        match SchemaFragment::from_cedarschema_str(s) {
+            Ok((fragment, _warnings)) => Self::from_fragment(fragment),
             Err(e) => Err(pyo3::exceptions::PyValueError::new_err(format!("{:#}", e))),
         }
     }
@@ -592,14 +614,29 @@ impl PySchema {
     /// :raises ValueError: if the JSON schema cannot be parsed.
     #[staticmethod]
     fn from_json_str(s: &str) -> PyResult<Self> {
-        match Schema::from_json_str(s) {
-            Ok(inner) => Ok(PySchema { inner }),
+        match SchemaFragment::from_json_str(s) {
+            Ok(fragment) => Self::from_fragment(fragment),
             Err(e) => Err(pyo3::exceptions::PyValueError::new_err(format!("{:#}", e))),
         }
     }
 
+    /// The schema rendered to Cedar schema syntax (suitable for
+    /// `Schema.from_str`), whichever format the handle was constructed from.
+    fn __str__(&self) -> String {
+        // `to_cedarschema` can fail on JSON-schema constructs with no Cedar
+        // syntax spelling; report rather than raise, as `Entities.__str__` does.
+        match self.fragment.to_cedarschema() {
+            Ok(rendered) => rendered,
+            Err(e) => format!("<unrenderable Schema: {e}>"),
+        }
+    }
+
     fn __repr__(&self) -> String {
-        "Schema(<parsed>)".to_string()
+        format!(
+            "Schema(<{} entity types, {} actions>)",
+            self.inner.entity_types().count(),
+            self.inner.actions().count()
+        )
     }
 }
 

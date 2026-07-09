@@ -211,7 +211,9 @@ class Schema:
     Construct with ``Schema.from_str(cedar_text)`` or
     ``Schema.from_json_str(cedar_json)``; both raise ``ValueError`` on parse
     errors. The handle is immutable, and its memory is released automatically
-    when the last Python reference is dropped.
+    when the last Python reference is dropped. ``str()`` renders the schema
+    to Cedar schema syntax (suitable for ``Schema.from_str``, whichever
+    format it was constructed from).
     """
 
     @staticmethod
@@ -224,6 +226,7 @@ class Schema:
         """Parse a ``Schema`` from the Cedar JSON schema format. Raises ``ValueError`` on parse errors."""
         ...
 
+    def __str__(self) -> str: ...
     def __repr__(self) -> str: ...
 
 
