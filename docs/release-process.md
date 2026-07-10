@@ -41,6 +41,8 @@ git commit -am "release: bump version to X.Y.Z
 
 Open the PR, wait for CI green across all platforms, and merge.
 
+After the merge, leave the `release/X.Y.Z` branch in place — both the local branch and the remote branch. Do not delete them as part of release cleanup.
+
 ### 2. Tag and push
 
 From updated `main`:
@@ -73,7 +75,15 @@ The job then:
 Confirm at https://pypi.org/project/cedarpy/X.Y.Z/ that:
 
 - All expected wheels (linux x86_64/aarch64, macos x86_64/aarch64, windows x64) and the sdist are present
-- Provenance attestations appear on each distribution
+
+Provenance attestations live on **GitHub**, not on PyPI: the release job generates them with `actions/attest-build-provenance`, and `maturin upload` does not push PEP 740 attestations to PyPI (the PyPI `/integrity/.../provenance` endpoint returns 404 for our distributions). Verify the SLSA provenance by checking a downloaded distribution against GitHub:
+
+```bash
+curl -sLO <files.pythonhosted.org URL of any wheel or the sdist>
+gh attestation verify <downloaded-file> --repo k9securityio/cedar-py
+```
+
+Because `attest-build-provenance@v4` emits a single combined attestation covering every wheel and the sdist, verifying one file confirms the whole set was built by the release workflow at the expected `vX.Y.Z` tag.
 
 ### 5. Publish the GitHub Release
 
