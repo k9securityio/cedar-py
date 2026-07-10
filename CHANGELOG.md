@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [4.8.7] - 2026-07-10
+
 ### Added
 
 - A reusable, pre-parsed `Schema` handle, completing the handle trio alongside `PolicySet` and `Entities`. Parse a schema once with `Schema.from_str(cedar_text)` or `Schema.from_json_str(json_text)` and pass the handle to `is_authorized`, `is_authorized_batch`, `is_authorized_partial`, or `validate_policies` anywhere a schema string is accepted — skipping the per-call parse. The `schema` parameter widens from `str | dict | None` to `str | dict | Schema | None`; existing string/dict callers are unchanged, so this is a pure, opt-in addition. The handle is immutable, releases its memory when the last Python reference is dropped, supports `str()` (the schema rendered to Cedar schema syntax, whichever format it was constructed from), and raises `ValueError` at construction on unparseable schemas. On a successful evaluation the result `metrics` gain a `schema_pre_parsed` flag (`1` for the handle path, `0` otherwise). Mirrors the `PolicySet` / `Entities` handle APIs ([#103](https://github.com/k9securityio/cedar-py/pull/103)). Thanks [@swenger](https://github.com/swenger)!
@@ -97,7 +99,8 @@ Dependency update release. No functional or API changes — Cedar Policy engine 
 
 - Performance regression test suite built on `pytest-benchmark` ([#39](https://github.com/k9securityio/cedar-py/pull/39))
 
-[Unreleased]: https://github.com/k9securityio/cedar-py/compare/v4.8.6...HEAD
+[Unreleased]: https://github.com/k9securityio/cedar-py/compare/v4.8.7...HEAD
+[4.8.7]: https://github.com/k9securityio/cedar-py/compare/v4.8.6...v4.8.7
 [4.8.6]: https://github.com/k9securityio/cedar-py/compare/v4.8.5...v4.8.6
 [4.8.5]: https://github.com/k9securityio/cedar-py/compare/v4.8.4...v4.8.5
 [4.8.4]: https://github.com/k9securityio/cedar-py/compare/v4.8.3...v4.8.4
