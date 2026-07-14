@@ -143,7 +143,7 @@ class AuthzResult:
         return Decision.Allow == self.decision
 
     @property
-    def correlation_id(self) -> Decision:
+    def correlation_id(self) -> Optional[str]:
         return self._authz_resp.get('correlation_id', None)
 
     @property
