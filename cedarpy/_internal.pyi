@@ -298,4 +298,16 @@ def policies_from_json_str(s: str) -> str: ...
 def policies_to_pst(s: str) -> "cedarpy.pst.PolicySet": ...
 
 
+def tpe_authorize(
+    principal: str,
+    action: str,
+    resource: str,
+    policies: Union[str, "PolicySet"],
+    entities: Union[str, "Entities"],
+    schema: Union[str, "Schema"],
+    context: Optional[str] = ...,
+    verbose: Optional[bool] = ...,
+) -> "cedarpy.TpeAuthzResult": ...
+
+
 def validate_policies(policies: str, schema: Union[str, "Schema"]) -> str: ...

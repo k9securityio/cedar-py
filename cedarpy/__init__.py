@@ -1,6 +1,7 @@
 import json
 from copy import copy
 from enum import Enum
+from dataclasses import dataclass
 from typing import Union, List, Optional, Any
 
 from cedarpy import _internal
@@ -89,6 +90,25 @@ class Decision(Enum):
     Allow = 'Allow'
     Deny = 'Deny'
     NoDecision = 'NoDecision'
+
+
+@dataclass(frozen=True)
+class TpeClassification:
+    """Policy ids TPE could not resolve, and the ones it did, for one effect."""
+    residual_ids: tuple
+    true_ids: tuple
+    false_ids: tuple
+    error_ids: tuple
+
+
+@dataclass(frozen=True)
+class TpeAuthzResult:
+    decision: Optional[Decision]
+    reason: tuple
+    permits: TpeClassification
+    forbids: TpeClassification
+    residual_policies: dict  # policy id -> cedarpy.pst.Template
+    metrics: dict
 
 
 class _DiagnosticsBase:
@@ -520,6 +540,34 @@ def is_authorized_partial(request: dict,
         request_local, policies, internal_entities, schema, verbose)
     result_dict = json.loads(result_str)
     return PartialAuthzResult(result_dict)
+
+
+def tpe_authorize(principal: str,
+                  action: str,
+                  resource: str,
+                  policies: Union[str, PolicySet],
+                  entities: Union[str, List[dict], Entities],
+                  schema: Union[str, dict, Schema],
+                  context: Optional[str] = None,
+                  verbose: bool = False) -> TpeAuthzResult:
+    """Type-aware partial evaluation (TPE) on a request with an unknown
+    principal and/or resource identity.
+
+    principal/resource accept Type::"id" (concrete) or a bare Type (known
+    type, unknown id). action must be concrete. schema is required. entities
+    must be fully concrete. Raises ValueError on unresolvable input.
+    """
+    internal_entities = entities
+    if isinstance(internal_entities, list):
+        internal_entities = json.dumps(internal_entities)
+    elif isinstance(internal_entities, Entities):
+        internal_entities = internal_entities._inner
+
+    if isinstance(schema, dict):
+        schema = json.dumps(schema)
+
+    return _internal.tpe_authorize(
+        principal, action, resource, policies, internal_entities, schema, context, verbose)
 
 
 def validate_policies(policies: str,

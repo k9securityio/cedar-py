@@ -338,19 +338,19 @@ class TestEntityUidsWalk(unittest.TestCase):
 
 
 class TestUnrepresentableNodesAreAbsent(unittest.TestCase):
-    """Neither node kind can occur, so neither is modelled.
+    """`Unknown` cannot occur, so it is not modelled.
 
     `pst::Template` validates each clause as it is added and rejects any
-    holding an `Unknown`. `ResidualError` needs cedar's `tpe` feature.
+    holding an `Unknown`. `ResidualError` is different: cedar's `tpe`
+    feature makes it real, so it is modelled here. See
+    `TestResidualErrorArrivesWithTpe`.
     """
 
-    def test_the_node_types_are_not_exported(self):
+    def test_unknown_is_not_exported(self):
         import cedarpy.pst as pst_module
 
-        for name in ("Unknown", "ResidualError"):
-            with self.subTest(name=name):
-                self.assertNotIn(name, pst_module.__all__)
-                self.assertFalse(hasattr(pst_module, name))
+        self.assertNotIn("Unknown", pst_module.__all__)
+        self.assertFalse(hasattr(pst_module, "Unknown"))
 
     def test_a_policy_holding_an_unknown_is_rejected_by_cedar(self):
         with self.assertRaises(ValueError) as caught:
@@ -386,6 +386,29 @@ class TestEntityUidsRejectsWhatItCannotWalk(unittest.TestCase):
         expected = frozenset({_uid("User", "alice"), _uid("User", "bob")})
         self.assertEqual(entity_uids(result.static_policies), expected)
         self.assertEqual(entity_uids(tuple(result.static_policies.values())), expected)
+
+
+class TestResidualErrorArrivesWithTpe(unittest.TestCase):
+    """`ResidualError` exists only because this build enables cedar's `tpe`.
+
+    TPE emits a statically-known-erroring subexpression as a call to `error()`,
+    which cedar's PST reads back as `Expr::ResidualError`. The interception is
+    behind the `tpe` feature, so without it the variant does not exist at all.
+    """
+
+    def test_it_is_exported_and_is_part_of_the_expr_union(self):
+        import typing
+
+        import cedarpy.pst as pst_module
+
+        self.assertIn("ResidualError", pst_module.__all__)
+        self.assertIn(pst_module.ResidualError, typing.get_args(pst_module.Expr))
+
+    def test_it_is_a_value_like_every_other_node(self):
+        from cedarpy.pst import ResidualError
+
+        self.assertEqual(ResidualError(), ResidualError())
+        self.assertEqual(len({ResidualError(), ResidualError()}), 1)
 
 
 class TestPolicySetRoundTrip(unittest.TestCase):

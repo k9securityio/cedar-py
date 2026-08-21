@@ -463,6 +463,33 @@ match clause.expr:
 
 See the [Policy Syntax Tree Guide](docs/guides/policy-syntax-tree-guide.md) for the type guarantees, finding the entities a policy names with `entity_uids`, and rewriting policy sets through `from_pst`.
 
+### Type-aware partial evaluation (TPE) on an unknown principal or resource
+
+`tpe_authorize` is for a different situation than `is_authorized_partial`: you
+know the type of the principal or resource but not which one. It requires a
+schema, and its residuals are `cedarpy.pst.Template` nodes, not JSON.
+
+```python
+from cedarpy import tpe_authorize
+
+schema = """
+    entity User;
+    entity Doc = { status: String };
+    action "view" appliesTo { principal: [User], resource: [Doc] };
+"""
+policies = """
+    permit(principal, action == Action::"view", resource)
+    when { resource.status == "active" };
+"""
+
+result = tpe_authorize('User::"alice"', 'Action::"view"', "Doc", policies, "[]", schema)
+print(result.decision)              # None -- not enough to decide yet
+print(result.permits.residual_ids)  # ('policy0',)
+print(result.residual_policies)     # {'policy0': Template(...)}
+```
+
+`permits` and `forbids` are kept separate, each a `TpeClassification` of
+`residual_ids`/`true_ids`/`false_ids`/`error_ids`.
 ## Developing
 
 

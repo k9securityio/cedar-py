@@ -78,6 +78,7 @@ struct PstClasses<'py> {
     if_then_else: Bound<'py, PyAny>,
     set: Bound<'py, PyAny>,
     record: Bound<'py, PyAny>,
+    residual_error: Bound<'py, PyAny>,
     when: Bound<'py, PyAny>,
     unless: Bound<'py, PyAny>,
     scope_any: Bound<'py, PyAny>,
@@ -117,6 +118,7 @@ impl<'py> PstClasses<'py> {
             if_then_else: get("IfThenElse")?,
             set: get("Set")?,
             record: get("Record")?,
+            residual_error: get("ResidualError")?,
             when: get("When")?,
             unless: get("Unless")?,
             scope_any: get("ScopeAny")?,
@@ -331,6 +333,7 @@ fn build_expr_at<'py>(c: &PstClasses<'py>, expr: &pst::Expr, depth: usize) -> Py
             }
             Ok(c.record.call1((build_mapping(c, items)?,))?.unbind())
         }
+        pst::Expr::ResidualError => Ok(c.residual_error.call0()?.unbind()),
         other => Err(pst_error("Expr variant", other)),
     }
 }
@@ -440,6 +443,171 @@ fn build_policy_set<'py>(c: &PstClasses<'py>, policy_set: &pst::PolicySet) -> Py
     let links = PyTuple::new(c.policy_set.py(), links)?;
     Ok(c.policy_set
         .call1((build_mapping(c, templates)?, build_mapping(c, static_policies)?, links))?
+        .unbind())
+}
+
+fn parse_partial_entity_uid(s: &str, field: &str) -> PyResult<PartialEntityUid> {
+    if let Ok(euid) = EntityUid::from_str(s) {
+        return Ok(PartialEntityUid::from_concrete(euid));
+    }
+    match EntityTypeName::from_str(s) {
+        Ok(ty) => Ok(PartialEntityUid::new(ty, None)),
+        Err(e) => Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "failed to parse {field} '{s}' as an entity uid (Type::\"id\") or a bare entity type (Type): {e}"
+        ))),
+    }
+}
+
+fn resolve_policies_eager<'a>(
+    policies: &'a PoliciesArg,
+    slot: &'a mut Option<PolicySet>,
+) -> PyResult<&'a PolicySet> {
+    let mut errs: Vec<Error> = vec![];
+    let resolved = policies.resolve(slot, &mut errs, false);
+    match errs.into_iter().next() {
+        Some(e) => Err(pyo3::exceptions::PyValueError::new_err(e.to_string())),
+        None => Ok(resolved),
+    }
+}
+
+fn resolve_entities_eager<'a>(
+    entities: &'a EntitiesArg,
+    slot: &'a mut Option<Entities>,
+    schema: Option<&Schema>,
+) -> PyResult<&'a Entities> {
+    let mut errs: Vec<Error> = vec![];
+    let resolved = entities.resolve(slot, schema, &mut errs);
+    match errs.into_iter().next() {
+        Some(e) => Err(pyo3::exceptions::PyValueError::new_err(e.to_string())),
+        None => Ok(resolved),
+    }
+}
+
+fn build_classification<'py>(
+    py: Python<'py>,
+    cls: &Bound<'py, PyAny>,
+    residual_ids: Vec<String>,
+    true_ids: Vec<String>,
+    false_ids: Vec<String>,
+    error_ids: Vec<String>,
+) -> PyResult<Py<PyAny>> {
+    Ok(cls
+        .call1((
+            PyTuple::new(py, residual_ids)?,
+            PyTuple::new(py, true_ids)?,
+            PyTuple::new(py, false_ids)?,
+            PyTuple::new(py, error_ids)?,
+        ))?
+        .unbind())
+}
+
+/// Perform type-aware partial evaluation (TPE) on a request whose principal
+/// and/or resource identity is unknown. Separate from is_authorized_partial;
+/// does not call, change, or share a response shape with it.
+#[pyfunction]
+#[pyo3(signature = (principal, action, resource, policies, entities, schema, context = None, verbose = false))]
+#[allow(clippy::too_many_arguments)]
+fn tpe_authorize(
+    py: Python<'_>,
+    principal: String,
+    action: String,
+    resource: String,
+    policies: PoliciesArg,
+    entities: EntitiesArg,
+    schema: SchemaArg,
+    context: Option<String>,
+    verbose: Option<bool>,
+) -> PyResult<Py<PyAny>> {
+    let verbose = verbose.unwrap_or(false);
+
+    let mut schema_slot: Option<Schema> = None;
+    let schema_arg = Some(schema);
+    let schema = resolve_schema_arg_eager(&schema_arg, &mut schema_slot)?
+        .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("tpe_authorize requires a non-empty schema"))?;
+
+    let mut policy_set_slot: Option<PolicySet> = None;
+    let policy_set = resolve_policies_eager(&policies, &mut policy_set_slot)?;
+
+    let mut entities_slot: Option<Entities> = None;
+    let concrete_entities = resolve_entities_eager(&entities, &mut entities_slot, Some(schema))?;
+
+    let action_euid = EntityUid::from_str(&action).map_err(|e| {
+        pyo3::exceptions::PyValueError::new_err(format!("failed to parse action '{action}': {e}"))
+    })?;
+
+    let cedar_context = match context {
+        Some(ctx_json) => Context::from_json_str(&ctx_json, Some((schema, &action_euid)))
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("failed to parse context: {e}")))?,
+        None => Context::empty(),
+    };
+
+    let t_build_request = Instant::now();
+    let partial_request = PartialRequest::new(
+        parse_partial_entity_uid(&principal, "principal")?,
+        action_euid,
+        parse_partial_entity_uid(&resource, "resource")?,
+        Some(cedar_context),
+        schema,
+    )
+    .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("failed to build partial request: {e}")))?;
+    let build_request_duration = t_build_request.elapsed();
+
+    let partial_entities = PartialEntities::from_concrete(concrete_entities.clone(), schema)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("failed to load entities for tpe: {e}")))?;
+
+    let t_tpe = Instant::now();
+    let response = policy_set
+        .tpe(&partial_request, &partial_entities, schema)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("tpe evaluation failed: {e}")))?;
+    let tpe_duration = t_tpe.elapsed();
+
+    if verbose {
+        println!("tpe_authorize decision: {:?}", response.decision());
+    }
+
+    let cedarpy = PyModule::import(py, "cedarpy")?;
+    let decision_cls = cedarpy.getattr("Decision")?;
+    let decision = match response.decision() {
+        Some(Decision::Allow) => Some(decision_cls.getattr("Allow")?),
+        Some(Decision::Deny) => Some(decision_cls.getattr("Deny")?),
+        None => None,
+    };
+    let reason_ids: Vec<String> = response.reason().into_iter().flatten().map(|id| id.to_string()).collect();
+    let reason = PyTuple::new(py, reason_ids)?;
+
+    let classification_cls = cedarpy.getattr("TpeClassification")?;
+    let permits = build_classification(
+        py, &classification_cls,
+        response.residual_permits().map(|id| id.to_string()).collect(),
+        response.true_permits().map(|id| id.to_string()).collect(),
+        response.false_permits().map(|id| id.to_string()).collect(),
+        response.error_permits().map(|id| id.to_string()).collect(),
+    )?;
+    let forbids = build_classification(
+        py, &classification_cls,
+        response.residual_forbids().map(|id| id.to_string()).collect(),
+        response.true_forbids().map(|id| id.to_string()).collect(),
+        response.false_forbids().map(|id| id.to_string()).collect(),
+        response.error_forbids().map(|id| id.to_string()).collect(),
+    )?;
+
+    let classes = PstClasses::load(py)?;
+    let mut residual_policies = Vec::new();
+    for policy in response.residual_policies() {
+        let pid = policy.id().to_string();
+        let pst_policy = policy.to_pst().map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("residual policy `{pid}` could not be converted to pst: {e}"))
+        })?;
+        residual_policies.push((pid, build_template(&classes, pst_policy.body())?));
+    }
+
+    let metrics = PyDict::new(py);
+    metrics.set_item("build_request_duration_micros", build_request_duration.as_micros())?;
+    metrics.set_item("tpe_duration_micros", tpe_duration.as_micros())?;
+
+    let result_cls = cedarpy.getattr("TpeAuthzResult")?;
+    Ok(result_cls
+        .call1((decision, reason, permits, forbids, build_mapping(&classes, residual_policies)?, metrics))?
         .unbind())
 }
 
@@ -2009,6 +2177,7 @@ fn _internal(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(policies_to_json_str, m)?)?;
     m.add_function(wrap_pyfunction!(policies_from_json_str, m)?)?;
     m.add_function(wrap_pyfunction!(policies_to_pst, m)?)?;
+    m.add_function(wrap_pyfunction!(tpe_authorize, m)?)?;
     m.add_function(wrap_pyfunction!(validate_policies, m)?)?;
     Ok(())
 }
