@@ -438,6 +438,34 @@ print(format_policies(policies))
 # when { resource.owner == principal };
 ```
 
+### Inspecting policies as a typed tree
+
+`policies_to_pst` parses policy text into typed nodes from `cedarpy.pst`, matching
+`cedar_policy::pst`. Use structural pattern matching instead of dict keys.
+
+```python
+from cedarpy import policies_to_pst
+from cedarpy.pst import BinaryOp, GetAttr, Var
+
+policies = """
+    permit(principal, action == Action::"view", resource)
+    when { resource.owner == principal };
+"""
+
+result = policies_to_pst(policies)
+clause = result.static_policies["policy0"].clauses[0]
+match clause.expr:
+    case BinaryOp(op="eq", left=GetAttr(attr="owner"), right=Var(name="principal")):
+        print("matched")
+```
+
+Static policies and unlinked templates only. A residual from `is_authorized_partial`
+cannot be parsed this way: PST rejects any clause containing an unresolved
+`unknown(...)` node, and every non-trivial residual has one.
+
+`dataclasses.asdict(result)` and `json.dumps(...)` work directly, since the nodes
+are plain frozen dataclasses.
+
 ## Developing
 
 

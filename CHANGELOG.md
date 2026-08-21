@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `policies_to_pst(policies)` parses Cedar policy text into typed `cedarpy.pst` nodes (frozen dataclasses, one per `cedar_policy::pst` node kind), matching a real Cedar structure a consumer can pattern-match on instead of an untyped tree keyed by string operators. Static policies and unlinked templates only; a partial-evaluation residual from `is_authorized_partial` cannot be represented this way, because PST's own policy type rejects any clause containing an unresolved `unknown(...)` node ([#107](https://github.com/k9securityio/cedar-py/issues/107)). Requires cedar-policy 4.11.0+, bundled by [#106](https://github.com/k9securityio/cedar-py/pull/106).
+
 ### Removed
 
 - **Dropped support for Python 3.9**, which reached end-of-life on 2025-10-31 and no longer receives security fixes. `requires-python` is now `>=3.10`, so cp39 wheels are no longer built and pip will not install new cedarpy releases on 3.9; existing releases remain available. Python 3.10 (security-supported until October 2026) through 3.14 remain supported.

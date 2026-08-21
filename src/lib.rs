@@ -6,7 +6,8 @@ use anyhow::{Context as _, Error, Result};
 use cedar_policy::*;
 use cedar_policy_formatter::{Config, policies_str_to_pretty};
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyString};
+use pyo3::types::{PyDict, PyString, PyTuple};
+use cedar_policy::pst;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -54,6 +55,365 @@ fn policies_from_json_str(s: String) -> PyResult<String> {
         Ok(p) => Ok(p.to_string()),
         Err(e) => Err(pyo3::exceptions::PyValueError::new_err(e.to_string())),
     }
+}
+
+struct PstClasses<'py> {
+    entity_uid: Bound<'py, PyAny>,
+    slot: Bound<'py, PyAny>,
+    var: Bound<'py, PyAny>,
+    literal: Bound<'py, PyAny>,
+    unary_op: Bound<'py, PyAny>,
+    binary_op: Bound<'py, PyAny>,
+    get_attr: Bound<'py, PyAny>,
+    has_attr: Bound<'py, PyAny>,
+    char: Bound<'py, PyAny>,
+    wildcard: Bound<'py, PyAny>,
+    like: Bound<'py, PyAny>,
+    is_: Bound<'py, PyAny>,
+    if_then_else: Bound<'py, PyAny>,
+    set: Bound<'py, PyAny>,
+    record: Bound<'py, PyAny>,
+    unknown: Bound<'py, PyAny>,
+    #[allow(dead_code)] // read once the tpe feature is on
+    residual_error: Bound<'py, PyAny>,
+    when: Bound<'py, PyAny>,
+    unless: Bound<'py, PyAny>,
+    scope_any: Bound<'py, PyAny>,
+    scope_eq: Bound<'py, PyAny>,
+    scope_in: Bound<'py, PyAny>,
+    scope_is: Bound<'py, PyAny>,
+    scope_is_in: Bound<'py, PyAny>,
+    action_eq: Bound<'py, PyAny>,
+    action_in: Bound<'py, PyAny>,
+    template: Bound<'py, PyAny>,
+    template_link: Bound<'py, PyAny>,
+    policy_set: Bound<'py, PyAny>,
+}
+
+impl<'py> PstClasses<'py> {
+    fn load(py: Python<'py>) -> PyResult<Self> {
+        let m = PyModule::import(py, "cedarpy.pst")?;
+        let get = |name: &str| m.getattr(name);
+        Ok(Self {
+            entity_uid: get("EntityUid")?,
+            slot: get("Slot")?,
+            var: get("Var")?,
+            literal: get("Literal")?,
+            unary_op: get("UnaryOp")?,
+            binary_op: get("BinaryOp")?,
+            get_attr: get("GetAttr")?,
+            has_attr: get("HasAttr")?,
+            char: get("Char")?,
+            wildcard: get("Wildcard")?,
+            like: get("Like")?,
+            is_: get("Is")?,
+            if_then_else: get("IfThenElse")?,
+            set: get("Set")?,
+            record: get("Record")?,
+            unknown: get("Unknown")?,
+            residual_error: get("ResidualError")?,
+            when: get("When")?,
+            unless: get("Unless")?,
+            scope_any: get("ScopeAny")?,
+            scope_eq: get("ScopeEq")?,
+            scope_in: get("ScopeIn")?,
+            scope_is: get("ScopeIs")?,
+            scope_is_in: get("ScopeIsIn")?,
+            action_eq: get("ActionEq")?,
+            action_in: get("ActionIn")?,
+            template: get("Template")?,
+            template_link: get("TemplateLink")?,
+            policy_set: get("PolicySet")?,
+        })
+    }
+}
+
+fn pst_error<T: std::fmt::Debug>(context: &str, value: T) -> PyErr {
+    pyo3::exceptions::PyValueError::new_err(format!(
+        "cedarpy: unrepresentable {context}: {value:?} (this cedar-policy release added a variant policies_to_pst does not yet handle)"
+    ))
+}
+
+fn build_mapping<'py>(
+    py: Python<'py>,
+    items: impl IntoIterator<Item = (String, Py<PyAny>)>,
+) -> PyResult<Py<PyAny>> {
+    let dict = PyDict::new(py);
+    for (k, v) in items {
+        dict.set_item(k, v)?;
+    }
+    Ok(dict.unbind().into())
+}
+
+fn build_entity_uid<'py>(c: &PstClasses<'py>, euid: &pst::EntityUID) -> PyResult<Py<PyAny>> {
+    Ok(c.entity_uid.call1((euid.ty.0.to_string(), euid.eid.to_string()))?.unbind())
+}
+
+fn build_slot_id<'py>(c: &PstClasses<'py>, slot: pst::SlotId) -> PyResult<Py<PyAny>> {
+    let name = match slot {
+        pst::SlotId::Principal => "principal",
+        pst::SlotId::Resource => "resource",
+        other => return Err(pst_error("SlotId variant", other)),
+    };
+    Ok(c.slot.call1((name,))?.unbind())
+}
+
+fn build_entity_or_slot<'py>(c: &PstClasses<'py>, eos: &pst::EntityOrSlot) -> PyResult<Py<PyAny>> {
+    match eos {
+        pst::EntityOrSlot::Entity(euid) => build_entity_uid(c, euid),
+        pst::EntityOrSlot::Slot(slot) => build_slot_id(c, *slot),
+    }
+}
+
+fn build_principal_constraint<'py>(
+    c: &PstClasses<'py>,
+    constraint: &pst::PrincipalConstraint,
+) -> PyResult<Py<PyAny>> {
+    match constraint {
+        pst::PrincipalConstraint::Any => Ok(c.scope_any.call0()?.unbind()),
+        pst::PrincipalConstraint::Eq(eos) => Ok(c.scope_eq.call1((build_entity_or_slot(c, eos)?,))?.unbind()),
+        pst::PrincipalConstraint::In(eos) => Ok(c.scope_in.call1((build_entity_or_slot(c, eos)?,))?.unbind()),
+        pst::PrincipalConstraint::Is(et) => Ok(c.scope_is.call1((et.0.to_string(),))?.unbind()),
+        pst::PrincipalConstraint::IsIn(et, eos) => {
+            Ok(c.scope_is_in.call1((et.0.to_string(), build_entity_or_slot(c, eos)?))?.unbind())
+        }
+    }
+}
+
+fn build_resource_constraint<'py>(
+    c: &PstClasses<'py>,
+    constraint: &pst::ResourceConstraint,
+) -> PyResult<Py<PyAny>> {
+    match constraint {
+        pst::ResourceConstraint::Any => Ok(c.scope_any.call0()?.unbind()),
+        pst::ResourceConstraint::Eq(eos) => Ok(c.scope_eq.call1((build_entity_or_slot(c, eos)?,))?.unbind()),
+        pst::ResourceConstraint::In(eos) => Ok(c.scope_in.call1((build_entity_or_slot(c, eos)?,))?.unbind()),
+        pst::ResourceConstraint::Is(et) => Ok(c.scope_is.call1((et.0.to_string(),))?.unbind()),
+        pst::ResourceConstraint::IsIn(et, eos) => {
+            Ok(c.scope_is_in.call1((et.0.to_string(), build_entity_or_slot(c, eos)?))?.unbind())
+        }
+    }
+}
+
+fn build_action_constraint<'py>(
+    c: &PstClasses<'py>,
+    constraint: &pst::ActionConstraint,
+) -> PyResult<Py<PyAny>> {
+    match constraint {
+        pst::ActionConstraint::Any => Ok(c.scope_any.call0()?.unbind()),
+        pst::ActionConstraint::Eq(euid) => Ok(c.action_eq.call1((build_entity_uid(c, euid)?,))?.unbind()),
+        pst::ActionConstraint::In(euids) => {
+            let mut items = Vec::with_capacity(euids.len());
+            for euid in euids {
+                items.push(build_entity_uid(c, euid)?);
+            }
+            let tuple = PyTuple::new(c.action_in.py(), items)?;
+            Ok(c.action_in.call1((tuple,))?.unbind())
+        }
+    }
+}
+
+fn build_pattern<'py>(c: &PstClasses<'py>, pattern: &[pst::PatternElem]) -> PyResult<Py<PyAny>> {
+    let mut items = Vec::with_capacity(pattern.len());
+    for elem in pattern {
+        items.push(match elem {
+            pst::PatternElem::Char(ch) => c.char.call1((ch.to_string(),))?.unbind(),
+            pst::PatternElem::Wildcard => c.wildcard.call0()?.unbind(),
+        });
+    }
+    Ok(PyTuple::new(c.char.py(), items)?.unbind().into())
+}
+
+fn build_literal<'py>(c: &PstClasses<'py>, literal: &pst::Literal) -> PyResult<Py<PyAny>> {
+    let value: Py<PyAny> = match literal {
+        pst::Literal::Bool(b) => pyo3::types::PyBool::new(c.literal.py(), *b).to_owned().into_any().unbind(),
+        pst::Literal::Long(n) => n.into_pyobject(c.literal.py())?.into_any().unbind(),
+        pst::Literal::String(s) => s.to_string().into_pyobject(c.literal.py())?.into_any().unbind(),
+        pst::Literal::EntityUID(euid) => build_entity_uid(c, euid)?,
+        other => return Err(pst_error("Literal variant", other)),
+    };
+    Ok(c.literal.call1((value,))?.unbind())
+}
+
+fn build_expr<'py>(c: &PstClasses<'py>, expr: &pst::Expr) -> PyResult<Py<PyAny>> {
+    match expr {
+        pst::Expr::Literal(lit) => build_literal(c, lit),
+        pst::Expr::Var(var) => {
+            let name = match var {
+                pst::Var::Principal => "principal",
+                pst::Var::Action => "action",
+                pst::Var::Resource => "resource",
+                pst::Var::Context => "context",
+            };
+            Ok(c.var.call1((name,))?.unbind())
+        }
+        pst::Expr::Slot(slot) => build_slot_id(c, *slot),
+        pst::Expr::UnaryOp { op, expr: arg } => {
+            let name = unary_op_name(*op)?;
+            Ok(c.unary_op.call1((name, build_expr(c, arg)?))?.unbind())
+        }
+        pst::Expr::BinaryOp { op, left, right } => {
+            let name = binary_op_name(*op)?;
+            Ok(c.binary_op.call1((name, build_expr(c, left)?, build_expr(c, right)?))?.unbind())
+        }
+        pst::Expr::GetAttr { expr: base, attr } => {
+            Ok(c.get_attr.call1((build_expr(c, base)?, attr.to_string()))?.unbind())
+        }
+        pst::Expr::HasAttr { expr: base, attrs } => {
+            let items: Vec<String> = attrs.iter().map(|a| a.to_string()).collect();
+            let tuple = PyTuple::new(c.has_attr.py(), items)?;
+            Ok(c.has_attr.call1((build_expr(c, base)?, tuple))?.unbind())
+        }
+        pst::Expr::Like { expr: base, pattern } => {
+            Ok(c.like.call1((build_expr(c, base)?, build_pattern(c, pattern)?))?.unbind())
+        }
+        pst::Expr::Is { expr: base, entity_type, in_expr } => {
+            let in_expr = match in_expr {
+                Some(e) => Some(build_expr(c, e)?),
+                None => None,
+            };
+            Ok(c.is_.call1((build_expr(c, base)?, entity_type.0.to_string(), in_expr))?.unbind())
+        }
+        pst::Expr::IfThenElse { cond, then_expr, else_expr } => Ok(c
+            .if_then_else
+            .call1((build_expr(c, cond)?, build_expr(c, then_expr)?, build_expr(c, else_expr)?))?
+            .unbind()),
+        pst::Expr::Set(elements) => {
+            let mut items = Vec::with_capacity(elements.len());
+            for e in elements {
+                items.push(build_expr(c, e)?);
+            }
+            let tuple = PyTuple::new(c.set.py(), items)?;
+            Ok(c.set.call1((tuple,))?.unbind())
+        }
+        pst::Expr::Record(fields) => {
+            let mut items = Vec::with_capacity(fields.len());
+            for (k, v) in fields {
+                items.push((k.clone(), build_expr(c, v)?));
+            }
+            Ok(c.record.call1((build_mapping(c.record.py(), items)?,))?.unbind())
+        }
+        pst::Expr::Unknown { name } => Ok(c.unknown.call1((name.to_string(),))?.unbind()),
+        other => Err(pst_error("Expr variant", other)),
+    }
+}
+
+fn unary_op_name(op: pst::UnaryOp) -> PyResult<&'static str> {
+    use pst::UnaryOp::*;
+    match op {
+        Not => Ok("not"), Neg => Ok("neg"), IsEmpty => Ok("is_empty"),
+        Datetime => Ok("datetime"), Decimal => Ok("decimal"), Duration => Ok("duration"), Ip => Ok("ip"),
+        IsIPv4 => Ok("is_ipv4"), IsIPV6 => Ok("is_ipv6"),
+        IsLoopback => Ok("is_loopback"), IsMulticast => Ok("is_multicast"),
+        ToDate => Ok("to_date"), ToTime => Ok("to_time"),
+        ToMilliseconds => Ok("to_milliseconds"), ToSeconds => Ok("to_seconds"),
+        ToMinutes => Ok("to_minutes"), ToHours => Ok("to_hours"), ToDays => Ok("to_days"),
+        other => Err(pst_error("UnaryOp variant", other)),
+    }
+}
+
+fn binary_op_name(op: pst::BinaryOp) -> PyResult<&'static str> {
+    use pst::BinaryOp::*;
+    match op {
+        Eq => Ok("eq"), NotEq => Ok("not_eq"), Less => Ok("less"), LessEq => Ok("less_eq"),
+        Greater => Ok("greater"), GreaterEq => Ok("greater_eq"),
+        And => Ok("and"), Or => Ok("or"),
+        Add => Ok("add"), Sub => Ok("sub"), Mul => Ok("mul"),
+        In => Ok("in"), Contains => Ok("contains"), ContainsAll => Ok("contains_all"), ContainsAny => Ok("contains_any"),
+        GetTag => Ok("get_tag"), HasTag => Ok("has_tag"),
+        IsInRange => Ok("is_in_range"), Offset => Ok("offset"), DurationSince => Ok("duration_since"),
+        DecimalLessThan => Ok("decimal_less_than"), DecimalLessEq => Ok("decimal_less_eq"),
+        DecimalGreater => Ok("decimal_greater"), DecimalGreaterEq => Ok("decimal_greater_eq"),
+        other => Err(pst_error("BinaryOp variant", other)),
+    }
+}
+
+fn build_clause<'py>(c: &PstClasses<'py>, clause: &pst::Clause) -> PyResult<Py<PyAny>> {
+    match clause {
+        pst::Clause::When(e) => Ok(c.when.call1((build_expr(c, e)?,))?.unbind()),
+        pst::Clause::Unless(e) => Ok(c.unless.call1((build_expr(c, e)?,))?.unbind()),
+    }
+}
+
+fn build_template<'py>(c: &PstClasses<'py>, template: &pst::Template) -> PyResult<Py<PyAny>> {
+    let effect = match template.effect {
+        pst::Effect::Permit => "permit",
+        pst::Effect::Forbid => "forbid",
+    };
+    let mut clauses = Vec::with_capacity(template.clauses().len());
+    for clause in template.clauses() {
+        clauses.push(build_clause(c, clause)?);
+    }
+    let clauses = PyTuple::new(c.template.py(), clauses)?;
+    let annotations: Vec<(String, Py<PyAny>)> = template
+        .annotations
+        .iter()
+        .map(|(k, v)| Ok((k.clone(), v.to_string().into_pyobject(c.template.py())?.into_any().unbind())))
+        .collect::<PyResult<_>>()?;
+    Ok(c.template
+        .call1((
+            template.id.0.to_string(),
+            effect,
+            build_principal_constraint(c, &template.principal)?,
+            build_action_constraint(c, &template.action)?,
+            build_resource_constraint(c, &template.resource)?,
+            clauses,
+            build_mapping(c.template.py(), annotations)?,
+        ))?
+        .unbind())
+}
+
+fn build_slot_values<'py>(
+    c: &PstClasses<'py>,
+    values: &std::collections::HashMap<pst::SlotId, pst::EntityUID>,
+) -> PyResult<Py<PyAny>> {
+    let mut items = Vec::with_capacity(values.len());
+    for (slot, euid) in values {
+        let name = match slot {
+            pst::SlotId::Principal => "principal",
+            pst::SlotId::Resource => "resource",
+            other => return Err(pst_error("SlotId variant", other)),
+        };
+        items.push((name.to_string(), build_entity_uid(c, euid)?));
+    }
+    build_mapping(c.entity_uid.py(), items)
+}
+
+fn build_policy_set<'py>(c: &PstClasses<'py>, policy_set: &pst::PolicySet) -> PyResult<Py<PyAny>> {
+    let mut templates = Vec::with_capacity(policy_set.templates.len());
+    for (id, template) in policy_set.templates.iter() {
+        templates.push((id.0.to_string(), build_template(c, template)?));
+    }
+    let mut static_policies = Vec::with_capacity(policy_set.policies.len());
+    for (id, static_policy) in policy_set.policies.iter() {
+        static_policies.push((id.0.to_string(), build_template(c, static_policy.body())?));
+    }
+    let mut links = Vec::with_capacity(policy_set.template_links.len());
+    for link in &policy_set.template_links {
+        links.push(
+            c.template_link
+                .call1((
+                    link.template_id.0.to_string(),
+                    link.new_id.0.to_string(),
+                    build_slot_values(c, &link.values)?,
+                ))?
+                .unbind(),
+        );
+    }
+    let links = PyTuple::new(c.policy_set.py(), links)?;
+    Ok(c.policy_set
+        .call1((build_mapping(c.policy_set.py(), templates)?, build_mapping(c.policy_set.py(), static_policies)?, links))?
+        .unbind())
+}
+
+/// Parse Cedar policy text into typed cedarpy.pst nodes.
+#[pyfunction]
+#[pyo3(signature = (s))]
+fn policies_to_pst(py: Python<'_>, s: String) -> PyResult<Py<PyAny>> {
+    let policies = PolicySet::from_str(&s).map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    let pst = policies.to_pst().map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    let classes = PstClasses::load(py)?;
+    build_policy_set(&classes, &pst)
 }
 
 /// An opaque, reusable handle wrapping a parsed Cedar policy set.
@@ -1572,6 +1932,7 @@ fn _internal(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(format_policies, m)?)?;
     m.add_function(wrap_pyfunction!(policies_to_json_str, m)?)?;
     m.add_function(wrap_pyfunction!(policies_from_json_str, m)?)?;
+    m.add_function(wrap_pyfunction!(policies_to_pst, m)?)?;
     m.add_function(wrap_pyfunction!(validate_policies, m)?)?;
     Ok(())
 }
