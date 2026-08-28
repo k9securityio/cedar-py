@@ -152,5 +152,95 @@ Decision: Recommendation accepted, Option 1.
 
 ## Detailed implementation steps
 
-TODO: Make a detailed list of implementation steps to complete this task and
-replace this todo with those steps.
+File:line references are against `main` at the base of branch
+`gh-111-upgrade-cedar-policy-4.12`.
+
+### Phase A — Land the engine bump on the task branch
+
+1. Merge PR #106 into this branch with a **merge commit** (`gh pr merge 106
+   --merge`), not a squash — a squash would rewrite @h0rv's commit SHA. The PR
+   base is already retargeted to this branch. Then `git pull` locally.
+2. Rebuild the native extension: `maturin develop --release`.
+3. **Verify:** `pytest tests/unit` — expect 218 passed, 2 subtests passed
+   (already confirmed once against the 4.12 build during review).
+
+### Phase B — Submodule bumps and integration verification
+
+1. Bump `third_party/cedar-integration-tests`: set `branch = release/4.12.x`
+   in `.gitmodules` (line 7), check out tag `v4.12.0` (commit `6b4c3dcb…`) in
+   the submodule, and stage both. (Q3: Option 1.)
+2. Bump `third_party/cedar` from its pre-v3.0.0 pin to tag `v4.12.0` and stage
+   the pin. (Q4: Option 1.)
+3. Re-run `pytest tests/unit` — `tests/unit/test_validate.py:325` loads
+   `third_party/cedar/cedar-policy-cli/sample-data/`, so the cedar-submodule
+   bump can change parity-test inputs. Adjust expectations only if sample-data
+   actually changed.
+4. Audit the corpus diff for new suites (Q5: Option 1): diff the `tests/` tree
+   between the v4.8.0 and v4.12.0 submodule states; wire any new
+   kinds/suites into `tests/integration/test_cedar_integration_tests.py` via
+   the existing `@parameterized.expand(get_authz_test_params_for_test_suite(…))`
+   pattern. While there, re-check whether the disabled `example_use_cases/4c`
+   suite (line ~199, "not present in release/4.1.x") exists in the 4.12 corpus
+   and can be enabled.
+5. **Verify:** `make integration-tests` and `make corpus-tests` pass against
+   the 4.12 corpus.
+
+### Phase C — Manifest floor and docs
+
+1. `Cargo.toml:17-19`: bump `cedar-policy` (keeping
+   `features = ["partial-eval"]`), `cedar-policy-cli`, and
+   `cedar-policy-formatter` from `4.8.2` to `4.12.0`. Run `cargo build` —
+   `Cargo.lock` should not change (4.12.0 already locked by #106); a diff here
+   means something is wrong.
+2. `CLAUDE.md`: update the two `4.8.2` references (lines 80–81). For the
+   `Schema::clone()` gotcha, re-verify against the now-bumped
+   `third_party/cedar` v4.12.0 source that `Schema` is still not Arc-wrapped
+   and refresh the `api.rs:1851` line reference.
+3. `CHANGELOG.md` under `[Unreleased]`: engine bump 4.8.2 → 4.12.0 (Cedar
+   language 4.4 → 4.5), noting no cedarpy API changes, ending
+   `([#106](…)). Thanks [@h0rv](…)!` per the outside-contribution convention.
+4. **Verify:** `grep -rn '4\.8\.2' README.md CLAUDE.md Cargo.toml` returns
+   nothing (historical CHANGELOG entries exempt); rebuild + full `pytest`
+   green.
+
+### Phase D — Benchmark on a quiet machine
+
+1. Run `make benchmark-compare` (N=5, release mode) against the existing
+   4.8.2 baseline on a quiet machine. Read any failure diagnostically per the
+   load-sensitivity guidance in `CLAUDE.md` — a uniform shift across all
+   benchmarks is contamination/drift, not a regression.
+2. If the gate passes (or a genuine-but-accepted engine-level shift is
+   understood and documented), refresh `tests/benchmark/results/baseline.json`
+   from a quiet N=5 capture at the 4.12 build and commit it, noting the
+   refresh in the PR description. (Q2: Option 1.)
+3. **Verify:** `make benchmark-compare` passes against the refreshed baseline.
+
+### Phase E — PR to main, then release cedarpy v4.12.0
+
+0. Pre-flight: local `main` holds an unpushed docs commit (`3b796e05`,
+   provenance-verification correction + release-branch retention policy,
+   2026-07-10) that never reached `origin/main`. Push it (fast-forward) before
+   the release so the release checklist below matches the in-repo doc.
+1. Push this branch and open the PR to `main`: summary of engine changes
+   (4.9–4.12 changelog review), dependency/audit verification, test results
+   (unit / integration / corpus at the 4.12 corpus), and benchmark outcome.
+   Note for the reviewer that release-job actions are PR-skipped and first
+   exercised on the real release.
+2. **Verify:** CI green across all platforms (cold Rust compiles; macOS
+   x86_64 is the ~15 min long pole). Merge the PR (merge commit, repo
+   convention).
+3. Decide/create the 4.8-line retention branch: before `main` moves on, push
+   a `release/4.8.x` branch at the v4.8.7 release commit and update its README
+   compatibility-table row to point at it (pattern: the v4.7.2/v4.1.0 rows).
+4. Release per `docs/release-process.md`: `release/4.12.0` branch off updated
+   `main`; bump `Cargo.toml` version (line 5) to `4.12.0`; `cargo build` to
+   refresh `Cargo.lock`; README compatibility row (cedar v4.12.0 / cedarpy
+   v4.12.0 / main); promote CHANGELOG `[Unreleased]` → `[4.12.0] - <date>`
+   with fresh empty `[Unreleased]` and footer links. PR, CI green, merge —
+   leave the `release/4.12.0` branch in place (retention policy).
+5. Tag `v4.12.0` on updated `main`, push the tag, approve the `pypi-release`
+   deployment.
+6. **Verify:** all wheels + sdist on PyPI at 4.12.0; SLSA provenance via
+   `gh attestation verify` against a downloaded distribution (attestations
+   live on GitHub, not PyPI — one combined v4 attestation covers the set);
+   publish the GitHub Release with the CHANGELOG section as notes.
