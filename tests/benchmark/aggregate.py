@@ -239,7 +239,12 @@ def phase_a() -> list[Path]:
                 "python_version":        machine.get("python_version"),
                 "platform":              "Darwin-CPython-3.11-64bit",
             },
-            "captured_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+            # The time the runs were captured (last run's own timestamp), not
+            # the time of aggregation — re-aggregating must not rewrite it.
+            "captured_at": max(
+                dt.datetime.fromisoformat(json.loads(p.read_text())["datetime"])
+                for p in runs
+            ).astimezone(dt.timezone.utc).isoformat(timespec="seconds"),
             "save_prefix": prefix,
             "source_runs": [p.name for p in runs],
             "benchmarks":  per_benchmark_stats(runs),
