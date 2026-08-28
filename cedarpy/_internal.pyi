@@ -299,15 +299,29 @@ def policies_to_pst(s: str) -> "cedarpy.pst.PolicySet": ...
 
 
 def tpe_authorize(
-    principal: str,
-    action: str,
-    resource: str,
+    principal: Union[str, dict],
+    action: Union[str, dict],
+    resource: Union[str, dict],
     policies: Union[str, "PolicySet"],
-    entities: Union[str, "Entities"],
+    entities: Union[str, "Entities", "cedarpy.PartialEntities"],
     schema: Union[str, "Schema"],
     context: Optional[str] = ...,
     verbose: Optional[bool] = ...,
 ) -> "cedarpy.TpeAuthzResult": ...
+
+
+def tpe_reauthorize(
+    request: dict,
+    principal: Union[str, dict],
+    action: Union[str, dict],
+    resource: Union[str, dict],
+    policies: Union[str, "PolicySet"],
+    entities: Union[str, "Entities", "cedarpy.PartialEntities"],
+    schema: Union[str, "Schema"],
+    context: Optional[str] = ...,
+    concrete_entities: Union[str, "Entities", None] = ...,
+    verbose: Optional[bool] = ...,
+) -> str: ...
 
 
 def validate_policies(policies: str, schema: Union[str, "Schema"]) -> str: ...

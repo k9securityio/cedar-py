@@ -490,6 +490,68 @@ print(result.residual_policies)     # {'policy0': Template(...)}
 
 `permits` and `forbids` are kept separate, each a `TpeClassification` of
 `residual_ids`/`true_ids`/`false_ids`/`error_ids`.
+
+`principal` and `resource` accept a concrete entity, as a surface-syntax string
+or a `{"type": ..., "id": ...}` dict, or a type whose id is unknown, as a bare
+type string, a `pst.EntityType`, or a dict carrying only `type`. `action` must
+be concrete.
+
+`context` follows `is_authorized_partial`: omitted (or `None`) means the context
+is **unknown**, so a policy reading it stays residual, and `{}` means a
+known-empty context.
+
+#### Binding the unknowns later
+
+The point of TPE is that the residuals, not the whole policy set, are what you
+re-evaluate once you know the rest. `reauthorize` does that, and Cedar checks
+your concrete request against the partial one first, so a request that
+contradicts it raises instead of returning a decision the partial evaluation
+never sanctioned:
+
+```python
+decided = result.reauthorize(
+    {"principal": 'User::"alice"', "action": 'Action::"view"', "resource": 'Doc::"d1"'},
+    entities='[{"uid": {"type": "Doc", "id": "d1"}, "attrs": {"status": "active"}, "parents": []}]',
+)
+print(decided.decision)  # Decision.Allow
+```
+
+It returns an ordinary `AuthzResult`, the same type `is_authorized` returns.
+`entities` defaults to the entities the `tpe_authorize` call ran against.
+`cedarpy.tpe_reauthorize(...)` is the same operation as a free function, taking
+the TPE inputs explicitly.
+
+`result.residual_policy_set` is every residual as a reusable `PolicySet`
+handle, for when you want to drive evaluation yourself:
+
+```python
+from cedarpy import is_authorized
+
+is_authorized(request, result.residual_policy_set, entities, schema)
+```
+
+#### Entities that are only partly known
+
+A concrete entity set asserts every entity's attributes, parents, and tags are
+known. TPE also accepts a document where an entity exists but one of those is
+not yet loaded, so policies reading it stay residual — which is what lets you
+decide what to fetch before you fetch it:
+
+```python
+from cedarpy import PartialEntities
+
+result = tpe_authorize(
+    'User::"alice"', 'Action::"view"', 'Doc::"d1"', policies,
+    PartialEntities.from_json([{"uid": {"type": "Doc", "id": "d1"}, "parents": []}]),
+    schema,
+)
+print(result.decision)              # None -- status is unknown
+print(result.permits.residual_ids)  # ('policy0',)
+```
+
+Each of `attrs`, `parents`, and `tags` must be wholly present or wholly absent
+per entity, and a parent entity cannot itself have unknown parents.
+
 ## Developing
 
 

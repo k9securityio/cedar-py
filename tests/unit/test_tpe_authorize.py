@@ -1,8 +1,11 @@
 """Unit tests for tpe_authorize."""
 import unittest
 
-from cedarpy import Decision, is_authorized_partial, tpe_authorize
-from cedarpy.pst import BinaryOp, GetAttr, Template, Var
+from cedarpy import (
+    Decision, PartialEntities, PolicySet, TpeAuthzResult, TpeClassification,
+    is_authorized, is_authorized_partial, tpe_authorize, tpe_reauthorize,
+)
+from cedarpy.pst import BinaryOp, EntityType, GetAttr, Template, Var
 
 SCHEMA = """
     entity User;
@@ -112,3 +115,226 @@ class TestErrorHandling(unittest.TestCase):
     def test_unparseable_entities_raises(self):
         with self.assertRaises(ValueError):
             tpe_authorize('User::"alice"', 'Action::"view"', "Doc", POLICIES, "not json", SCHEMA)
+
+
+CONTEXT_SCHEMA = """
+    entity User;
+    entity Doc = { status: String };
+    action "view" appliesTo {
+        principal: [User],
+        resource: [Doc],
+        context: { mfa: Bool }
+    };
+"""
+
+CONTEXT_POLICIES = """
+    permit(principal, action == Action::"view", resource)
+    when { context.mfa };
+"""
+
+
+class TestContextUnknownVersusEmpty(unittest.TestCase):
+    """`context=None` means unknown, matching PartialRequest and
+    is_authorized_partial. A known-empty context is `{}`."""
+
+    def test_omitted_context_is_unknown_and_stays_residual(self):
+        result = tpe_authorize(
+            'User::"alice"', 'Action::"view"', 'Doc::"d1"',
+            CONTEXT_POLICIES, _doc("d1", "active"), CONTEXT_SCHEMA,
+        )
+        self.assertIsNone(result.decision)
+        self.assertEqual(result.permits.residual_ids, ("policy0",))
+
+    def test_explicit_context_resolves(self):
+        allowed = tpe_authorize(
+            'User::"alice"', 'Action::"view"', 'Doc::"d1"',
+            CONTEXT_POLICIES, _doc("d1", "active"), CONTEXT_SCHEMA, context={"mfa": True},
+        )
+        self.assertEqual(allowed.decision, Decision.Allow)
+
+        denied = tpe_authorize(
+            'User::"alice"', 'Action::"view"', 'Doc::"d1"',
+            CONTEXT_POLICIES, _doc("d1", "active"), CONTEXT_SCHEMA, context={"mfa": False},
+        )
+        self.assertEqual(denied.decision, Decision.Deny)
+
+    def test_empty_context_is_not_the_same_as_unknown(self):
+        # {} is a known context, so a policy reading a required attribute of it
+        # is an error rather than a residual.
+        with self.assertRaises(ValueError):
+            tpe_authorize(
+                'User::"alice"', 'Action::"view"', 'Doc::"d1"',
+                CONTEXT_POLICIES, _doc("d1", "active"), CONTEXT_SCHEMA, context={},
+            )
+
+
+class TestEntityUidInputForms(unittest.TestCase):
+    def test_dict_form_for_a_concrete_entity(self):
+        result = tpe_authorize(
+            {"type": "User", "id": "alice"},
+            {"type": "Action", "id": "view"},
+            {"type": "Doc", "id": "d1"},
+            POLICIES, _doc("d1", "active"), SCHEMA,
+        )
+        self.assertEqual(result.decision, Decision.Allow)
+
+    def test_dict_without_id_means_an_unknown_id(self):
+        result = tpe_authorize(
+            'User::"alice"', 'Action::"view"', {"type": "Doc"}, POLICIES, "[]", SCHEMA
+        )
+        self.assertIsNone(result.decision)
+        self.assertEqual(result.permits.residual_ids, ("policy0",))
+
+    def test_pst_entity_type_means_an_unknown_id(self):
+        result = tpe_authorize(
+            'User::"alice"', 'Action::"view"', EntityType("Doc"), POLICIES, "[]", SCHEMA
+        )
+        self.assertIsNone(result.decision)
+        self.assertEqual(result.permits.residual_ids, ("policy0",))
+
+    def test_id_cedar_surface_syntax_rejects_is_accepted_in_dict_form(self):
+        result = tpe_authorize(
+            {"type": "User", "id": "alice\nbob"},
+            'Action::"view"', 'Doc::"d1"', POLICIES, _doc("d1", "active"), SCHEMA,
+        )
+        self.assertEqual(result.decision, Decision.Allow)
+
+    def test_unusable_euid_input_type_raises(self):
+        with self.assertRaises(TypeError):
+            tpe_authorize(42, 'Action::"view"', "Doc", POLICIES, "[]", SCHEMA)
+
+
+class TestResidualPolicySetHandle(unittest.TestCase):
+    def test_residuals_come_back_as_a_reusable_policy_set(self):
+        result = tpe_authorize(
+            'User::"alice"', 'Action::"view"', "Doc", POLICIES, "[]", SCHEMA
+        )
+        self.assertIsInstance(result.residual_policy_set, PolicySet)
+        self.assertEqual(len(result.residual_policy_set), 1)
+
+        # The handle drops straight into is_authorized once the unknowns are bound.
+        decided = is_authorized(
+            {"principal": 'User::"alice"', "action": 'Action::"view"', "resource": 'Doc::"d1"'},
+            result.residual_policy_set, _doc("d1", "active"), SCHEMA,
+        )
+        self.assertEqual(decided.decision, Decision.Allow)
+
+
+class TestReauthorize(unittest.TestCase):
+    def test_binding_the_unknown_reaches_a_decision(self):
+        result = tpe_authorize(
+            'User::"alice"', 'Action::"view"', "Doc", POLICIES, "[]", SCHEMA
+        )
+        self.assertIsNone(result.decision)
+
+        allowed = result.reauthorize(
+            {"principal": 'User::"alice"', "action": 'Action::"view"', "resource": 'Doc::"d1"'},
+            entities=_doc("d1", "active"),
+        )
+        self.assertEqual(allowed.decision, Decision.Allow)
+        self.assertEqual(allowed.diagnostics.reasons, ["policy0"])
+
+        denied = result.reauthorize(
+            {"principal": 'User::"alice"', "action": 'Action::"view"', "resource": 'Doc::"d1"'},
+            entities=_doc("d1", "inactive"),
+        )
+        self.assertEqual(denied.decision, Decision.Deny)
+
+    def test_reauthorize_reuses_the_entities_tpe_ran_with(self):
+        result = tpe_authorize(
+            'User::"alice"', 'Action::"view"', "Doc", POLICIES, _doc("d1", "active"), SCHEMA
+        )
+        allowed = result.reauthorize(
+            {"principal": 'User::"alice"', "action": 'Action::"view"', "resource": 'Doc::"d1"'}
+        )
+        self.assertEqual(allowed.decision, Decision.Allow)
+
+    def test_a_request_contradicting_the_partial_request_raises(self):
+        # TPE was told the principal is User::"alice"; reauthorizing as someone
+        # else is not a decision the partial evaluation sanctioned.
+        result = tpe_authorize(
+            'User::"alice"', 'Action::"view"', "Doc", POLICIES, "[]", SCHEMA
+        )
+        with self.assertRaises(ValueError):
+            result.reauthorize(
+                {"principal": 'User::"bob"', "action": 'Action::"view"', "resource": 'Doc::"d1"'},
+                entities=_doc("d1", "active"),
+            )
+
+    def test_reauthorize_carries_the_correlation_id(self):
+        result = tpe_authorize(
+            'User::"alice"', 'Action::"view"', "Doc", POLICIES, "[]", SCHEMA
+        )
+        decided = result.reauthorize(
+            {
+                "principal": 'User::"alice"', "action": 'Action::"view"',
+                "resource": 'Doc::"d1"', "correlation_id": "req-42",
+            },
+            entities=_doc("d1", "active"),
+        )
+        self.assertEqual(decided.correlation_id, "req-42")
+
+    def test_free_function_takes_the_inputs_explicitly(self):
+        decided = tpe_reauthorize(
+            request={"principal": 'User::"alice"', "action": 'Action::"view"', "resource": 'Doc::"d1"'},
+            principal='User::"alice"', action='Action::"view"', resource="Doc",
+            policies=POLICIES, entities=_doc("d1", "active"), schema=SCHEMA,
+        )
+        self.assertEqual(decided.decision, Decision.Allow)
+
+    def test_a_hand_built_result_cannot_reauthorize(self):
+        bare = TpeAuthzResult(
+            decision=None, reason=(), permits=TpeClassification((), (), (), ()),
+            forbids=TpeClassification((), (), (), ()), residual_policies={},
+            residual_policy_set=PolicySet.from_str(""), metrics={},
+        )
+        with self.assertRaises(ValueError):
+            bare.reauthorize({"principal": 'User::"alice"', "action": 'Action::"view"', "resource": 'Doc::"d1"'})
+
+
+PARTIAL_ENTITIES = [
+    # status is unknown: the entity exists, its attributes do not yet.
+    {"uid": {"type": "Doc", "id": "d1"}, "parents": []},
+]
+
+
+class TestPartialEntities(unittest.TestCase):
+    def test_unknown_entity_attributes_stay_residual(self):
+        result = tpe_authorize(
+            'User::"alice"', 'Action::"view"', 'Doc::"d1"',
+            POLICIES, PartialEntities.from_json(PARTIAL_ENTITIES), SCHEMA,
+        )
+        self.assertIsNone(result.decision)
+        self.assertEqual(result.permits.residual_ids, ("policy0",))
+
+    def test_the_same_entities_fully_known_resolve(self):
+        result = tpe_authorize(
+            'User::"alice"', 'Action::"view"', 'Doc::"d1"',
+            POLICIES, PartialEntities.from_json(
+                [{"uid": {"type": "Doc", "id": "d1"}, "attrs": {"status": "active"}, "parents": []}]
+            ), SCHEMA,
+        )
+        self.assertEqual(result.decision, Decision.Allow)
+
+    def test_reauthorizing_a_partial_document_requires_concrete_entities(self):
+        result = tpe_authorize(
+            'User::"alice"', 'Action::"view"', 'Doc::"d1"',
+            POLICIES, PartialEntities.from_json(PARTIAL_ENTITIES), SCHEMA,
+        )
+        request = {"principal": 'User::"alice"', "action": 'Action::"view"', "resource": 'Doc::"d1"'}
+        with self.assertRaises(ValueError):
+            result.reauthorize(request)
+
+        decided = result.reauthorize(request, entities=_doc("d1", "active"))
+        self.assertEqual(decided.decision, Decision.Allow)
+
+    def test_from_json_accepts_text_as_well_as_data(self):
+        as_text = PartialEntities.from_json('[{"uid": {"type": "Doc", "id": "d1"}, "parents": []}]')
+        self.assertEqual(as_text, PartialEntities.from_json(PARTIAL_ENTITIES))
+
+    def test_malformed_partial_entities_raise(self):
+        with self.assertRaises(ValueError):
+            tpe_authorize(
+                'User::"alice"', 'Action::"view"', 'Doc::"d1"',
+                POLICIES, PartialEntities.from_json("not json"), SCHEMA,
+            )
