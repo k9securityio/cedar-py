@@ -429,14 +429,8 @@ def _rel(path: Path) -> str:
         return str(path)
 
 
-def _load_current_runs(current_dir: Path) -> dict[str, list[float]]:
-    """Return per-benchmark list of per-run median times (μs) from current_dir/run*.json.
-
-    Must load the same statistic the baseline stores (stats.median, via
-    build_baseline_from_state) — comparing per-run means against a median
-    baseline biases every Δ positive, since benchmark timings are
-    right-skewed (mean > median).
-    """
+def _load_current_medians(current_dir: Path) -> dict[str, list[float]]:
+    """Return per-benchmark list of per-run median times (μs) from current_dir/run*.json."""
     run_files = sorted(current_dir.glob("run*.json"))
     if not run_files:
         sys.exit(
@@ -474,7 +468,7 @@ def compare_current_to_baseline(
     both passing and failing outcomes. Returns 0 if all benchmarks pass, 1 if
     any benchmark's median Δ exceeds threshold_pct.
     """
-    current_medians = _load_current_runs(current_dir)
+    current_medians = _load_current_medians(current_dir)
     baseline_medians = _load_baseline_medians(baseline_path)
 
     n_runs = max((len(v) for v in current_medians.values()), default=0)
