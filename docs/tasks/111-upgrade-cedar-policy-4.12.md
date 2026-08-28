@@ -224,10 +224,13 @@ File:line references are against `main` at the base of branch
 
 ### Phase E — PR to main, then release cedarpy v4.12.0
 
-0. Pre-flight: local `main` holds an unpushed docs commit (`3b796e05`,
+0. ✅ Pre-flight: local `main` held an unpushed docs commit (`3b796e05`,
    provenance-verification correction + release-branch retention policy,
-   2026-07-10) that never reached `origin/main`. Push it (fast-forward) before
-   the release so the release checklist below matches the in-repo doc.
+   2026-07-10). Resolved: the maintainer intended it for the retention
+   branch — it is now published as the tip of `release/4.8.x` (created from
+   local `main`, pushed 2026-08-28). Note `origin/main` still lacks it, so
+   the release-process doc corrections are not on `main`; cherry-pick or
+   push if wanted there.
 1. Push this branch and open the PR to `main`: summary of engine changes
    (4.9–4.12 changelog review), dependency/audit verification, test results
    (unit / integration / corpus at the 4.12 corpus), and benchmark outcome.
