@@ -9,7 +9,7 @@ from cedarpy.pst import (
     ActionEq, ActionIn, BinaryOp, BoolLit, Char, EntityLit, EntityType,
     EntityUid, FrozenMap, GetAttr, HasAttr, IfThenElse, Is, Like, LongLit,
     PolicySet, Record, ScopeEq, ScopeIs, ScopeIsIn, Set, Slot, StringLit,
-    Template, UnaryOp, Unless, Var, When, Wildcard,
+    Template, UnaryOp, Unless, Var, When, Wildcard, entity_uids,
 )
 
 
@@ -296,3 +296,39 @@ class TestNonEmptyInvariants(unittest.TestCase):
         # Rust models this field as NonEmpty<SmolStr>.
         with self.assertRaises(ValueError):
             HasAttr(base=Var("resource"), attrs=())
+
+
+class TestEntityUidsWalk(unittest.TestCase):
+    def test_collects_uids_from_scope_and_conditions(self):
+        result = policies_to_pst(
+            'permit(principal == User::"alice", action in [Action::"view", Action::"edit"], '
+            'resource is Photo in Album::"vacation") '
+            'when { resource.owner == User::"bob" || principal in Group::"admins" };'
+        )
+        self.assertEqual(
+            entity_uids(result.static_policies["policy0"]),
+            frozenset({
+                _uid("User", "alice"), _uid("Action", "view"), _uid("Action", "edit"),
+                _uid("Album", "vacation"), _uid("User", "bob"), _uid("Group", "admins"),
+            }),
+        )
+
+    def test_reaches_uids_nested_in_sets_and_records(self):
+        result = policies_to_pst(
+            'permit(principal, action, resource) '
+            'when { [User::"a", User::"b"].contains(principal) && {"k": User::"c"}.k == principal };'
+        )
+        self.assertEqual(
+            entity_uids(_expr(result)),
+            frozenset({_uid("User", "a"), _uid("User", "b"), _uid("User", "c")}),
+        )
+
+    def test_a_policy_naming_no_entity_yields_nothing(self):
+        result = policies_to_pst('permit(principal, action, resource) when { resource.public };')
+        self.assertEqual(entity_uids(result), frozenset())
+
+    def test_walks_a_whole_policy_set_including_template_links(self):
+        result = policies_to_pst(
+            'permit(principal == ?principal, action == Action::"view", resource);'
+        )
+        self.assertEqual(entity_uids(result), frozenset({_uid("Action", "view")}))

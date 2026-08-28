@@ -503,6 +503,17 @@ type error, and hold a `FrozenMap` at runtime: a `dict` subclass that rejects
 mutation, so `dataclasses.asdict(result)`, `json.dumps(...)`, and comparison
 against a plain dict all still work, while the node stays a value.
 
+`pst.entity_uids(node)` walks any node and returns every entity uid named under
+it, which is how you find out what a policy or a TPE residual actually
+references before you go load it:
+
+```python
+from cedarpy.pst import entity_uids
+
+entity_uids(result.static_policies["policy0"])
+# frozenset({EntityUid(type=EntityType(basename='User', namespace=()), id='alice')})
+```
+
 ## Developing
 
 

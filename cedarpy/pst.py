@@ -7,8 +7,8 @@ match is exhaustive.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Dict, Literal, Mapping, NoReturn, Tuple, TypeVar, Union
+from dataclasses import dataclass, fields, is_dataclass
+from typing import Any, Dict, FrozenSet, Literal, Mapping, NoReturn, Tuple, TypeVar, Union
 
 __all__ = [
     "ActionConstraint", "ActionEq", "ActionIn", "BinaryOp", "BinaryOpName",
@@ -17,6 +17,7 @@ __all__ = [
     "IfThenElse", "Is", "Like", "Lit", "LongLit", "PatternElem", "PolicySet",
     "PrincipalOrResourceConstraint", "Record", "ResidualError", "ScopeAny",
     "ScopeEq", "ScopeIn", "ScopeIs", "ScopeIsIn", "Set", "Slot", "SlotName",
+    "entity_uids",
     "StringLit", "Template", "TemplateLink", "UnaryOp", "UnaryOpName",
     "Unknown", "Unless", "Var", "VarName", "When", "Wildcard",
 ]
@@ -295,3 +296,32 @@ class PolicySet:
     templates: Mapping[str, Template]
     static_policies: Mapping[str, Template]
     template_links: Tuple[TemplateLink, ...]
+
+
+def entity_uids(node: Any) -> FrozenSet[EntityUid]:
+    """Every entity uid named anywhere under `node`, at any depth.
+
+    Answers "which entities does this policy or residual actually reference",
+    which is what a caller needs to decide what to load before evaluating.
+    Walks the fields generically, so a node kind added later is covered.
+    """
+    found: "set[EntityUid]" = set()
+
+    def walk(value: Any) -> None:
+        if isinstance(value, EntityUid):
+            found.add(value)
+            return
+        if isinstance(value, Mapping):
+            for item in value.values():
+                walk(item)
+            return
+        if isinstance(value, tuple):
+            for item in value:
+                walk(item)
+            return
+        if is_dataclass(value) and not isinstance(value, type):
+            for f in fields(value):
+                walk(getattr(value, f.name))
+
+    walk(node)
+    return frozenset(found)
