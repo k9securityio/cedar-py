@@ -201,15 +201,26 @@ File:line references are against `main` at the base of branch
 
 ### Phase D — Benchmark on a quiet machine
 
-1. Run `make benchmark-compare` (N=5, release mode) against the existing
-   4.8.2 baseline on a quiet machine. Read any failure diagnostically per the
-   load-sensitivity guidance in `CLAUDE.md` — a uniform shift across all
-   benchmarks is contamination/drift, not a regression.
-2. If the gate passes (or a genuine-but-accepted engine-level shift is
-   understood and documented), refresh `tests/benchmark/results/baseline.json`
-   from a quiet N=5 capture at the 4.12 build and commit it, noting the
-   refresh in the PR description. (Q2: Option 1.)
-3. **Verify:** `make benchmark-compare` passes against the refreshed baseline.
+1. ✅ Run `make benchmark-compare` (N=5, release mode) against the existing
+   4.8.2 baseline. Initial run FAILED uniformly (+3.2%…+8.9%, all 26
+   benchmarks). Diagnosed with an A/B control: an identical N=5 capture at
+   the pre-#106 (4.8.2) state on the same machine ALSO failed (+0.6%…+7.7%),
+   proving most of the shift was ambient drift vs the January-era baseline,
+   not an engine regression. Root cause of the residual positive bias: a
+   latent comparator bug — `_load_current_runs` loaded per-run `stats.mean`
+   but the baseline stores `stats.median`; mean > median for right-skewed
+   timings, so every Δ was biased positive by a few points. Fixed the gate to
+   compare medians to medians (with `tests/unit/test_benchmark_compare.py`
+   fixtures updated). Median-to-median, 4.12 vs the old baseline is
+   **mean +2.9%, max +4.1% (`test_entities_as_json_string`) — every
+   benchmark under the 5% threshold**: no regression.
+2. ✅ Refreshed the baseline (Q2: Option 1): captured N=5 4.12 runs as
+   `results/Darwin-CPython-3.11-64bit/0038–0042_v4_12_0-run*.json`, built
+   `baseline-v4_12_0-median.json` via `aggregate.py --build-baseline-from
+   v4_12_0`, and repointed the `baseline.json` symlink (the intended refresh
+   mechanism) from `baseline-v4_8_0-median.json` to it.
+3. ✅ **Verify:** `benchmark-compare` PASSES against the refreshed baseline;
+   full unit suite 218 passed.
 
 ### Phase E — PR to main, then release cedarpy v4.12.0
 

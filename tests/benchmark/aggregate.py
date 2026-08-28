@@ -430,19 +430,25 @@ def _rel(path: Path) -> str:
 
 
 def _load_current_runs(current_dir: Path) -> dict[str, list[float]]:
-    """Return per-benchmark list of per-run mean times (μs) from current_dir/run*.json."""
+    """Return per-benchmark list of per-run median times (μs) from current_dir/run*.json.
+
+    Must load the same statistic the baseline stores (stats.median, via
+    build_baseline_from_state) — comparing per-run means against a median
+    baseline biases every Δ positive, since benchmark timings are
+    right-skewed (mean > median).
+    """
     run_files = sorted(current_dir.glob("run*.json"))
     if not run_files:
         sys.exit(
             f"error: no run*.json files in {_rel(current_dir)}. "
             f"Run `bash tests/benchmark/run_current.sh` first."
         )
-    means_by_name: dict[str, list[float]] = {}
+    medians_by_name: dict[str, list[float]] = {}
     for path in run_files:
         data = json.loads(path.read_text())
         for b in data["benchmarks"]:
-            means_by_name.setdefault(b["name"], []).append(b["stats"]["mean"] * 1_000_000)
-    return means_by_name
+            medians_by_name.setdefault(b["name"], []).append(b["stats"]["median"] * 1_000_000)
+    return medians_by_name
 
 
 def _load_baseline_medians(baseline_path: Path) -> dict[str, float]:
@@ -468,26 +474,26 @@ def compare_current_to_baseline(
     both passing and failing outcomes. Returns 0 if all benchmarks pass, 1 if
     any benchmark's median Δ exceeds threshold_pct.
     """
-    current_means = _load_current_runs(current_dir)
+    current_medians = _load_current_runs(current_dir)
     baseline_medians = _load_baseline_medians(baseline_path)
 
-    n_runs = max((len(v) for v in current_means.values()), default=0)
-    all_names = sorted(set(current_means) | set(baseline_medians))
+    n_runs = max((len(v) for v in current_medians.values()), default=0)
+    all_names = sorted(set(current_medians) | set(baseline_medians))
 
     rows: list[tuple[str, float | None, float | None, float | None, str]] = []
     any_fail = False
     skipped_warnings: list[str] = []
 
     for name in all_names:
-        means = current_means.get(name)
+        medians = current_medians.get(name)
         baseline_med = baseline_medians.get(name)
-        if means is None:
+        if medians is None:
             skipped_warnings.append(f"  {name}: present in baseline but no current runs — skipped")
             continue
         if baseline_med is None or baseline_med <= 0:
             skipped_warnings.append(f"  {name}: present in current runs but no baseline — skipped")
             continue
-        cur_med = statistics.median(means)
+        cur_med = statistics.median(medians)
         delta_pct = (cur_med - baseline_med) / baseline_med * 100
         status = "FAIL" if delta_pct > threshold_pct else "PASS"
         if status == "FAIL":
