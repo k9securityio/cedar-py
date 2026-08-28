@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Cedar Policy engine upgraded from v4.8.2 to [v4.12.0](https://github.com/cedar-policy/cedar/releases/tag/v4.12.0)** (Cedar language version 4.4 → 4.5, adding the extended `has` operator in JSON policies). No `cedarpy` API changes: the engine's breaking changes between 4.9 and 4.12 are confined to experimental features `cedarpy` does not enable (`pst`, `tpe`, `protobuf`, `tolerant-ast`), and the `partial-eval` surface is unchanged. Verified against the upstream v4.12.0 integration corpus (60,800 request cases), including the new JSON-policy-format and JSON-schema-format suites ([#106](https://github.com/k9securityio/cedar-py/pull/106)). Thanks [@h0rv](https://github.com/h0rv)!
+
 ## [4.8.7] - 2026-07-10
 
 ### Added

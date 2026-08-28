@@ -186,21 +186,18 @@ File:line references are against `main` at the base of branch
 
 ### Phase C — Manifest floor and docs
 
-1. `Cargo.toml:17-19`: bump `cedar-policy` (keeping
+1. ✅ `Cargo.toml:17-19`: bump `cedar-policy` (keeping
    `features = ["partial-eval"]`), `cedar-policy-cli`, and
-   `cedar-policy-formatter` from `4.8.2` to `4.12.0`. Run `cargo build` —
-   `Cargo.lock` should not change (4.12.0 already locked by #106); a diff here
-   means something is wrong.
-2. `CLAUDE.md`: update the two `4.8.2` references (lines 80–81). For the
-   `Schema::clone()` gotcha, re-verify against the now-bumped
-   `third_party/cedar` v4.12.0 source that `Schema` is still not Arc-wrapped
-   and refresh the `api.rs:1851` line reference.
-3. `CHANGELOG.md` under `[Unreleased]`: engine bump 4.8.2 → 4.12.0 (Cedar
-   language 4.4 → 4.5), noting no cedarpy API changes, ending
-   `([#106](…)). Thanks [@h0rv](…)!` per the outside-contribution convention.
-4. **Verify:** `grep -rn '4\.8\.2' README.md CLAUDE.md Cargo.toml` returns
-   nothing (historical CHANGELOG entries exempt); rebuild + full `pytest`
-   green.
+   `cedar-policy-formatter` from `4.8.2` to `4.12.0`. `cargo build` confirmed
+   `Cargo.lock` unchanged.
+2. ✅ `CLAUDE.md`: updated the two `4.8.2` references. Verified in v4.12.0
+   source that `Schema` still directly wraps `ValidatorSchema` (not
+   Arc-wrapped); line reference refreshed to `api.rs:1908`.
+3. ✅ `CHANGELOG.md` under `[Unreleased]`: engine bump 4.8.2 → 4.12.0 (Cedar
+   language 4.4 → 4.5), no cedarpy API changes, crediting @h0rv (#106).
+4. ✅ **Verify:** grep clean except the README compatibility row, which
+   correctly describes the released cedarpy 4.8.7 and changes at release time
+   (Phase E). Full `pytest`: 218 passed.
 
 ### Phase D — Benchmark on a quiet machine
 
