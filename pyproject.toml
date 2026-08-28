@@ -6,7 +6,7 @@ build-backend = "maturin"
 # Maturin merges package metadata from pyproject.toml (preferred) and Cargo.toml
 # c.f. https://github.com/PyO3/maturin?tab=readme-ov-file#python-metadata
 name = "cedarpy"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 classifiers = [
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",

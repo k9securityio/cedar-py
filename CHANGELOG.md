@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Removed
+
+- **Dropped support for Python 3.9**, which reached end-of-life on 2025-10-31 and no longer receives security fixes. `requires-python` is now `>=3.10`, so cp39 wheels are no longer built and pip will not install new cedarpy releases on 3.9; existing releases remain available. Python 3.10 (security-supported until October 2026) through 3.14 remain supported.
+
 ### Security
 
 - Updated `anyhow` 1.0.95 → 1.0.104, clearing the [RUSTSEC-2026-0190](https://rustsec.org/advisories/RUSTSEC-2026-0190) unsoundness warning in `Error::downcast_mut` (fixed upstream in 1.0.103).

@@ -24,9 +24,9 @@ Beginning with v4.1.0, `cedarpy`'s version number indicates the Cedar Policy eng
 <table>
 <thead><tr><th>Operating System</th><th>Processor Architectures</th><th>Python</th></tr></thead>
 <tbody>
-    <tr><td>Linux</td><td>x86_64, aarch64</td><td>3.9 - 3.14</td></tr>
+    <tr><td>Linux</td><td>x86_64, aarch64</td><td>3.10 - 3.14</td></tr>
     <tr><td>Mac</td><td>x86_64, aarch64</td><td>3.11 - 3.14</td></tr>
-    <tr><td>Windows</td><td>x86_64</td><td>3.9 - 3.14</td></tr>
+    <tr><td>Windows</td><td>x86_64</td><td>3.10 - 3.14</td></tr>
 </tbody>
 </table>
 
@@ -443,7 +443,7 @@ print(format_policies(policies))
 
 You'll need a few things to get started:
 
-* Python +3.9
+* Python +3.10
 * Rust and `cargo`
 
 This project is built on the [PyO3](https://docs.rs/pyo3/latest/pyo3/index.html) and [maturin](https://www.maturin.rs/index.html) projects.  These projects are designed to enable Python to use Rust code and vice versa.
