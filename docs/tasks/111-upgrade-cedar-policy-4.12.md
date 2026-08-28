@@ -157,12 +157,12 @@ File:line references are against `main` at the base of branch
 
 ### Phase A — Land the engine bump on the task branch
 
-1. Merge PR #106 into this branch with a **merge commit** (`gh pr merge 106
+1. ✅ Merge PR #106 into this branch with a **merge commit** (`gh pr merge 106
    --merge`), not a squash — a squash would rewrite @h0rv's commit SHA. The PR
    base is already retargeted to this branch. Then `git pull` locally.
-2. Rebuild the native extension: `maturin develop --release`.
-3. **Verify:** `pytest tests/unit` — expect 218 passed, 2 subtests passed
-   (already confirmed once against the 4.12 build during review).
+   (Merged as `78beae58`; local doc commits rebased on top for linear history.)
+2. ✅ Rebuild the native extension: `maturin develop --release`.
+3. ✅ **Verify:** `pytest tests/unit` — 218 passed, 2 subtests passed.
 
 ### Phase B — Submodule bumps and integration verification
 
