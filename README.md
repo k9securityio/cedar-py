@@ -24,9 +24,9 @@ Beginning with v4.1.0, `cedarpy`'s version number indicates the Cedar Policy eng
 <table>
 <thead><tr><th>Operating System</th><th>Processor Architectures</th><th>Python</th></tr></thead>
 <tbody>
-    <tr><td>Linux</td><td>x86_64, aarch64</td><td>3.9 - 3.14</td></tr>
+    <tr><td>Linux</td><td>x86_64, aarch64</td><td>3.10 - 3.14</td></tr>
     <tr><td>Mac</td><td>x86_64, aarch64</td><td>3.11 - 3.14</td></tr>
-    <tr><td>Windows</td><td>x86_64</td><td>3.9 - 3.14</td></tr>
+    <tr><td>Windows</td><td>x86_64</td><td>3.10 - 3.14</td></tr>
 </tbody>
 </table>
 
@@ -443,7 +443,7 @@ print(format_policies(policies))
 
 You'll need a few things to get started:
 
-* Python +3.9
+* Python +3.10
 * Rust and `cargo`
 
 This project is built on the [PyO3](https://docs.rs/pyo3/latest/pyo3/index.html) and [maturin](https://www.maturin.rs/index.html) projects.  These projects are designed to enable Python to use Rust code and vice versa.
@@ -453,7 +453,16 @@ The most common development commands are in the `Makefile`
 ### Create virtual env
 
 First create a Python virtual environment for this project with:
-`make venv-dev`
+
+```shell
+make venv-dev
+```
+
+Then activate the virtual environment:
+
+```shell
+source venv-dev/bin/activate
+```
 
 In addition to creating a dedicated virtual environment, this will install `cedar-py`'s dependencies.
 
@@ -479,25 +488,25 @@ The `make quick` command will build the Rust source code with `maturin` and run 
 
 If all goes well, you should see output like:
 ```shell
-(venv-dev) swedish-chef:cedar-py skuenzli$ make quick
+(venv-dev) dev-machine:cedar-py $ make quick
 Performing quick build
 set -e ;\
 	maturin develop ;\
 	pytest
 📦 Including license file "/path/to/cedar-py/LICENSE"
 🔗 Found pyo3 bindings
-🐍 Found CPython 3.9 at /path/to/cedar-py/venv-dev/bin/python
+🐍 Found CPython 3.11 at /path/to/cedar-py/venv-dev/bin/python
 📡 Using build options features from pyproject.toml
 Ignoring maturin: markers 'extra == "dev"' don't match your environment
 Ignoring pip-tools: markers 'extra == "dev"' don't match your environment
 Ignoring pytest: markers 'extra == "dev"' don't match your environment
 💻 Using `MACOSX_DEPLOYMENT_TARGET=11.0` for aarch64-apple-darwin by default
-   Compiling cedarpy v0.1.0 (/path/to/cedar-py)
-    Finished dev [unoptimized + debuginfo] target(s) in 3.06s
-📦 Built wheel for CPython 3.9 to /var/folders/k2/tnw8n1c54tv8nt4557pfx3440000gp/T/.tmpO6aj6c/cedarpy-0.1.0-cp39-cp39-macosx_11_0_arm64.whl
-🛠 Installed cedarpy-0.1.0
-================================================================================================ test session starts ================================================================================================
-platform darwin -- Python 3.9.12, pytest-7.4.0, pluggy-1.2.0
+   Compiling cedarpy v4.8.7 (/path/to/cedar-py)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 21.76s
+📦 Built wheel for CPython 3.11 to /var/folders/k2/tnw8n1c54tv8nt4557pfx3440000gp/T/.tmpCUscpS/cedarpy-4.8.7-cp311-cp311-macosx_11_0_arm64.whl
+🛠 Installed cedarpy-4.8.7
+================== test session starts =============
+platform darwin -- Python 3.11.1, pytest-9.0.3, pluggy-1.6.0
 rootdir: /path/to/cedar-py
 configfile: pyproject.toml
 testpaths: tests/unit
@@ -509,7 +518,7 @@ tests/unit/test_authorize.py::AuthorizeTestCase::test_authorize_basic_DENY PASSE
 ... snip ... # a bunch of tests passing - please write more!
 tests/unit/test_import_module.py::InvokeModuleTestFunctionTestCase::test_invoke_parse_test_policy PASSED                                                                                                      [100%]
 
-================================================================================================ 10 passed in 0.51s =================================================================================================
+====== 218 passed, 2 subtests passed in 2.76s ======
 ```
 
 ### Integration tests
