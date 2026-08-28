@@ -198,6 +198,12 @@ File:line references are against `main` at the base of branch
 4. ✅ **Verify:** grep clean except the README compatibility row, which
    correctly describes the released cedarpy 4.8.7 and changes at release time
    (Phase E). Full `pytest`: 218 passed.
+5. ✅ (Post-plan addition.) Removed the never-used `cedar-policy-cli`
+   dependency — declared since the initial scaffold, zero references in
+   `src/lib.rs`. Pure lockfile shrink: 34 transitive crates dropped (clap,
+   miette support stack, rustix, …), 0 added. Also removes the `=X.Y.Z`
+   exact-pin coupling the cli crate imposed on `cedar-policy` resolution.
+   Verified: unit 218 / integration 78 / corpus 60,800 all pass.
 
 ### Phase D — Benchmark on a quiet machine
 
