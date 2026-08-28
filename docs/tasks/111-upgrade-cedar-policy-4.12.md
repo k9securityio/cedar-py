@@ -85,7 +85,7 @@ Recommendation: Option 1 — the engine is the dominant term in every benchmark,
 so drift vs a 4.8.2 baseline would accumulate into exactly the kind of ambient
 +2–4% noise `CLAUDE.md` warns about.
 
-Decision: TBD
+Decision: Recommendation accepted, Option 1.
 
 ### Q3. How should the cedar-integration-tests submodule be re-pinned?
 
@@ -103,7 +103,7 @@ Options:
 Recommendation: Option 1 — same shape as today, and the branch reference
 documents which corpus line the pin came from.
 
-Decision: TBD
+Decision: Recommendation accepted, Option 1.
 
 ### Q4. Should the stale `third_party/cedar` submodule be bumped too?
 
@@ -125,7 +125,7 @@ Recommendation: Option 1 — the docs step already requires re-verifying
 at the matching tag; sample-data churn risk is covered by the existing parity
 tests.
 
-Decision: TBD
+Decision: Recommendation accepted, Option 1.
 
 ### Q5. Should new 4.12-corpus test suites be wired into the integration tests?
 
@@ -148,7 +148,7 @@ Recommendation: Option 1 if the diff is small (likely — suite additions
 upstream are infrequent); fall back to Option 2 if a new suite needs
 non-trivial harness work.
 
-Decision: TBD
+Decision: Recommendation accepted, Option 1.
 
 ## Detailed implementation steps
 
