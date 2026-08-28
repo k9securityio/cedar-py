@@ -166,24 +166,23 @@ File:line references are against `main` at the base of branch
 
 ### Phase B — Submodule bumps and integration verification
 
-1. Bump `third_party/cedar-integration-tests`: set `branch = release/4.12.x`
+1. ✅ Bump `third_party/cedar-integration-tests`: set `branch = release/4.12.x`
    in `.gitmodules` (line 7), check out tag `v4.12.0` (commit `6b4c3dcb…`) in
    the submodule, and stage both. (Q3: Option 1.)
-2. Bump `third_party/cedar` from its pre-v3.0.0 pin to tag `v4.12.0` and stage
+2. ✅ Bump `third_party/cedar` from its pre-v3.0.0 pin to tag `v4.12.0` and stage
    the pin. (Q4: Option 1.)
-3. Re-run `pytest tests/unit` — `tests/unit/test_validate.py:325` loads
-   `third_party/cedar/cedar-policy-cli/sample-data/`, so the cedar-submodule
-   bump can change parity-test inputs. Adjust expectations only if sample-data
-   actually changed.
-4. Audit the corpus diff for new suites (Q5: Option 1): diff the `tests/` tree
-   between the v4.8.0 and v4.12.0 submodule states; wire any new
-   kinds/suites into `tests/integration/test_cedar_integration_tests.py` via
-   the existing `@parameterized.expand(get_authz_test_params_for_test_suite(…))`
-   pattern. While there, re-check whether the disabled `example_use_cases/4c`
-   suite (line ~199, "not present in release/4.1.x") exists in the 4.12 corpus
-   and can be enabled.
-5. **Verify:** `make integration-tests` and `make corpus-tests` pass against
-   the 4.12 corpus.
+3. ✅ Re-run `pytest tests/unit` — sample-data files were renamed upstream
+   (`policies_N[_bad].txt` → `.cedar`, `schema.json` → `schema.cedarschema.json`);
+   updated the references in `tests/unit/test_validate.py`. 218 passed —
+   file contents unchanged semantically, no expectation changes needed.
+4. ✅ Audit the corpus diff for new suites (Q5: Option 1): v4.8.0 → v4.12.0
+   adds exactly two suites, `example_use_cases/2a_json_policy` (JSON policy
+   format) and `example_use_cases/2a_json_schema` (JSON schema format). Wired
+   both in; the loader now converts `policyFormat: "json"` suites via
+   `cedarpy.policies_from_json_str`. `4c` is still absent from the 4.12
+   corpus, so it stays disabled.
+5. ✅ **Verify:** integration tests 78 passed (74 + 4 from the new suites);
+   corpus tests 60,800 passed against the 4.12 corpus (was 59,696 on 4.8).
 
 ### Phase C — Manifest floor and docs
 
