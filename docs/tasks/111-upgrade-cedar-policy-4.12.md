@@ -58,7 +58,11 @@ Recommendation: Option 1 — keeps the contributor's attribution clean on their
 own merged PR and keeps each PR small and auditable, matching the repo's
 preference for minimal lockfile diffs.
 
-Decision: TBD
+Decision: Retarget PR #106 to merge into `gh-111-upgrade-cedar-policy-4.12`
+so all 4.12-support changes and testing land together in a single PR to
+`main`. A number of changes are expected to support cedar-policy 4.12 and
+they should be reviewed together. @h0rv's commit arrives via the #106 merge,
+preserving attribution.
 
 ### Q2. Should the benchmark baseline be refreshed after the 4.12 gate passes?
 
