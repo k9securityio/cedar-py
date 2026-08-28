@@ -8,7 +8,7 @@ match is exhaustive.
 from __future__ import annotations
 
 from dataclasses import dataclass, fields, is_dataclass
-from typing import Any, Dict, FrozenSet, Literal, Mapping, NoReturn, Tuple, TypeVar, Union
+from typing import Any, Literal, Mapping, NoReturn, TypeVar
 
 __all__ = [
     "ActionConstraint", "ActionEq", "ActionIn", "BinaryOp", "BinaryOpName",
@@ -26,7 +26,7 @@ _K = TypeVar("_K", bound=str)
 _V = TypeVar("_V")
 
 
-class FrozenMap(Dict[_K, _V]):
+class FrozenMap(dict[_K, _V]):
     """An immutable, hashable string-keyed mapping.
 
     A PST node is a value, so its mappings have to be values too: a plain
@@ -55,17 +55,17 @@ class FrozenMap(Dict[_K, _V]):
     update = _immutable
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class EntityType:
     """An entity type name: `User`, or `MyApp::Photo` with a namespace."""
     basename: str
-    namespace: Tuple[str, ...] = ()
+    namespace: tuple[str, ...] = ()
 
     def __str__(self) -> str:
         return "::".join((*self.namespace, self.basename))
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class EntityUid:
     type: EntityType
     id: str
@@ -79,40 +79,40 @@ VarName = Literal["principal", "action", "resource", "context"]
 Effect = Literal["permit", "forbid"]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Slot:
     name: SlotName
 
 
-EntityOrSlot = Union[EntityUid, Slot]
+EntityOrSlot = EntityUid | Slot
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Var:
     name: VarName
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class BoolLit:
     value: bool
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class LongLit:
     value: int
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class StringLit:
     value: str
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class EntityLit:
     value: EntityUid
 
 
-Lit = Union[BoolLit, LongLit, StringLit, EntityLit]
+Lit = BoolLit | LongLit | StringLit | EntityLit
 
 UnaryOpName = Literal[
     "not", "neg", "is_empty", "datetime", "decimal", "duration", "ip",
@@ -129,183 +129,183 @@ BinaryOpName = Literal[
 ]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class UnaryOp:
     op: UnaryOpName
     arg: Expr
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class BinaryOp:
     op: BinaryOpName
     left: Expr
     right: Expr
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class GetAttr:
     base: Expr
     attr: str
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class HasAttr:
     base: Expr
-    attrs: Tuple[str, ...]
+    attrs: tuple[str, ...]
 
     def __post_init__(self) -> None:
         if not self.attrs:
             raise ValueError("HasAttr.attrs must name at least one attribute")
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Char:
     value: str
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Wildcard:
     pass
 
 
-PatternElem = Union[Char, Wildcard]
+PatternElem = Char | Wildcard
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Like:
     base: Expr
-    pattern: Tuple[PatternElem, ...]
+    pattern: tuple[PatternElem, ...]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Is:
     base: Expr
     entity_type: EntityType
-    in_expr: Union[Expr, None]
+    in_expr: Expr | None
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class IfThenElse:
     cond: Expr
     then_expr: Expr
     else_expr: Expr
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Set:
-    elements: Tuple[Expr, ...]
+    elements: tuple[Expr, ...]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Record:
     fields: Mapping[str, Expr]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Unknown:
     name: str
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ResidualError:
     pass  # TPE residual subexpression known to error if evaluated
 
 
-Expr = Union[
-    Var, Slot, BoolLit, LongLit, StringLit, EntityLit, UnaryOp, BinaryOp,
-    GetAttr, HasAttr, Like, Is, IfThenElse, Set, Record, Unknown,
-    ResidualError,
-]
+Expr = (
+    Var | Slot | BoolLit | LongLit | StringLit | EntityLit | UnaryOp | BinaryOp
+    | GetAttr | HasAttr | Like | Is | IfThenElse | Set | Record | Unknown
+    | ResidualError
+)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class When:
     expr: Expr
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Unless:
     expr: Expr
 
 
-Clause = Union[When, Unless]
+Clause = When | Unless
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ScopeAny:
     pass
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ScopeEq:
     entity: EntityOrSlot
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ScopeIn:
     entity: EntityOrSlot
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ScopeIs:
     entity_type: EntityType
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ScopeIsIn:
     entity_type: EntityType
     entity: EntityOrSlot
 
 
-PrincipalOrResourceConstraint = Union[ScopeAny, ScopeEq, ScopeIn, ScopeIs, ScopeIsIn]
+PrincipalOrResourceConstraint = ScopeAny | ScopeEq | ScopeIn | ScopeIs | ScopeIsIn
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ActionEq:
     entity: EntityUid
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ActionIn:
-    entities: Tuple[EntityUid, ...]
+    entities: tuple[EntityUid, ...]
 
 
-ActionConstraint = Union[ScopeAny, ActionEq, ActionIn]
+ActionConstraint = ScopeAny | ActionEq | ActionIn
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Template:
     id: str
     effect: Effect
     principal: PrincipalOrResourceConstraint
     action: ActionConstraint
     resource: PrincipalOrResourceConstraint
-    clauses: Tuple[Clause, ...]
+    clauses: tuple[Clause, ...]
     annotations: Mapping[str, str]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class TemplateLink:
     template_id: str
     new_id: str
     values: Mapping[SlotName, EntityUid]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class PolicySet:
     templates: Mapping[str, Template]
     static_policies: Mapping[str, Template]
-    template_links: Tuple[TemplateLink, ...]
+    template_links: tuple[TemplateLink, ...]
 
 
-def entity_uids(node: Any) -> FrozenSet[EntityUid]:
+def entity_uids(node: Any) -> frozenset[EntityUid]:
     """Every entity uid named anywhere under `node`, at any depth.
 
     Answers "which entities does this policy or residual actually reference",
     which is what a caller needs to decide what to load before evaluating.
     Walks the fields generically, so a node kind added later is covered.
     """
-    found: "set[EntityUid]" = set()
+    found: set[EntityUid] = set()
 
     def walk(value: Any) -> None:
         if isinstance(value, EntityUid):

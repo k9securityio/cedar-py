@@ -496,8 +496,8 @@ result.static_policies["policy0"].principal.entity.type
 # EntityType(basename='User', namespace=('MyApp',))  ->  str(...) == 'MyApp::User'
 ```
 
-Every node is a frozen dataclass and is hashable, so nodes work as dict keys and
-set members. Mapping-valued fields (`Record.fields`, `Template.annotations`,
+Every node is a frozen, slotted dataclass and is hashable, so nodes work as dict
+keys and set members and carry no per-instance `__dict__`. Mapping-valued fields (`Record.fields`, `Template.annotations`,
 `PolicySet.templates`, ...) are declared as `Mapping`, so writing to one is a
 type error, and hold a `FrozenMap` at runtime: a `dict` subclass that rejects
 mutation, so `dataclasses.asdict(result)`, `json.dumps(...)`, and comparison
