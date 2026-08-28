@@ -1,7 +1,9 @@
 """Type stubs for cedarpy's Rust extension. Prefer the public wrappers in
 ``cedarpy`` (e.g. ``cedarpy.is_authorized``); do not import ``_internal`` directly.
 """
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
+
+import cedarpy
 
 import cedarpy.pst
 
@@ -83,7 +85,7 @@ class PolicySet:
         """
         ...
 
-    def with_linked_batch(self, links: List[Dict[str, Any]]) -> "PolicySet":
+    def with_linked_batch(self, links: list[dict[str, Any]]) -> "PolicySet":
         """Return a NEW ``PolicySet`` handle with ``links`` applied — the primary
         template-linking entry point (``with_linked`` is the single-link sugar).
         Each link instantiates a template already in this set into a concrete,
@@ -116,14 +118,14 @@ class PolicySet:
         """
         ...
 
-    def with_linked(self, template_id: str, new_id: str, values: Dict[str, Any]) -> "PolicySet":
+    def with_linked(self, template_id: str, new_id: str, values: dict[str, Any]) -> "PolicySet":
         """Return a NEW ``PolicySet`` handle with a single template linked. Sugar
         for ``with_linked_batch`` with one link; see it for the ``values`` forms,
         ``template_id`` resolution (literal id, else ``@id``), and errors.
         """
         ...
 
-    def templates(self) -> List[Dict[str, Any]]:
+    def templates(self) -> list[dict[str, Any]]:
         """The templates in this set — the linkable ``?principal`` / ``?resource``
         policies — as a list of dicts, one per template:
 
@@ -190,7 +192,7 @@ class Entities:
     """
 
     @staticmethod
-    def from_json_str(s: str, schema: Union[str, "Schema", None] = ...) -> "Entities":
+    def from_json_str(s: str, schema: str | "Schema" | None = ...) -> "Entities":
         """Parse an ``Entities`` handle from a Cedar JSON entities document.
 
         ``schema`` (optional) is Cedar schema text or JSON, or a pre-parsed
@@ -200,7 +202,7 @@ class Entities:
         """
         ...
 
-    def with_added_json_str(self, delta: str, schema: Union[str, "Schema", None] = ...) -> "Entities":
+    def with_added_json_str(self, delta: str, schema: str | "Schema" | None = ...) -> "Entities":
         """Return a NEW ``Entities`` handle: this base set plus the entities
         parsed from ``delta``. The base is cloned, not re-parsed — only ``delta``
         is parsed. The merge is a disjoint union: a ``delta`` entity whose uid
@@ -260,29 +262,29 @@ def echo(s: str) -> str: ...
 
 
 def is_authorized(
-    request: Dict[str, Any],
-    policies: Union[str, PolicySet],
-    entities: Union[str, Entities],
-    schema: Union[str, "Schema", None] = ...,
-    verbose: Optional[bool] = ...,
+    request: dict[str, Any],
+    policies: str | PolicySet,
+    entities: str | Entities,
+    schema: str | "Schema" | None = ...,
+    verbose: bool | None = ...,
 ) -> str: ...
 
 
 def is_authorized_batch(
-    requests: List[Dict[str, Any]],
-    policies: Union[str, PolicySet],
-    entities: Union[str, Entities],
-    schema: Union[str, "Schema", None] = ...,
-    verbose: Optional[bool] = ...,
-) -> List[str]: ...
+    requests: list[dict[str, Any]],
+    policies: str | PolicySet,
+    entities: str | Entities,
+    schema: str | "Schema" | None = ...,
+    verbose: bool | None = ...,
+) -> list[str]: ...
 
 
 def is_authorized_partial(
-    request: Dict[str, Optional[str]],
-    policies: Union[str, PolicySet],
-    entities: Union[str, Entities],
-    schema: Union[str, "Schema", None] = ...,
-    verbose: Optional[bool] = ...,
+    request: dict[str, str | None],
+    policies: str | PolicySet,
+    entities: str | Entities,
+    schema: str | "Schema" | None = ...,
+    verbose: bool | None = ...,
 ) -> str: ...
 
 
@@ -299,29 +301,29 @@ def policies_to_pst(s: str) -> "cedarpy.pst.PolicySet": ...
 
 
 def tpe_authorize(
-    principal: Union[str, dict],
-    action: Union[str, dict],
-    resource: Union[str, dict],
-    policies: Union[str, "PolicySet"],
-    entities: Union[str, "Entities", "cedarpy.PartialEntities"],
-    schema: Union[str, "Schema"],
-    context: Optional[str] = ...,
-    verbose: Optional[bool] = ...,
+    principal: str | dict,
+    action: str | dict,
+    resource: str | dict,
+    policies: str | "PolicySet",
+    entities: str | "Entities" | "cedarpy.PartialEntities",
+    schema: str | "Schema",
+    context: str | None = ...,
+    verbose: bool | None = ...,
 ) -> "cedarpy.TpeAuthzResult": ...
 
 
 def tpe_reauthorize(
     request: dict,
-    principal: Union[str, dict],
-    action: Union[str, dict],
-    resource: Union[str, dict],
-    policies: Union[str, "PolicySet"],
-    entities: Union[str, "Entities", "cedarpy.PartialEntities"],
-    schema: Union[str, "Schema"],
-    context: Optional[str] = ...,
-    concrete_entities: Union[str, "Entities", None] = ...,
-    verbose: Optional[bool] = ...,
+    principal: str | dict,
+    action: str | dict,
+    resource: str | dict,
+    policies: str | "PolicySet",
+    entities: str | "Entities" | "cedarpy.PartialEntities",
+    schema: str | "Schema",
+    context: str | None = ...,
+    concrete_entities: str | "Entities" | None = ...,
+    verbose: bool | None = ...,
 ) -> str: ...
 
 
-def validate_policies(policies: str, schema: Union[str, "Schema"]) -> str: ...
+def validate_policies(policies: str, schema: str | "Schema") -> str: ...

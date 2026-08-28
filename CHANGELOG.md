@@ -20,6 +20,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- `cedarpy`'s own type annotations now type-check clean (`mypy cedarpy/`, no errors) and describe what the functions actually accept and return: PEP 604/585 syntax throughout (`str | dict | Schema`, `list[dict]`), the raw-JSON dicts the result wrappers hold are parameterized (`Mapping[str, str]` for the `@id` annotation maps, `Mapping[str, int]` for `metrics`) instead of a bare `dict`, and the entities/schema normalization no longer rebinds a parameter to a different type than its annotation. `cedarpy.__all__` and `cedarpy.pst.__all__` now declare the public surface, so `import *` no longer re-exports `json`, `copy`, and the typing imports. No runtime behavior change.
+
 - Updated the remaining declared Rust dependencies to their latest patch releases: `pyo3` 0.27.1 → 0.27.2 (crash fix for Rust 1.92+ builds with debug assertions; no API changes), `serde` 1.0.228 → 1.0.229, and `serde_json` 1.0.145 → 1.0.151 (float formatting switched from Ryū to Żmij upstream — output can differ textually while remaining valid; the 60,800-case Cedar corpus passes unchanged). No behavior changes observed across unit, integration, corpus, or benchmark suites.
 
 - Removed the unused `cedar-policy-cli` crate dependency, present since the project's initial scaffold but never referenced from code. Drops 34 transitive crates (`clap`, `miette`'s terminal-support stack, `rustix`, …) from `Cargo.lock`, shrinking build time, audit surface, and the version-resolution coupling its exact `=X.Y.Z` pin on `cedar-policy` imposed. No functional change — `cedar-policy-formatter` (which backs `format_policies`) remains.

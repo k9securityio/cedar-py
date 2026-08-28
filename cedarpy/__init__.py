@@ -4,7 +4,7 @@ import json
 from copy import copy
 from enum import Enum
 from dataclasses import dataclass, field, replace
-from typing import Mapping, Tuple, Union, List, Optional, Any
+from typing import Any, Mapping
 
 from cedarpy import _internal
 from cedarpy import pst
@@ -12,6 +12,16 @@ from cedarpy import pst
 # Re-export the Rust-implemented PolicySet and Schema handles.
 PolicySet = _internal.PolicySet
 Schema = _internal.Schema
+
+__all__ = [
+    "AuthzResult", "Decision", "Diagnostics", "Entities", "PartialAuthzResult",
+    "PartialDiagnostics", "PartialEntities", "PolicySet", "Schema",
+    "TpeAuthzResult", "TpeClassification", "ValidationError",
+    "ValidationResult", "echo", "format_policies", "is_authorized",
+    "is_authorized_batch", "is_authorized_partial", "policies_from_json_str",
+    "policies_to_json_str", "policies_to_pst", "pst", "tpe_authorize",
+    "tpe_reauthorize", "validate_policies",
+]
 
 
 class Entities:
@@ -44,7 +54,7 @@ class Entities:
         self._inner = _inner
 
     @staticmethod
-    def from_json_str(s: str, schema: Union[str, dict, Schema, None] = None) -> "Entities":
+    def from_json_str(s: str, schema: str | dict | Schema | None = None) -> Entities:
         """Parse an ``Entities`` handle from a Cedar JSON entities document.
 
         :param schema: (optional) a Cedar schema as a JSON/Cedar string, a
@@ -57,7 +67,7 @@ class Entities:
             schema = json.dumps(schema)
         return Entities(_internal.Entities.from_json_str(s, schema))
 
-    def with_added_json_str(self, delta: str, schema: Union[str, dict, Schema, None] = None) -> "Entities":
+    def with_added_json_str(self, delta: str, schema: str | dict | Schema | None = None) -> Entities:
         """Return a NEW ``Entities`` handle: this base plus the entities parsed
         from ``delta``. The base is cloned, not re-parsed — only ``delta`` is
         parsed. The merge is a disjoint union: a ``delta`` entity whose uid
@@ -109,7 +119,7 @@ class PartialEntities:
     _partial_entities_json: str
 
     @staticmethod
-    def from_json(entities: Union[str, List[dict], dict]) -> "PartialEntities":
+    def from_json(entities: str | list[dict] | dict) -> PartialEntities:
         """Build from a partial entity document, as JSON text or Python data."""
         if isinstance(entities, str):
             return PartialEntities(entities)
@@ -120,28 +130,28 @@ class PartialEntities:
 class _TpeInputs:
     """The inputs one ``tpe_authorize`` call ran with, so its result can
     reauthorize without the caller repeating them."""
-    principal: Union[str, dict, pst.EntityType]
-    action: Union[str, dict]
-    resource: Union[str, dict, pst.EntityType]
-    policies: Union[str, "PolicySet"]
-    entities: Union[str, List[dict], "Entities", PartialEntities]
-    schema: Union[str, dict, "Schema"]
-    context: Optional[dict]
+    principal: str | dict | pst.EntityType
+    action: str | dict
+    resource: str | dict | pst.EntityType
+    policies: str | PolicySet
+    entities: str | list[dict] | Entities | PartialEntities
+    schema: str | dict | Schema
+    context: dict | None
 
 
 @dataclass(frozen=True)
 class TpeClassification:
     """Policy ids TPE could not resolve, and the ones it did, for one effect."""
-    residual_ids: Tuple[str, ...]
-    true_ids: Tuple[str, ...]
-    false_ids: Tuple[str, ...]
-    error_ids: Tuple[str, ...]
+    residual_ids: tuple[str, ...]
+    true_ids: tuple[str, ...]
+    false_ids: tuple[str, ...]
+    error_ids: tuple[str, ...]
 
 
 @dataclass(frozen=True)
 class TpeAuthzResult:
-    decision: Optional[Decision]
-    reason: Tuple[str, ...]
+    decision: Decision | None
+    reason: tuple[str, ...]
     permits: TpeClassification
     forbids: TpeClassification
     residual_policies: Mapping[str, pst.Template]
@@ -151,11 +161,11 @@ class TpeAuthzResult:
     the unknowns are bound, or use ``reauthorize``, which additionally checks
     the concrete request against the partial one."""
     metrics: Mapping[str, int]
-    _request_inputs: Optional[_TpeInputs] = field(default=None, repr=False, compare=False)
+    _request_inputs: _TpeInputs | None = field(default=None, repr=False, compare=False)
 
     def reauthorize(self,
                     request: dict,
-                    entities: Union[str, List[dict], "Entities", None] = None,
+                    entities: str | list[dict] | Entities | None = None,
                     verbose: bool = False) -> AuthzResult:
         """Bind the unknowns and reach a concrete decision from the residuals.
 
@@ -198,21 +208,21 @@ class _DiagnosticsBase:
     subclass relationship.
     """
 
-    def __init__(self, diagnostics: dict) -> None:
+    def __init__(self, diagnostics: Mapping[str, Any]) -> None:
         super().__init__()
-        self._diagnostics: dict = diagnostics
+        self._diagnostics: Mapping[str, Any] = diagnostics
 
     @property
-    def errors(self) -> List[str]:
+    def errors(self) -> list[str]:
         return self._diagnostics.get('errors', list())
 
     @property
-    def reasons(self) -> List[str]:
+    def reasons(self) -> list[str]:
         # (intentionally) map 'reason' key in diagnostics dict to 'reasons' property (plural)
         return self._diagnostics.get('reason', list())
 
     @property
-    def id_annotations_by_reason(self) -> dict:
+    def id_annotations_by_reason(self) -> Mapping[str, str]:
         """Map from each parser-generated policy id in ``reasons`` to the
         literal value of its ``@id`` annotation, when the matched policy
         declares one. ``@id("foo")`` contributes ``"foo"``; ``@id("")`` /
@@ -229,7 +239,7 @@ class Diagnostics(_DiagnosticsBase):
 
 
 class AuthzResult:
-    def __init__(self, authz_resp: dict) -> None:
+    def __init__(self, authz_resp: Mapping[str, Any]) -> None:
         super().__init__()
         self._authz_resp = authz_resp
         self._diagnostics = Diagnostics(self._authz_resp.get('diagnostics', {}))
@@ -243,7 +253,7 @@ class AuthzResult:
         return Decision.Allow == self.decision
 
     @property
-    def correlation_id(self) -> Optional[str]:
+    def correlation_id(self) -> str | None:
         return self._authz_resp.get('correlation_id', None)
 
     @property
@@ -251,7 +261,7 @@ class AuthzResult:
         return self._diagnostics
 
     @property
-    def metrics(self) -> dict:
+    def metrics(self) -> Mapping[str, int]:
         return self._authz_resp.get('metrics', {})
 
     def __getitem__(self, __name: str) -> Any:
@@ -261,7 +271,7 @@ class AuthzResult:
 class ValidationError:
     """Represents a single validation error found when validating policies against a schema."""
 
-    def __init__(self, error_dict: dict) -> None:
+    def __init__(self, error_dict: Mapping[str, Any]) -> None:
         self._error = error_dict
 
     @property
@@ -286,7 +296,7 @@ class ValidationError:
 class ValidationResult:
     """Result of validating Cedar policies against a schema."""
 
-    def __init__(self, result_dict: dict) -> None:
+    def __init__(self, result_dict: Mapping[str, Any]) -> None:
         self._result = result_dict
         self._errors = [ValidationError(e) for e in result_dict.get('errors', [])]
 
@@ -296,12 +306,12 @@ class ValidationResult:
         return self._result.get('validation_passed', False)
 
     @property
-    def errors(self) -> List['ValidationError']:
+    def errors(self) -> list[ValidationError]:
         """List of validation errors (empty if validation passed)."""
         return self._errors
 
     @property
-    def id_annotations_by_policy_id(self) -> dict:
+    def id_annotations_by_policy_id(self) -> Mapping[str, str]:
         """Map from each parser-generated policy id appearing in ``errors``
         to the literal value of its ``@id`` annotation, when the source
         policy declares one. ``@id("foo")`` contributes ``"foo"``;
@@ -320,9 +330,9 @@ class ValidationResult:
 
 
 def is_authorized(request: dict,
-                  policies: Union[str, PolicySet],
-                  entities: Union[str, List[dict], Entities],
-                  schema: Union[str, dict, Schema, None] = None,
+                  policies: str | PolicySet,
+                  entities: str | list[dict] | Entities,
+                  schema: str | dict | Schema | None = None,
                   verbose: bool = False) -> AuthzResult:
     """Evaluate whether the request is authorized given the parameters.
 
@@ -354,11 +364,11 @@ def is_authorized(request: dict,
                                verbose=verbose)[0]
 
 
-def is_authorized_batch(requests: List[dict],
-                        policies: Union[str, PolicySet],
-                        entities: Union[str, List[dict], Entities],
-                        schema: Union[str, dict, Schema, None] = None,
-                        verbose: bool = False) -> List[AuthzResult]:
+def is_authorized_batch(requests: list[dict],
+                        policies: str | PolicySet,
+                        entities: str | list[dict] | Entities,
+                        schema: str | dict | Schema | None = None,
+                        verbose: bool = False) -> list[AuthzResult]:
     """Evaluate whether a batch of requests are authorized given the other parameters.  Each request is evaluated
     independently and results in an AuthzResult per request.
 
@@ -396,25 +406,14 @@ def is_authorized_batch(requests: List[dict],
 
         requests_local.append(request)
 
-    # Normalize entities to what the extension accepts: a JSON string, or the
-    # Rust-backed _internal.Entities unwrapped from the public handle.
-    internal_entities = entities
-    if isinstance(internal_entities, list):
-        internal_entities = json.dumps(internal_entities)
-    elif isinstance(internal_entities, Entities):
-        internal_entities = internal_entities._inner
-
-    if isinstance(schema, dict):
-        schema = json.dumps(schema)
-    # str, Schema handles, and None pass through directly to Rust's SchemaArg
-
-    authz_result_strs: List[str] = _internal.is_authorized_batch(requests_local, policies, internal_entities, schema, verbose)
-    authz_result_objs: List[dict] = []
+    authz_result_strs: list[str] = _internal.is_authorized_batch(
+        requests_local, policies, _internal_entities(entities), _internal_schema(schema), verbose)
+    authz_result_objs: list[Mapping[str, Any]] = []
 
     for authz_result_str in authz_result_strs:
         authz_result_objs.append(json.loads(authz_result_str))
         
-    authz_results: List[AuthzResult] = []
+    authz_results: list[AuthzResult] = []
     for response_obj in authz_result_objs:
         authz_results.append(AuthzResult(response_obj))
 
@@ -480,19 +479,19 @@ class PartialDiagnostics(_DiagnosticsBase):
     """
 
     @property
-    def may_be_determining(self) -> List[str]:
+    def may_be_determining(self) -> list[str]:
         return self._diagnostics.get('may_be_determining', [])
 
     @property
-    def must_be_determining(self) -> List[str]:
+    def must_be_determining(self) -> list[str]:
         return self._diagnostics.get('must_be_determining', [])
 
     @property
-    def nontrivial_residuals(self) -> List[str]:
+    def nontrivial_residuals(self) -> list[str]:
         return self._diagnostics.get('nontrivial_residuals', [])
 
     @property
-    def unknown_entities(self) -> List[str]:
+    def unknown_entities(self) -> list[str]:
         return self._diagnostics.get('unknown_entities', [])
 
 
@@ -506,7 +505,7 @@ class PartialAuthzResult:
     ``decision`` is ``NoDecision`` and ``residuals`` is empty.
     """
 
-    def __init__(self, authz_resp: dict) -> None:
+    def __init__(self, authz_resp: Mapping[str, Any]) -> None:
         self._authz_resp = authz_resp
         self._diagnostics = PartialDiagnostics(authz_resp.get('diagnostics', {}))
 
@@ -526,7 +525,7 @@ class PartialAuthzResult:
         return Decision.Allow == self.decision
 
     @property
-    def correlation_id(self) -> Optional[str]:
+    def correlation_id(self) -> str | None:
         return self._authz_resp.get('correlation_id')
 
     @property
@@ -534,11 +533,11 @@ class PartialAuthzResult:
         return self._diagnostics
 
     @property
-    def residuals(self) -> dict:
+    def residuals(self) -> Mapping[str, Any]:
         return self._authz_resp.get('residuals', {})
 
     @property
-    def metrics(self) -> dict:
+    def metrics(self) -> Mapping[str, int]:
         return self._authz_resp.get('metrics', {})
 
     def __getitem__(self, __name: str) -> Any:
@@ -546,9 +545,9 @@ class PartialAuthzResult:
 
 
 def is_authorized_partial(request: dict,
-                          policies: Union[str, PolicySet],
-                          entities: Union[str, List[dict], Entities],
-                          schema: Union[str, dict, Schema, None] = None,
+                          policies: str | PolicySet,
+                          entities: str | list[dict] | Entities,
+                          schema: str | dict | Schema | None = None,
                           verbose: bool = False) -> PartialAuthzResult:
     """Partially evaluate an authorization request with unknowns.
 
@@ -605,27 +604,17 @@ def is_authorized_partial(request: dict,
         else:
             request_local['context'] = context
 
-    internal_entities = entities
-    if isinstance(internal_entities, list):
-        internal_entities = json.dumps(internal_entities)
-    elif isinstance(internal_entities, Entities):
-        internal_entities = internal_entities._inner
-
-    if isinstance(schema, dict):
-        schema = json.dumps(schema)
-    # str, Schema handles, and None pass through directly to Rust's SchemaArg
-
     result_str = _internal.is_authorized_partial(
-        request_local, policies, internal_entities, schema, verbose)
+        request_local, policies, _internal_entities(entities), _internal_schema(schema), verbose)
     result_dict = json.loads(result_str)
     return PartialAuthzResult(result_dict)
 
 
-_TpeEntities = Union[str, List[dict], "Entities", PartialEntities]
-_TpePartialEuid = Union[str, dict, pst.EntityType]
+_TpeEntities = str | list[dict] | Entities | PartialEntities
+_TpePartialEuid = str | dict | pst.EntityType
 
 
-def _normalize_tpe_euid(value: Union[str, dict, pst.EntityType]) -> Union[str, dict]:
+def _normalize_tpe_euid(value: str | dict | pst.EntityType) -> str | dict:
     """A `pst.EntityType` names a type whose id is unknown; pass it on in the
     dict form Rust reads, which carries `type` and an optional `id`."""
     if isinstance(value, pst.EntityType):
@@ -633,9 +622,9 @@ def _normalize_tpe_euid(value: Union[str, dict, pst.EntityType]) -> Union[str, d
     return value
 
 
-def _normalize_tpe_entities(entities: _TpeEntities) -> Any:
-    if isinstance(entities, PartialEntities):
-        return entities
+def _internal_entities(entities: str | list[dict] | Entities) -> str | _internal.Entities:
+    """Narrow the public entities forms to what the extension accepts: JSON
+    text, or the Rust-backed handle unwrapped from the public one."""
     if isinstance(entities, list):
         return json.dumps(entities)
     if isinstance(entities, Entities):
@@ -643,13 +632,33 @@ def _normalize_tpe_entities(entities: _TpeEntities) -> Any:
     return entities
 
 
+def _internal_schema(schema: str | dict | Schema | None) -> str | Schema | None:
+    """Cedar schema text, JSON text, or a handle: what Rust's SchemaArg reads."""
+    if isinstance(schema, dict):
+        return json.dumps(schema)
+    return schema
+
+
+def _internal_schema_required(schema: str | dict | Schema) -> str | Schema:
+    """The TPE path requires a schema, so its narrowing cannot yield None."""
+    if isinstance(schema, dict):
+        return json.dumps(schema)
+    return schema
+
+
+def _normalize_tpe_entities(entities: _TpeEntities) -> Any:
+    if isinstance(entities, PartialEntities):
+        return entities
+    return _internal_entities(entities)
+
+
 def tpe_authorize(principal: _TpePartialEuid,
-                  action: Union[str, dict],
+                  action: str | dict,
                   resource: _TpePartialEuid,
-                  policies: Union[str, PolicySet],
+                  policies: str | PolicySet,
                   entities: _TpeEntities,
-                  schema: Union[str, dict, Schema],
-                  context: Optional[dict] = None,
+                  schema: str | dict | Schema,
+                  context: dict | None = None,
                   verbose: bool = False) -> TpeAuthzResult:
     """Type-aware partial evaluation (TPE) on a request with an unknown
     principal and/or resource identity.
@@ -671,18 +680,13 @@ def tpe_authorize(principal: _TpePartialEuid,
     :raises ValueError: on input Cedar cannot resolve.
     :returns a TpeAuthzResult, whose ``reauthorize`` binds the unknowns later.
     """
-    if isinstance(schema, dict):
-        schema_arg = json.dumps(schema)
-    else:
-        schema_arg = schema
-
     result = _internal.tpe_authorize(
         _normalize_tpe_euid(principal),
         _normalize_tpe_euid(action),
         _normalize_tpe_euid(resource),
         policies,
         _normalize_tpe_entities(entities),
-        schema_arg,
+        _internal_schema_required(schema),
         None if context is None else json.dumps(context),
         verbose,
     )
@@ -694,13 +698,13 @@ def tpe_authorize(principal: _TpePartialEuid,
 
 def tpe_reauthorize(request: dict,
                     principal: _TpePartialEuid,
-                    action: Union[str, dict],
+                    action: str | dict,
                     resource: _TpePartialEuid,
-                    policies: Union[str, PolicySet],
+                    policies: str | PolicySet,
                     entities: _TpeEntities,
-                    schema: Union[str, dict, Schema],
-                    context: Optional[dict] = None,
-                    concrete_entities: Union[str, List[dict], "Entities", None] = None,
+                    schema: str | dict | Schema,
+                    context: dict | None = None,
+                    concrete_entities: str | list[dict] | Entities | None = None,
                     verbose: bool = False) -> AuthzResult:
     """Bind the unknowns a TPE call left open and decide by evaluating only
     its residuals.
@@ -727,11 +731,6 @@ def tpe_reauthorize(request: dict,
         elif context_value is None:
             del request_local["context"]
 
-    if isinstance(schema, dict):
-        schema_arg = json.dumps(schema)
-    else:
-        schema_arg = schema
-
     result_str = _internal.tpe_reauthorize(
         request_local,
         _normalize_tpe_euid(principal),
@@ -739,7 +738,7 @@ def tpe_reauthorize(request: dict,
         _normalize_tpe_euid(resource),
         policies,
         _normalize_tpe_entities(entities),
-        schema_arg,
+        _internal_schema_required(schema),
         None if context is None else json.dumps(context),
         None if concrete_entities is None else _normalize_tpe_entities(concrete_entities),
         verbose,
@@ -748,7 +747,7 @@ def tpe_reauthorize(request: dict,
 
 
 def validate_policies(policies: str,
-                      schema: Union[str, dict, Schema]) -> ValidationResult:
+                      schema: str | dict | Schema) -> ValidationResult:
     """Validate Cedar policies against a schema.
 
     This function checks that policies are valid according to the provided schema,
