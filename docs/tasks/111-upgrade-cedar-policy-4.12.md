@@ -215,9 +215,8 @@ File:line references are against `main` at the base of branch
    **mean +2.9%, max +4.1% (`test_entities_as_json_string`) — every
    benchmark under the 5% threshold**: no regression.
 2. ✅ Refreshed the baseline (Q2: Option 1): captured N=5 4.12 runs as
-   `results/Darwin-CPython-3.11-64bit/0038–0042_v4_12_0-run*.json`, built
-   `baseline-v4_12_0-median.json` via `aggregate.py --build-baseline-from
-   v4_12_0`, and repointed the `baseline.json` symlink (the intended refresh
+   `results/Darwin-CPython-3.11-64bit/0038–0042_gh111_d76174b-run*.json`, built
+   `baseline-gh111_d76174b-median.json` via `aggregate.py --build-baseline-from gh111_d76174b`, and repointed the `baseline.json` symlink (the intended refresh
    mechanism) from `baseline-v4_8_0-median.json` to it.
 3. ✅ **Verify:** `benchmark-compare` PASSES against the refreshed baseline;
    full unit suite 218 passed.
