@@ -66,6 +66,22 @@ jobs:
           set -e
           source .venv/bin/activate
           make integration-tests
+      # Register binfmt handlers with a pinned, battle-tested QEMU before
+      # run-on-arch-action runs its own `tonistiigi/binfmt:latest --install all`
+      # (which cannot replace already-registered handlers, so this pin wins).
+      # Observed 2026-08-28 with :latest (QEMU v10.2.3): ldconfig segfaulted
+      # while apt configured libc-bin inside the emulated aarch64 container,
+      # while an identical run minutes earlier passed. ldconfig (static-PIE)
+      # under qemu-user is a known recurring segfault class; we don't know
+      # when or how often v10.2.3 hits it, so pin a fixed version instead of
+      # tracking :latest. v10.2.1 is the newest tag that isn't the observed-
+      # bad one (it was :latest 2026-02..06); if it also segfaults here, step
+      # back to qemu-v9.2.2.
+      - name: pin qemu for aarch64 emulation
+        if: ${{ startsWith(matrix.platform.target, 'aarch64') }}
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8  # v4.2.0
+        with:
+          image: tonistiigi/binfmt:qemu-v10.2.1@sha256:d3b963f787999e6c0219a48dba02978769286ff61a5f4d26245cb6a6e5567ea3
       - name: unit & integration tests (aarch64)
         if: ${{ startsWith(matrix.platform.target, 'aarch64') }}
         uses: uraimo/run-on-arch-action@f9b26e3a1a408d5fd530d20c17b9f3f4428ff8d9  # v3.1.0

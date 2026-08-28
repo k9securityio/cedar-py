@@ -38,5 +38,10 @@
     "save_prefix": "v4_8_5",
     "ref": "v4.8.5",
     "description": "v4.8.5 PolicySet reuse handle"
+  },
+  {
+    "save_prefix": "gh111_d76174b",
+    "ref": "d76174b",
+    "description": "GH-111 cedar 4.12.0 engine bump"
   }
 ]

@@ -1,7 +1,7 @@
 {
   "commit": {
     "sha": "b89d75d3c1fccb62e1d0a63cbbf530c84e79042d",
-    "short_sha": "b89d75d3",
+    "short_sha": "b89d75d",
     "tag": "v4.8.5",
     "label": "v4.8.5 PolicySet reuse handle",
     "date": "2026-06-21",
@@ -14,7 +14,7 @@
     "python_version": "3.11.1",
     "platform": "Darwin-CPython-3.11-64bit"
   },
-  "captured_at": "2026-06-22T03:50:07+00:00",
+  "captured_at": "2026-06-22T03:49:10+00:00",
   "save_prefix": "v4_8_5",
   "source_runs": [
     "0033_v4_8_5-run1.json",

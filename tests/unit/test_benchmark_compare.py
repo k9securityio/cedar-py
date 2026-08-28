@@ -20,12 +20,12 @@ def _load_aggregate():
 aggregate = _load_aggregate()
 
 
-def _write_run(path: Path, means_by_name: dict[str, float]) -> None:
-    """Write a minimal pytest-benchmark-shaped JSON with given per-benchmark mean (seconds)."""
+def _write_run(path: Path, medians_by_name: dict[str, float]) -> None:
+    """Write a minimal pytest-benchmark-shaped JSON with given per-benchmark median (seconds)."""
     path.write_text(json.dumps({
         "benchmarks": [
-            {"name": name, "stats": {"mean": mean}}
-            for name, mean in means_by_name.items()
+            {"name": name, "stats": {"median": median}}
+            for name, median in medians_by_name.items()
         ]
     }))
 

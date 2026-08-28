@@ -33,6 +33,10 @@ def get_authz_test_params_for_test_suite(test_kind: str, test_suite: str) -> lis
     should_validate: bool = test_def['shouldValidate']
     request_models: List[dict] = test_def['requests']
     policies: str = load_file_as_str(f"{cedar_int_tests_base}/{policies_file_name}")
+    if test_def.get('policyFormat') == 'json':
+        # Suites like example_use_cases/2a_json_policy ship policies in Cedar's
+        # JSON policy format; convert to Cedar syntax for the authz/validate calls.
+        policies = cedarpy.policies_from_json_str(policies)
     entities: list = load_file_as_json(f"{cedar_int_tests_base}/{entities_file_name}")
     schema: object = load_file_as_str(f"{cedar_int_tests_base}/{schema_file_name}")
 
@@ -113,6 +117,32 @@ class CedarExampleUseCasesIntegrationTestCase(BaseDataDrivenCedarIntegrationTest
                                       schema: str,
                                       should_validate: bool,  # ignored; currently don't have the equivalent
                                       query: dict):
+
+        self.exec_authz_query_with_assertions(policies=policies, entities=entities, schema=schema,
+                                              should_validate=should_validate,
+                                              request_model=query)
+
+    @parameterized.expand(get_authz_test_params_for_test_suite("example_use_cases", "2a_json_policy"),
+                          name_func=custom_name_func)
+    def test_example_use_cases_doc_2a_json_policy(self,
+                                                  policies: str,
+                                                  entities: list,
+                                                  schema: str,
+                                                  should_validate: bool,  # ignored; currently don't have the equivalent
+                                                  query: dict):
+
+        self.exec_authz_query_with_assertions(policies=policies, entities=entities, schema=schema,
+                                              should_validate=should_validate,
+                                              request_model=query)
+
+    @parameterized.expand(get_authz_test_params_for_test_suite("example_use_cases", "2a_json_schema"),
+                          name_func=custom_name_func)
+    def test_example_use_cases_doc_2a_json_schema(self,
+                                                  policies: str,
+                                                  entities: list,
+                                                  schema: str,
+                                                  should_validate: bool,  # ignored; currently don't have the equivalent
+                                                  query: dict):
 
         self.exec_authz_query_with_assertions(policies=policies, entities=entities, schema=schema,
                                               should_validate=should_validate,

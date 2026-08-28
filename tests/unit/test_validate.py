@@ -325,17 +325,17 @@ class ValidatePoliciesRustParityTestCase(unittest.TestCase):
     SAMPLE_DATA = "../../third_party/cedar/cedar-policy-cli/sample-data"
 
     def test_validate_policies_1_bad_misspelled_entity_type(self):
-        """Test case from Rust: policies_1_bad.txt has 'UsrGroup' instead of 'UserGroup'.
+        """Test case from Rust: policies_1_bad.cedar has 'UsrGroup' instead of 'UserGroup'.
 
         This mirrors the Rust test:
             run_validate_test(
-                "sample-data/sandbox_a/policies_1_bad.txt",
-                "sample-data/sandbox_a/schema.json",
+                "sample-data/sandbox_a/policies_1_bad.cedar",
+                "sample-data/sandbox_a/schema.cedarschema.json",
                 CedarExitCode::ValidationFailure,
             );
         """
-        policies = load_file_as_str(f"{self.SAMPLE_DATA}/sandbox_a/policies_1_bad.txt")
-        schema = load_file_as_str(f"{self.SAMPLE_DATA}/sandbox_a/schema.json")
+        policies = load_file_as_str(f"{self.SAMPLE_DATA}/sandbox_a/policies_1_bad.cedar")
+        schema = load_file_as_str(f"{self.SAMPLE_DATA}/sandbox_a/schema.cedarschema.json")
 
         result = validate_policies(policies, schema)
         self.assertFalse(result.validation_passed)
@@ -349,20 +349,20 @@ class ValidatePoliciesRustParityTestCase(unittest.TestCase):
         )
 
     def test_validate_policies_5_bad_missing_has_check(self):
-        """Test case from Rust: policies_5_bad.txt accesses optional attribute without 'has' check.
+        """Test case from Rust: policies_5_bad.cedar accesses optional attribute without 'has' check.
 
         This mirrors the Rust test:
             run_validate_test(
-                "sample-data/sandbox_b/policies_5_bad.txt",
-                "sample-data/sandbox_b/schema.json",
+                "sample-data/sandbox_b/policies_5_bad.cedar",
+                "sample-data/sandbox_b/schema.cedarschema.json",
                 CedarExitCode::ValidationFailure,
             );
 
         The policy accesses resource.private without checking 'has' first,
         but 'private' is an optional attribute in the schema.
         """
-        policies = load_file_as_str(f"{self.SAMPLE_DATA}/sandbox_b/policies_5_bad.txt")
-        schema = load_file_as_str(f"{self.SAMPLE_DATA}/sandbox_b/schema.json")
+        policies = load_file_as_str(f"{self.SAMPLE_DATA}/sandbox_b/policies_5_bad.cedar")
+        schema = load_file_as_str(f"{self.SAMPLE_DATA}/sandbox_b/schema.cedarschema.json")
 
         result = validate_policies(policies, schema)
 
@@ -373,62 +373,62 @@ class ValidatePoliciesRustParityTestCase(unittest.TestCase):
                         f"Errors: {[str(e) for e in result.errors]}")
 
     def test_validate_policies_1_valid(self):
-        """Test case from Rust: policies_1.txt is valid.
+        """Test case from Rust: policies_1.cedar is valid.
 
         This mirrors the Rust test:
             run_validate_test(
-                "sample-data/sandbox_a/policies_1.txt",
-                "sample-data/sandbox_a/schema.json",
+                "sample-data/sandbox_a/policies_1.cedar",
+                "sample-data/sandbox_a/schema.cedarschema.json",
                 CedarExitCode::Success,
             );
         """
-        policies = load_file_as_str(f"{self.SAMPLE_DATA}/sandbox_a/policies_1.txt")
-        schema = load_file_as_str(f"{self.SAMPLE_DATA}/sandbox_a/schema.json")
+        policies = load_file_as_str(f"{self.SAMPLE_DATA}/sandbox_a/policies_1.cedar")
+        schema = load_file_as_str(f"{self.SAMPLE_DATA}/sandbox_a/schema.cedarschema.json")
 
         result = validate_policies(policies, schema)
         self.assertTrue(result.validation_passed,
                        f"Expected valid policy to pass. Errors: {[str(e) for e in result.errors]}")
 
     def test_validate_policies_2_valid(self):
-        """Test case from Rust: policies_2.txt is valid."""
-        policies = load_file_as_str(f"{self.SAMPLE_DATA}/sandbox_a/policies_2.txt")
-        schema = load_file_as_str(f"{self.SAMPLE_DATA}/sandbox_a/schema.json")
+        """Test case from Rust: policies_2.cedar is valid."""
+        policies = load_file_as_str(f"{self.SAMPLE_DATA}/sandbox_a/policies_2.cedar")
+        schema = load_file_as_str(f"{self.SAMPLE_DATA}/sandbox_a/schema.cedarschema.json")
 
         result = validate_policies(policies, schema)
         self.assertTrue(result.validation_passed,
                        f"Expected valid policy to pass. Errors: {[str(e) for e in result.errors]}")
 
     def test_validate_policies_3_valid(self):
-        """Test case from Rust: policies_3.txt is valid."""
-        policies = load_file_as_str(f"{self.SAMPLE_DATA}/sandbox_a/policies_3.txt")
-        schema = load_file_as_str(f"{self.SAMPLE_DATA}/sandbox_a/schema.json")
+        """Test case from Rust: policies_3.cedar is valid."""
+        policies = load_file_as_str(f"{self.SAMPLE_DATA}/sandbox_a/policies_3.cedar")
+        schema = load_file_as_str(f"{self.SAMPLE_DATA}/sandbox_a/schema.cedarschema.json")
 
         result = validate_policies(policies, schema)
         self.assertTrue(result.validation_passed,
                        f"Expected valid policy to pass. Errors: {[str(e) for e in result.errors]}")
 
     def test_validate_sandbox_b_policies_4_valid(self):
-        """Test case from Rust: sandbox_b/policies_4.txt is valid."""
-        policies = load_file_as_str(f"{self.SAMPLE_DATA}/sandbox_b/policies_4.txt")
-        schema = load_file_as_str(f"{self.SAMPLE_DATA}/sandbox_b/schema.json")
+        """Test case from Rust: sandbox_b/policies_4.cedar is valid."""
+        policies = load_file_as_str(f"{self.SAMPLE_DATA}/sandbox_b/policies_4.cedar")
+        schema = load_file_as_str(f"{self.SAMPLE_DATA}/sandbox_b/schema.cedarschema.json")
 
         result = validate_policies(policies, schema)
         self.assertTrue(result.validation_passed,
                        f"Expected valid policy to pass. Errors: {[str(e) for e in result.errors]}")
 
     def test_validate_sandbox_b_policies_5_valid(self):
-        """Test case from Rust: sandbox_b/policies_5.txt is valid (has proper 'has' checks)."""
-        policies = load_file_as_str(f"{self.SAMPLE_DATA}/sandbox_b/policies_5.txt")
-        schema = load_file_as_str(f"{self.SAMPLE_DATA}/sandbox_b/schema.json")
+        """Test case from Rust: sandbox_b/policies_5.cedar is valid (has proper 'has' checks)."""
+        policies = load_file_as_str(f"{self.SAMPLE_DATA}/sandbox_b/policies_5.cedar")
+        schema = load_file_as_str(f"{self.SAMPLE_DATA}/sandbox_b/schema.cedarschema.json")
 
         result = validate_policies(policies, schema)
         self.assertTrue(result.validation_passed,
                        f"Expected valid policy to pass. Errors: {[str(e) for e in result.errors]}")
 
     def test_validate_sandbox_b_policies_6_valid(self):
-        """Test case from Rust: sandbox_b/policies_6.txt is valid."""
-        policies = load_file_as_str(f"{self.SAMPLE_DATA}/sandbox_b/policies_6.txt")
-        schema = load_file_as_str(f"{self.SAMPLE_DATA}/sandbox_b/schema.json")
+        """Test case from Rust: sandbox_b/policies_6.cedar is valid."""
+        policies = load_file_as_str(f"{self.SAMPLE_DATA}/sandbox_b/policies_6.cedar")
+        schema = load_file_as_str(f"{self.SAMPLE_DATA}/sandbox_b/schema.cedarschema.json")
 
         result = validate_policies(policies, schema)
         self.assertTrue(result.validation_passed,
