@@ -58,10 +58,15 @@ fn policies_from_json_str(s: String) -> PyResult<String> {
 }
 
 struct PstClasses<'py> {
+    frozen_map: Bound<'py, PyAny>,
+    entity_type: Bound<'py, PyAny>,
     entity_uid: Bound<'py, PyAny>,
     slot: Bound<'py, PyAny>,
     var: Bound<'py, PyAny>,
-    literal: Bound<'py, PyAny>,
+    bool_lit: Bound<'py, PyAny>,
+    long_lit: Bound<'py, PyAny>,
+    string_lit: Bound<'py, PyAny>,
+    entity_lit: Bound<'py, PyAny>,
     unary_op: Bound<'py, PyAny>,
     binary_op: Bound<'py, PyAny>,
     get_attr: Bound<'py, PyAny>,
@@ -95,10 +100,15 @@ impl<'py> PstClasses<'py> {
         let m = PyModule::import(py, "cedarpy.pst")?;
         let get = |name: &str| m.getattr(name);
         Ok(Self {
+            frozen_map: get("FrozenMap")?,
+            entity_type: get("EntityType")?,
             entity_uid: get("EntityUid")?,
             slot: get("Slot")?,
             var: get("Var")?,
-            literal: get("Literal")?,
+            bool_lit: get("BoolLit")?,
+            long_lit: get("LongLit")?,
+            string_lit: get("StringLit")?,
+            entity_lit: get("EntityLit")?,
             unary_op: get("UnaryOp")?,
             binary_op: get("BinaryOp")?,
             get_attr: get("GetAttr")?,
@@ -135,18 +145,27 @@ fn pst_error<T: std::fmt::Debug>(context: &str, value: T) -> PyErr {
 }
 
 fn build_mapping<'py>(
-    py: Python<'py>,
+    c: &PstClasses<'py>,
     items: impl IntoIterator<Item = (String, Py<PyAny>)>,
 ) -> PyResult<Py<PyAny>> {
-    let dict = PyDict::new(py);
+    let py = c.frozen_map.py();
+    let mut pairs: Vec<Py<PyAny>> = vec![];
     for (k, v) in items {
-        dict.set_item(k, v)?;
+        pairs.push(PyTuple::new(py, [k.into_pyobject(py)?.into_any().unbind(), v])?.unbind().into());
     }
-    Ok(dict.unbind().into())
+    Ok(c.frozen_map.call1((PyTuple::new(py, pairs)?,))?.unbind())
+}
+
+fn build_entity_type<'py>(c: &PstClasses<'py>, et: &pst::EntityType) -> PyResult<Py<PyAny>> {
+    let py = c.entity_type.py();
+    let namespace: Vec<String> = et.0.namespace.iter().map(|id| id.to_string()).collect();
+    Ok(c.entity_type
+        .call1((et.0.id.to_string(), PyTuple::new(py, namespace)?))?
+        .unbind())
 }
 
 fn build_entity_uid<'py>(c: &PstClasses<'py>, euid: &pst::EntityUID) -> PyResult<Py<PyAny>> {
-    Ok(c.entity_uid.call1((euid.ty.0.to_string(), euid.eid.to_string()))?.unbind())
+    Ok(c.entity_uid.call1((build_entity_type(c, &euid.ty)?, euid.eid.to_string()))?.unbind())
 }
 
 fn build_slot_id<'py>(c: &PstClasses<'py>, slot: pst::SlotId) -> PyResult<Py<PyAny>> {
@@ -173,9 +192,9 @@ fn build_principal_constraint<'py>(
         pst::PrincipalConstraint::Any => Ok(c.scope_any.call0()?.unbind()),
         pst::PrincipalConstraint::Eq(eos) => Ok(c.scope_eq.call1((build_entity_or_slot(c, eos)?,))?.unbind()),
         pst::PrincipalConstraint::In(eos) => Ok(c.scope_in.call1((build_entity_or_slot(c, eos)?,))?.unbind()),
-        pst::PrincipalConstraint::Is(et) => Ok(c.scope_is.call1((et.0.to_string(),))?.unbind()),
+        pst::PrincipalConstraint::Is(et) => Ok(c.scope_is.call1((build_entity_type(c, et)?,))?.unbind()),
         pst::PrincipalConstraint::IsIn(et, eos) => {
-            Ok(c.scope_is_in.call1((et.0.to_string(), build_entity_or_slot(c, eos)?))?.unbind())
+            Ok(c.scope_is_in.call1((build_entity_type(c, et)?, build_entity_or_slot(c, eos)?))?.unbind())
         }
     }
 }
@@ -188,9 +207,9 @@ fn build_resource_constraint<'py>(
         pst::ResourceConstraint::Any => Ok(c.scope_any.call0()?.unbind()),
         pst::ResourceConstraint::Eq(eos) => Ok(c.scope_eq.call1((build_entity_or_slot(c, eos)?,))?.unbind()),
         pst::ResourceConstraint::In(eos) => Ok(c.scope_in.call1((build_entity_or_slot(c, eos)?,))?.unbind()),
-        pst::ResourceConstraint::Is(et) => Ok(c.scope_is.call1((et.0.to_string(),))?.unbind()),
+        pst::ResourceConstraint::Is(et) => Ok(c.scope_is.call1((build_entity_type(c, et)?,))?.unbind()),
         pst::ResourceConstraint::IsIn(et, eos) => {
-            Ok(c.scope_is_in.call1((et.0.to_string(), build_entity_or_slot(c, eos)?))?.unbind())
+            Ok(c.scope_is_in.call1((build_entity_type(c, et)?, build_entity_or_slot(c, eos)?))?.unbind())
         }
     }
 }
@@ -225,14 +244,14 @@ fn build_pattern<'py>(c: &PstClasses<'py>, pattern: &[pst::PatternElem]) -> PyRe
 }
 
 fn build_literal<'py>(c: &PstClasses<'py>, literal: &pst::Literal) -> PyResult<Py<PyAny>> {
-    let value: Py<PyAny> = match literal {
-        pst::Literal::Bool(b) => pyo3::types::PyBool::new(c.literal.py(), *b).to_owned().into_any().unbind(),
-        pst::Literal::Long(n) => n.into_pyobject(c.literal.py())?.into_any().unbind(),
-        pst::Literal::String(s) => s.to_string().into_pyobject(c.literal.py())?.into_any().unbind(),
-        pst::Literal::EntityUID(euid) => build_entity_uid(c, euid)?,
-        other => return Err(pst_error("Literal variant", other)),
-    };
-    Ok(c.literal.call1((value,))?.unbind())
+    let py = c.bool_lit.py();
+    match literal {
+        pst::Literal::Bool(b) => Ok(c.bool_lit.call1((*b,))?.unbind()),
+        pst::Literal::Long(n) => Ok(c.long_lit.call1((*n,))?.unbind()),
+        pst::Literal::String(s) => Ok(c.string_lit.call1((s.to_string().into_pyobject(py)?,))?.unbind()),
+        pst::Literal::EntityUID(euid) => Ok(c.entity_lit.call1((build_entity_uid(c, euid)?,))?.unbind()),
+        other => Err(pst_error("Literal variant", other)),
+    }
 }
 
 fn build_expr<'py>(c: &PstClasses<'py>, expr: &pst::Expr) -> PyResult<Py<PyAny>> {
@@ -272,7 +291,7 @@ fn build_expr<'py>(c: &PstClasses<'py>, expr: &pst::Expr) -> PyResult<Py<PyAny>>
                 Some(e) => Some(build_expr(c, e)?),
                 None => None,
             };
-            Ok(c.is_.call1((build_expr(c, base)?, entity_type.0.to_string(), in_expr))?.unbind())
+            Ok(c.is_.call1((build_expr(c, base)?, build_entity_type(c, entity_type)?, in_expr))?.unbind())
         }
         pst::Expr::IfThenElse { cond, then_expr, else_expr } => Ok(c
             .if_then_else
@@ -291,7 +310,7 @@ fn build_expr<'py>(c: &PstClasses<'py>, expr: &pst::Expr) -> PyResult<Py<PyAny>>
             for (k, v) in fields {
                 items.push((k.clone(), build_expr(c, v)?));
             }
-            Ok(c.record.call1((build_mapping(c.record.py(), items)?,))?.unbind())
+            Ok(c.record.call1((build_mapping(c, items)?,))?.unbind())
         }
         pst::Expr::Unknown { name } => Ok(c.unknown.call1((name.to_string(),))?.unbind()),
         other => Err(pst_error("Expr variant", other)),
@@ -358,7 +377,7 @@ fn build_template<'py>(c: &PstClasses<'py>, template: &pst::Template) -> PyResul
             build_action_constraint(c, &template.action)?,
             build_resource_constraint(c, &template.resource)?,
             clauses,
-            build_mapping(c.template.py(), annotations)?,
+            build_mapping(c, annotations)?,
         ))?
         .unbind())
 }
@@ -376,7 +395,7 @@ fn build_slot_values<'py>(
         };
         items.push((name.to_string(), build_entity_uid(c, euid)?));
     }
-    build_mapping(c.entity_uid.py(), items)
+    build_mapping(c, items)
 }
 
 fn build_policy_set<'py>(c: &PstClasses<'py>, policy_set: &pst::PolicySet) -> PyResult<Py<PyAny>> {
@@ -402,7 +421,7 @@ fn build_policy_set<'py>(c: &PstClasses<'py>, policy_set: &pst::PolicySet) -> Py
     }
     let links = PyTuple::new(c.policy_set.py(), links)?;
     Ok(c.policy_set
-        .call1((build_mapping(c.policy_set.py(), templates)?, build_mapping(c.policy_set.py(), static_policies)?, links))?
+        .call1((build_mapping(c, templates)?, build_mapping(c, static_policies)?, links))?
         .unbind())
 }
 

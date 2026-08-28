@@ -1,17 +1,86 @@
-"""Typed PST nodes, mirroring cedar_policy::pst. Built by Rust, not parsed."""
+"""Typed PST nodes, mirroring cedar_policy::pst. Built by Rust, not parsed.
+
+Every node is a frozen, hashable dataclass, and every closed set the Rust
+enums define stays closed here as a `typing.Literal` or a union of node
+types, so a consumer can `match` over one and have a type checker prove the
+match is exhaustive.
+"""
+from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import Mapping, Union
+from typing import Dict, Literal, Mapping, NoReturn, Tuple, TypeVar, Union
+
+__all__ = [
+    "ActionConstraint", "ActionEq", "ActionIn", "BinaryOp", "BinaryOpName",
+    "BoolLit", "Char", "Clause", "EntityLit", "EntityOrSlot", "EntityType",
+    "EntityUid", "Effect", "Expr", "FrozenMap", "GetAttr", "HasAttr",
+    "IfThenElse", "Is", "Like", "Lit", "LongLit", "PatternElem", "PolicySet",
+    "PrincipalOrResourceConstraint", "Record", "ResidualError", "ScopeAny",
+    "ScopeEq", "ScopeIn", "ScopeIs", "ScopeIsIn", "Set", "Slot", "SlotName",
+    "StringLit", "Template", "TemplateLink", "UnaryOp", "UnaryOpName",
+    "Unknown", "Unless", "Var", "VarName", "When", "Wildcard",
+]
+
+_K = TypeVar("_K", bound=str)
+_V = TypeVar("_V")
+
+
+class FrozenMap(Dict[_K, _V]):
+    """An immutable, hashable string-keyed mapping.
+
+    A PST node is a value, so its mappings have to be values too: a plain
+    dict would leave `frozen=True` unenforced one field deep, and would make
+    any node containing one unhashable. Subclasses `dict` so `asdict`,
+    `json.dumps`, and `==` against a plain dict keep working. Nodes declare
+    these fields as `Mapping`, which has no mutating methods, so a write is a
+    type error as well as a `TypeError`.
+    """
+
+    __slots__ = ()
+
+    def __hash__(self) -> int:  # type: ignore[override]
+        return hash(frozenset(self.items()))
+
+    def _immutable(self, *_args: object, **_kwargs: object) -> NoReturn:
+        raise TypeError(f"{type(self).__name__} is immutable")
+
+    __setitem__ = _immutable
+    __delitem__ = _immutable
+    __ior__ = _immutable
+    clear = _immutable
+    pop = _immutable
+    popitem = _immutable
+    setdefault = _immutable
+    update = _immutable
+
+
+@dataclass(frozen=True)
+class EntityType:
+    """An entity type name: `User`, or `MyApp::Photo` with a namespace."""
+    basename: str
+    namespace: Tuple[str, ...] = ()
+
+    def __str__(self) -> str:
+        return "::".join((*self.namespace, self.basename))
 
 
 @dataclass(frozen=True)
 class EntityUid:
-    type: str
+    type: EntityType
     id: str
+
+    def __str__(self) -> str:
+        return f'{self.type}::"{self.id}"'
+
+
+SlotName = Literal["principal", "resource"]
+VarName = Literal["principal", "action", "resource", "context"]
+Effect = Literal["permit", "forbid"]
 
 
 @dataclass(frozen=True)
 class Slot:
-    name: str  # "principal" or "resource"
+    name: SlotName
 
 
 EntityOrSlot = Union[EntityUid, Slot]
@@ -19,37 +88,73 @@ EntityOrSlot = Union[EntityUid, Slot]
 
 @dataclass(frozen=True)
 class Var:
-    name: str  # "principal", "action", "resource", or "context"
+    name: VarName
 
 
 @dataclass(frozen=True)
-class Literal:
-    value: Union[bool, int, str, EntityUid]
+class BoolLit:
+    value: bool
+
+
+@dataclass(frozen=True)
+class LongLit:
+    value: int
+
+
+@dataclass(frozen=True)
+class StringLit:
+    value: str
+
+
+@dataclass(frozen=True)
+class EntityLit:
+    value: EntityUid
+
+
+Lit = Union[BoolLit, LongLit, StringLit, EntityLit]
+
+UnaryOpName = Literal[
+    "not", "neg", "is_empty", "datetime", "decimal", "duration", "ip",
+    "is_ipv4", "is_ipv6", "is_loopback", "is_multicast", "to_date", "to_time",
+    "to_milliseconds", "to_seconds", "to_minutes", "to_hours", "to_days",
+]
+
+BinaryOpName = Literal[
+    "eq", "not_eq", "less", "less_eq", "greater", "greater_eq", "and", "or",
+    "add", "sub", "mul", "in", "contains", "contains_all", "contains_any",
+    "get_tag", "has_tag", "is_in_range", "offset", "duration_since",
+    "decimal_less_than", "decimal_less_eq", "decimal_greater",
+    "decimal_greater_eq",
+]
 
 
 @dataclass(frozen=True)
 class UnaryOp:
-    op: str
-    arg: "Expr"
+    op: UnaryOpName
+    arg: Expr
 
 
 @dataclass(frozen=True)
 class BinaryOp:
-    op: str
-    left: "Expr"
-    right: "Expr"
+    op: BinaryOpName
+    left: Expr
+    right: Expr
 
 
 @dataclass(frozen=True)
 class GetAttr:
-    base: "Expr"
+    base: Expr
     attr: str
 
 
 @dataclass(frozen=True)
 class HasAttr:
-    base: "Expr"
-    attrs: tuple
+    base: Expr
+    attrs: Tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if not self.attrs:
+            raise ValueError("HasAttr.attrs must name at least one attribute")
 
 
 @dataclass(frozen=True)
@@ -67,32 +172,32 @@ PatternElem = Union[Char, Wildcard]
 
 @dataclass(frozen=True)
 class Like:
-    base: "Expr"
-    pattern: tuple  # tuple[PatternElem, ...]
+    base: Expr
+    pattern: Tuple[PatternElem, ...]
 
 
 @dataclass(frozen=True)
 class Is:
-    base: "Expr"
-    entity_type: str
-    in_expr: "Expr | None"
+    base: Expr
+    entity_type: EntityType
+    in_expr: Union[Expr, None]
 
 
 @dataclass(frozen=True)
 class IfThenElse:
-    cond: "Expr"
-    then_expr: "Expr"
-    else_expr: "Expr"
+    cond: Expr
+    then_expr: Expr
+    else_expr: Expr
 
 
 @dataclass(frozen=True)
 class Set:
-    elements: tuple  # tuple[Expr, ...]
+    elements: Tuple[Expr, ...]
 
 
 @dataclass(frozen=True)
 class Record:
-    fields: Mapping[str, "Expr"]
+    fields: Mapping[str, Expr]
 
 
 @dataclass(frozen=True)
@@ -106,8 +211,9 @@ class ResidualError:
 
 
 Expr = Union[
-    Var, Slot, Literal, UnaryOp, BinaryOp, GetAttr, HasAttr, Like, Is,
-    IfThenElse, Set, Record, Unknown, ResidualError,
+    Var, Slot, BoolLit, LongLit, StringLit, EntityLit, UnaryOp, BinaryOp,
+    GetAttr, HasAttr, Like, Is, IfThenElse, Set, Record, Unknown,
+    ResidualError,
 ]
 
 
@@ -141,12 +247,12 @@ class ScopeIn:
 
 @dataclass(frozen=True)
 class ScopeIs:
-    entity_type: str
+    entity_type: EntityType
 
 
 @dataclass(frozen=True)
 class ScopeIsIn:
-    entity_type: str
+    entity_type: EntityType
     entity: EntityOrSlot
 
 
@@ -160,7 +266,7 @@ class ActionEq:
 
 @dataclass(frozen=True)
 class ActionIn:
-    entities: tuple  # tuple[EntityUid, ...]
+    entities: Tuple[EntityUid, ...]
 
 
 ActionConstraint = Union[ScopeAny, ActionEq, ActionIn]
@@ -169,11 +275,11 @@ ActionConstraint = Union[ScopeAny, ActionEq, ActionIn]
 @dataclass(frozen=True)
 class Template:
     id: str
-    effect: str  # "permit" or "forbid"
+    effect: Effect
     principal: PrincipalOrResourceConstraint
     action: ActionConstraint
     resource: PrincipalOrResourceConstraint
-    clauses: tuple  # tuple[Clause, ...]
+    clauses: Tuple[Clause, ...]
     annotations: Mapping[str, str]
 
 
@@ -181,11 +287,11 @@ class Template:
 class TemplateLink:
     template_id: str
     new_id: str
-    values: Mapping[str, EntityUid]
+    values: Mapping[SlotName, EntityUid]
 
 
 @dataclass(frozen=True)
 class PolicySet:
     templates: Mapping[str, Template]
     static_policies: Mapping[str, Template]
-    template_links: tuple  # tuple[TemplateLink, ...]
+    template_links: Tuple[TemplateLink, ...]

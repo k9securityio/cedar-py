@@ -463,8 +463,45 @@ Static policies and unlinked templates only. A residual from `is_authorized_part
 cannot be parsed this way: PST rejects any clause containing an unresolved
 `unknown(...)` node, and every non-trivial residual has one.
 
-`dataclasses.asdict(result)` and `json.dumps(...)` work directly, since the nodes
-are plain frozen dataclasses.
+Every closed set Cedar defines stays closed in the type: `UnaryOp.op` and
+`BinaryOp.op` are `Literal` aliases of the operator names (`UnaryOpName`,
+`BinaryOpName`), `Template.effect` is `Literal["permit", "forbid"]`, and
+`Var.name` / `Slot.name` are likewise constrained, so a type checker can prove a
+`match` over one is exhaustive:
+
+```python
+from typing import assert_never  # typing_extensions on Python < 3.11
+
+from cedarpy.pst import BoolLit, EntityLit, Expr, LongLit, StringLit
+
+def render_literal(expr: Expr) -> str:
+    match expr:
+        case BoolLit(value=v):
+            return "true" if v else "false"
+        case LongLit(value=v) | StringLit(value=v):
+            return repr(v)
+        case EntityLit(value=uid):
+            return str(uid)
+        case _:
+            return "<non-literal>"
+```
+
+Cedar's `Bool` and `Long` literals are separate nodes (`BoolLit` / `LongLit`)
+because `bool` is a subclass of `int` in Python, so a single node holding either
+could not tell them apart. An entity type keeps its namespace as structure
+rather than a `"::"`-joined string:
+
+```python
+result.static_policies["policy0"].principal.entity.type
+# EntityType(basename='User', namespace=('MyApp',))  ->  str(...) == 'MyApp::User'
+```
+
+Every node is a frozen dataclass and is hashable, so nodes work as dict keys and
+set members. Mapping-valued fields (`Record.fields`, `Template.annotations`,
+`PolicySet.templates`, ...) are declared as `Mapping`, so writing to one is a
+type error, and hold a `FrozenMap` at runtime: a `dict` subclass that rejects
+mutation, so `dataclasses.asdict(result)`, `json.dumps(...)`, and comparison
+against a plain dict all still work, while the node stays a value.
 
 ## Developing
 

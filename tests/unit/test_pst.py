@@ -1,14 +1,26 @@
 """Unit tests for policies_to_pst and cedarpy.pst."""
 import dataclasses
 import json
+import typing
 import unittest
 
 from cedarpy import policies_to_pst
 from cedarpy.pst import (
-    ActionEq, ActionIn, BinaryOp, Char, EntityUid, GetAttr, HasAttr,
-    IfThenElse, Is, Like, Literal, PolicySet, Record, ScopeEq, ScopeIs,
-    ScopeIsIn, Set, Slot, Template, UnaryOp, Unless, Var, When, Wildcard,
+    ActionEq, ActionIn, BinaryOp, BoolLit, Char, EntityLit, EntityType,
+    EntityUid, FrozenMap, GetAttr, HasAttr, IfThenElse, Is, Like, LongLit,
+    PolicySet, Record, ScopeEq, ScopeIs, ScopeIsIn, Set, Slot, StringLit,
+    Template, UnaryOp, Unless, Var, When, Wildcard,
 )
+
+
+def _uid(type_name, id_):
+    *namespace, basename = type_name.split("::")
+    return EntityUid(EntityType(basename, tuple(namespace)), id_)
+
+
+def _etype(type_name):
+    *namespace, basename = type_name.split("::")
+    return EntityType(basename, tuple(namespace))
 
 
 def _clause(result, policy_id="policy0", index=0):
@@ -42,12 +54,12 @@ class TestScopeAndClauses(unittest.TestCase):
             'resource is Photo in Album::"vacation");'
         )
         policy = result.static_policies["policy0"]
-        self.assertEqual(policy.principal, ScopeEq(entity=EntityUid("User", "alice")))
+        self.assertEqual(policy.principal, ScopeEq(entity=_uid("User", "alice")))
         self.assertEqual(
-            policy.action, ActionIn((EntityUid("Action", "view"), EntityUid("Action", "edit")))
+            policy.action, ActionIn((_uid("Action", "view"), _uid("Action", "edit")))
         )
         self.assertEqual(
-            policy.resource, ScopeIsIn("Photo", EntityUid("Album", "vacation"))
+            policy.resource, ScopeIsIn(_etype("Photo"), _uid("Album", "vacation"))
         )
 
     def test_annotations(self):
@@ -58,23 +70,23 @@ class TestScopeAndClauses(unittest.TestCase):
 class TestExprShapes(unittest.TestCase):
     def test_bool_literal(self):
         result = policies_to_pst('permit(principal, action, resource) when { true };')
-        self.assertEqual(_expr(result), Literal(True))
+        self.assertEqual(_expr(result), BoolLit(True))
 
     def test_long_literal(self):
         result = policies_to_pst('permit(principal, action, resource) when { 42 == 42 };')
-        self.assertEqual(_expr(result).left, Literal(42))
+        self.assertEqual(_expr(result).left, LongLit(42))
 
     def test_entity_literal(self):
         result = policies_to_pst('permit(principal, action, resource) when { principal == User::"alice" };')
-        self.assertEqual(_expr(result).right, Literal(EntityUid("User", "alice")))
+        self.assertEqual(_expr(result).right, EntityLit(_uid("User", "alice")))
 
     def test_set_and_record(self):
         result = policies_to_pst(
             'permit(principal, action, resource) when { [1, 2].contains(1) && {"a": 1}.a == 1 };'
         )
         top = _expr(result)
-        self.assertEqual(top.left.left, Set((Literal(1), Literal(2))))
-        self.assertEqual(top.right.left.base, Record({"a": Literal(1)}))
+        self.assertEqual(top.left.left, Set((LongLit(1), LongLit(2))))
+        self.assertEqual(top.right.left.base, Record(FrozenMap({"a": LongLit(1)})))
 
     def test_has(self):
         result = policies_to_pst('permit(principal, action, resource) when { resource has owner };')
@@ -98,7 +110,7 @@ class TestExprShapes(unittest.TestCase):
     def test_is_without_in(self):
         result = policies_to_pst('permit(principal, action, resource) when { resource is Photo };')
         expr = _expr(result)
-        self.assertEqual(expr, Is(base=Var("resource"), entity_type="Photo", in_expr=None))
+        self.assertEqual(expr, Is(base=Var("resource"), entity_type=_etype("Photo"), in_expr=None))
 
     def test_is_with_in(self):
         result = policies_to_pst(
@@ -106,7 +118,7 @@ class TestExprShapes(unittest.TestCase):
         )
         expr = _expr(result)
         self.assertIsInstance(expr, Is)
-        self.assertEqual(expr.in_expr, Literal(EntityUid("Album", "vacation")))
+        self.assertEqual(expr.in_expr, EntityLit(_uid("Album", "vacation")))
 
     def test_if_then_else(self):
         result = policies_to_pst(
@@ -114,8 +126,8 @@ class TestExprShapes(unittest.TestCase):
         )
         cond_expr = _expr(result).left
         self.assertIsInstance(cond_expr, IfThenElse)
-        self.assertEqual(cond_expr.then_expr, Literal(1))
-        self.assertEqual(cond_expr.else_expr, Literal(2))
+        self.assertEqual(cond_expr.then_expr, LongLit(1))
+        self.assertEqual(cond_expr.else_expr, LongLit(2))
 
     def test_unary_op(self):
         result = policies_to_pst('permit(principal, action, resource) when { !resource.blocked };')
@@ -139,7 +151,7 @@ class TestPatternMatching(unittest.TestCase):
             'permit(principal, action, resource) when { resource.status == "active" };'
         )
         match _expr(result):
-            case BinaryOp(op="eq", left=GetAttr(base=Var(name="resource"), attr="status"), right=Literal(value="active")):
+            case BinaryOp(op="eq", left=GetAttr(base=Var(name="resource"), attr="status"), right=StringLit(value="active")):
                 matched = True
             case _:
                 matched = False
@@ -149,7 +161,7 @@ class TestPatternMatching(unittest.TestCase):
         result = policies_to_pst('permit(principal, action, resource) when { 1 == 1 };')
         match _expr(result):
             case BinaryOp(op, left, right):
-                self.assertEqual((op, left, right), ("eq", Literal(1), Literal(1)))
+                self.assertEqual((op, left, right), ("eq", LongLit(1), LongLit(1)))
             case _:
                 self.fail("no match")
 
@@ -192,3 +204,95 @@ class TestResidualsOutOfScope(unittest.TestCase):
         )
         self.assertEqual(result.decision, Decision.NoDecision)
         self.assertIn("policy0", result.residuals)
+
+
+class TestClosedSetsAndNamespaces(unittest.TestCase):
+    def test_namespaced_entity_type_keeps_its_parts(self):
+        result = policies_to_pst(
+            'permit(principal == MyApp::Nested::User::"alice", action, resource);'
+        )
+        entity = result.static_policies["policy0"].principal.entity
+        self.assertEqual(entity.type, EntityType("User", ("MyApp", "Nested")))
+        self.assertEqual(str(entity.type), "MyApp::Nested::User")
+        self.assertEqual(str(entity), 'MyApp::Nested::User::"alice"')
+
+    def test_unqualified_entity_type_has_empty_namespace(self):
+        result = policies_to_pst('permit(principal == User::"alice", action, resource);')
+        self.assertEqual(
+            result.static_policies["policy0"].principal.entity.type,
+            EntityType("User", ()),
+        )
+
+    def test_bool_and_long_literals_are_distinct_nodes(self):
+        # bool is a subclass of int in Python, so a single Literal(value) node
+        # cannot tell Cedar's Bool from its Long.
+        result = policies_to_pst(
+            'permit(principal, action, resource) when { context.a == true && context.b == 1 };'
+        )
+        top = _expr(result)
+        self.assertEqual(top.left.right, BoolLit(True))
+        self.assertEqual(top.right.right, LongLit(1))
+        self.assertNotEqual(top.left.right, top.right.right)
+
+    def test_every_emitted_op_name_is_in_the_literal_alias(self):
+        from cedarpy.pst import BinaryOpName, UnaryOpName
+
+        cases = {
+            "==": "eq", "!=": "not_eq", "<": "less", "<=": "less_eq",
+            ">": "greater", ">=": "greater_eq", "&&": "and", "||": "or",
+            "+": "add", "-": "sub", "*": "mul",
+        }
+        binary_names = set(typing.get_args(BinaryOpName))
+        for symbol, expected in cases.items():
+            result = policies_to_pst(
+                f'permit(principal, action, resource) when {{ (1 {symbol} 1) == (1 {symbol} 1) }};'
+                if symbol in ("&&", "||") else
+                f'permit(principal, action, resource) when {{ 1 {symbol} 1 }};'
+            )
+            op = _expr(result).op if symbol not in ("&&", "||") else _expr(result).left.op
+            self.assertEqual(op, expected, msg=symbol)
+            self.assertIn(op, binary_names, msg=symbol)
+
+        result = policies_to_pst('permit(principal, action, resource) when { !resource.blocked };')
+        self.assertIn(_expr(result).op, set(typing.get_args(UnaryOpName)))
+
+    def test_effect_and_var_names_are_in_their_literal_aliases(self):
+        from cedarpy.pst import Effect, SlotName, VarName
+
+        result = policies_to_pst(
+            'permit(principal == ?principal, action, resource) when { context.x == principal };'
+        )
+        template = result.templates["policy0"]
+        self.assertIn(template.effect, set(typing.get_args(Effect)))
+        self.assertIn(template.principal.entity.name, set(typing.get_args(SlotName)))
+        self.assertIn(template.clauses[0].expr.left.base.name, set(typing.get_args(VarName)))
+
+
+class TestFrozenMapIsAValue(unittest.TestCase):
+    def test_mapping_fields_reject_mutation(self):
+        result = policies_to_pst('@id("x")\npermit(principal, action, resource) when { context.r == {"k": 1} };')
+        policy = result.static_policies["policy0"]
+        for mapping in (result.static_policies, policy.annotations, _expr(result).right.fields):
+            self.assertIsInstance(mapping, FrozenMap)
+            with self.assertRaises(TypeError):
+                mapping["injected"] = None
+            with self.assertRaises(TypeError):
+                mapping.update({"injected": None})
+
+    def test_nodes_are_hashable_and_usable_as_keys(self):
+        result = policies_to_pst('permit(principal, action, resource) when { context.r == {"k": 1} };')
+        again = policies_to_pst('permit(principal, action, resource) when { context.r == {"k": 1} };')
+        record = _expr(result).right
+        self.assertEqual({record: "seen"}[_expr(again).right], "seen")
+        self.assertEqual(len({result, again}), 1)
+
+    def test_mapping_still_compares_equal_to_a_plain_dict(self):
+        result = policies_to_pst('@id("my-policy")\npermit(principal, action, resource);')
+        self.assertEqual(result.static_policies["policy0"].annotations, {"id": "my-policy"})
+
+
+class TestNonEmptyInvariants(unittest.TestCase):
+    def test_has_attr_rejects_an_empty_path(self):
+        # Rust models this field as NonEmpty<SmolStr>.
+        with self.assertRaises(ValueError):
+            HasAttr(base=Var("resource"), attrs=())
