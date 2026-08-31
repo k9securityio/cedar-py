@@ -503,16 +503,51 @@ type error, and hold a `FrozenMap` at runtime: a `dict` subclass that rejects
 mutation, so `dataclasses.asdict(result)`, `json.dumps(...)`, and comparison
 against a plain dict all still work, while the node stays a value.
 
-`pst.entity_uids(node)` walks any node and returns every entity uid named under
-it, which is how you find out what a policy or a TPE residual actually
-references before you go load it:
+`pst.entity_uids(node)` collects every entity uid named anywhere under a node, at
+any depth, which is how you find out what a policy actually references before you
+go load it. It takes a node, or a mapping or tuple of nodes such as a
+`PolicySet`'s `templates`:
 
 ```python
 from cedarpy.pst import entity_uids
 
 entity_uids(result.static_policies["policy0"])
-# frozenset({EntityUid(type=EntityType(basename='User', namespace=()), id='alice')})
+# frozenset({EntityUid(type=EntityType(basename='Action', namespace=()), id='view')})
+
+entity_uids(result.static_policies)   # every uid in the whole set
 ```
+
+Anything it cannot walk raises `TypeError` rather than returning an empty set, so
+handing it the engine's own `PolicySet` handle by mistake cannot be mistaken for
+"this policy names no entities".
+
+### Rebuilding a policy set from nodes
+
+`PolicySet.from_pst(nodes)` is the inverse of `PolicySet.to_pst()`, so a set can
+be taken apart, rewritten, and handed back to the engine. `policies_to_pst(text)`
+is `PolicySet.from_str(text).to_pst()`.
+
+```python
+import dataclasses
+
+from cedarpy import PolicySet, is_authorized, policies_to_pst
+from cedarpy.pst import EntityType, EntityUid, ScopeEq
+
+nodes = policies_to_pst('permit(principal == User::"alice", action, resource);')
+
+# Point the same policy at a different principal.
+policy = nodes.static_policies["policy0"]
+retargeted = dataclasses.replace(
+    policy, principal=ScopeEq(EntityUid(EntityType("User"), "bob")),
+)
+edited = dataclasses.replace(nodes, static_policies={"policy0": retargeted})
+
+policy_set = PolicySet.from_pst(edited)   # authorizes for bob, not alice
+```
+
+`from_pst` raises `TypeError` if given something that is not a `cedarpy.pst`
+node, and `ValueError` if the nodes do not form a valid policy set (a template
+link naming a template that is not in the set, for instance).
 
 ## Developing
 
