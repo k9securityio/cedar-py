@@ -332,3 +332,28 @@ class TestEntityUidsWalk(unittest.TestCase):
             'permit(principal == ?principal, action == Action::"view", resource);'
         )
         self.assertEqual(entity_uids(result), frozenset({_uid("Action", "view")}))
+
+
+class TestUnrepresentableNodesAreAbsent(unittest.TestCase):
+    """`Unknown` and `ResidualError` are not part of this module's surface.
+
+    A `pst::Template`'s clauses are validated when the template is built and
+    any clause holding an `Unknown` is rejected, so no template cedarpy can
+    receive contains one. `ResidualError` only exists with cedar's `tpe`
+    feature, which this build does not enable.
+    """
+
+    def test_the_node_types_are_not_exported(self):
+        import cedarpy.pst as pst_module
+
+        for name in ("Unknown", "ResidualError"):
+            with self.subTest(name=name):
+                self.assertNotIn(name, pst_module.__all__)
+                self.assertFalse(hasattr(pst_module, name))
+
+    def test_a_policy_holding_an_unknown_is_rejected_by_cedar(self):
+        with self.assertRaises(ValueError) as caught:
+            policies_to_pst(
+                'permit(principal, action, resource) when { unknown("x") };'
+            )
+        self.assertIn("Unknown", str(caught.exception))

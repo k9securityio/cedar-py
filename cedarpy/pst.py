@@ -7,19 +7,19 @@ match is exhaustive.
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, fields, is_dataclass
-from typing import Any, Literal, Mapping, NoReturn, TypeVar
+from typing import Any, Literal, NoReturn, TypeVar
 
 __all__ = [
     "ActionConstraint", "ActionEq", "ActionIn", "BinaryOp", "BinaryOpName",
-    "BoolLit", "Char", "Clause", "EntityLit", "EntityOrSlot", "EntityType",
-    "EntityUid", "Effect", "Expr", "FrozenMap", "GetAttr", "HasAttr",
-    "IfThenElse", "Is", "Like", "Lit", "LongLit", "PatternElem", "PolicySet",
-    "PrincipalOrResourceConstraint", "Record", "ResidualError", "ScopeAny",
-    "ScopeEq", "ScopeIn", "ScopeIs", "ScopeIsIn", "Set", "Slot", "SlotName",
-    "entity_uids",
-    "StringLit", "Template", "TemplateLink", "UnaryOp", "UnaryOpName",
-    "Unknown", "Unless", "Var", "VarName", "When", "Wildcard",
+    "BoolLit", "Char", "Clause", "Effect", "entity_uids", "EntityLit",
+    "EntityOrSlot", "EntityType", "EntityUid", "Expr", "FrozenMap", "GetAttr",
+    "HasAttr", "IfThenElse", "Is", "Like", "Lit", "LongLit", "PatternElem",
+    "PolicySet", "PrincipalOrResourceConstraint", "Record", "ScopeAny",
+    "ScopeEq", "ScopeIn", "ScopeIs", "ScopeIsIn", "Set", "Slot",
+    "SlotName", "StringLit", "Template", "TemplateLink", "UnaryOp",
+    "UnaryOpName", "Unless", "Var", "VarName", "When", "Wildcard",
 ]
 
 _K = TypeVar("_K", bound=str)
@@ -201,20 +201,9 @@ class Record:
     fields: Mapping[str, Expr]
 
 
-@dataclass(frozen=True, slots=True)
-class Unknown:
-    name: str
-
-
-@dataclass(frozen=True, slots=True)
-class ResidualError:
-    pass  # TPE residual subexpression known to error if evaluated
-
-
 Expr = (
     Var | Slot | BoolLit | LongLit | StringLit | EntityLit | UnaryOp | BinaryOp
-    | GetAttr | HasAttr | Like | Is | IfThenElse | Set | Record | Unknown
-    | ResidualError
+    | GetAttr | HasAttr | Like | Is | IfThenElse | Set | Record
 )
 
 

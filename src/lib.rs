@@ -78,9 +78,6 @@ struct PstClasses<'py> {
     if_then_else: Bound<'py, PyAny>,
     set: Bound<'py, PyAny>,
     record: Bound<'py, PyAny>,
-    unknown: Bound<'py, PyAny>,
-    #[allow(dead_code)] // read once the tpe feature is on
-    residual_error: Bound<'py, PyAny>,
     when: Bound<'py, PyAny>,
     unless: Bound<'py, PyAny>,
     scope_any: Bound<'py, PyAny>,
@@ -120,8 +117,6 @@ impl<'py> PstClasses<'py> {
             if_then_else: get("IfThenElse")?,
             set: get("Set")?,
             record: get("Record")?,
-            unknown: get("Unknown")?,
-            residual_error: get("ResidualError")?,
             when: get("When")?,
             unless: get("Unless")?,
             scope_any: get("ScopeAny")?,
@@ -312,7 +307,6 @@ fn build_expr<'py>(c: &PstClasses<'py>, expr: &pst::Expr) -> PyResult<Py<PyAny>>
             }
             Ok(c.record.call1((build_mapping(c, items)?,))?.unbind())
         }
-        pst::Expr::Unknown { name } => Ok(c.unknown.call1((name.to_string(),))?.unbind()),
         other => Err(pst_error("Expr variant", other)),
     }
 }
