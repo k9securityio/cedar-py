@@ -442,9 +442,9 @@ fn policies_to_pst(py: Python<'_>, s: String) -> PyResult<Py<PyAny>> {
 /// A `PolicySet` is accepted anywhere a policies string is accepted:
 /// `is_authorized`, `is_authorized_batch`, and `is_authorized_partial`.
 ///
-/// Construct with `PolicySet.from_str(cedar_text)` or
-/// `PolicySet.from_json_str(cedar_json)`; both raise `ValueError` on parse
-/// errors. The handle is immutable, and its memory is released automatically
+/// Construct with `PolicySet.from_str(cedar_text)`,
+/// `PolicySet.from_json_str(cedar_json)`, or `PolicySet.from_pst(nodes)`; all
+/// raise `ValueError` on parse errors. The handle is immutable, and its memory is released automatically
 /// when the last Python reference is dropped.
 ///
 /// A set may also contain Cedar *templates* (policies with `?principal` /
@@ -506,9 +506,8 @@ impl PyPolicySet {
 
     /// Build a `PolicySet` from the typed nodes `policies_to_pst` returns.
     ///
-    /// The inverse of `policies_to_pst`, so a policy set can be taken apart,
-    /// inspected or rewritten as nodes, and turned back into something the
-    /// engine will authorize against.
+    /// The inverse of `PolicySet.to_pst`, so a policy set can be read as
+    /// nodes, rewritten, and handed back to the engine.
     ///
     /// :raises TypeError: if given something other than a `cedarpy.pst` node.
     /// :raises ValueError: if the nodes do not form a valid policy set.
@@ -1981,10 +1980,9 @@ fn _internal(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// Reading typed PST nodes back into cedar_policy, the reverse of build_*.
-// Dispatches on the dataclass name, since cedarpy.pst is a closed set.
-// ---------------------------------------------------------------------------
+// The reverse of the `build_*` functions above: reads cedarpy.pst dataclasses
+// back into cedar_policy::pst types. Dispatches on the class name, since
+// cedarpy.pst is a closed set of dataclasses.
 
 fn node_kind(obj: &Bound<'_, PyAny>) -> PyResult<String> {
     Ok(obj.get_type().name()?.to_string())

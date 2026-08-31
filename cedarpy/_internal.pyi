@@ -20,9 +20,9 @@ class PolicySet:
     A ``PolicySet`` is accepted anywhere a policies string is accepted:
     ``is_authorized``, ``is_authorized_batch``, and ``is_authorized_partial``.
 
-    Construct with ``PolicySet.from_str(cedar_text)`` or
-    ``PolicySet.from_json_str(cedar_json)``; both raise ``ValueError`` on parse
-    errors. The handle is immutable, and its memory is released automatically
+    Construct with ``PolicySet.from_str(cedar_text)``,
+    ``PolicySet.from_json_str(cedar_json)``, or ``PolicySet.from_pst(nodes)``;
+    all raise ``ValueError`` on parse errors. The handle is immutable, and its memory is released automatically
     when the last Python reference is dropped.
 
     A set may also contain Cedar *templates* (policies with ``?principal`` /
@@ -47,11 +47,10 @@ class PolicySet:
     def from_pst(node: "cedarpy.pst.PolicySet") -> "PolicySet":
         """Build a ``PolicySet`` from the typed nodes ``policies_to_pst`` returns.
 
-        The inverse of ``policies_to_pst``, so a policy set can be taken apart,
-        inspected or rewritten as nodes, and turned back into something the
-        engine will authorize against. Raises ``TypeError`` if given anything
-        other than a ``cedarpy.pst`` node, ``ValueError`` if the nodes do not
-        form a valid policy set.
+        The inverse of ``PolicySet.to_pst``, so a policy set can be read as
+        nodes, rewritten, and handed back to the engine. Raises ``TypeError``
+        if given anything other than a ``cedarpy.pst`` node, and ``ValueError``
+        if the nodes do not form a valid policy set.
         """
         ...
 

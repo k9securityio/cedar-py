@@ -440,8 +440,7 @@ print(format_policies(policies))
 
 ### Inspecting policies as a typed tree
 
-`policies_to_pst` parses policy text into typed nodes from `cedarpy.pst`, matching
-`cedar_policy::pst`. Use structural pattern matching instead of dict keys.
+`policies_to_pst` parses policy text into typed nodes from `cedarpy.pst`, mirroring `cedar_policy::pst`. Each node is a frozen dataclass, so you can use structural pattern matching instead of walking a tree keyed by string operators.
 
 ```python
 from cedarpy import policies_to_pst
@@ -454,20 +453,20 @@ policies = """
 
 result = policies_to_pst(policies)
 clause = result.static_policies["policy0"].clauses[0]
+
 match clause.expr:
     case BinaryOp(op="eq", left=GetAttr(attr="owner"), right=Var(name="principal")):
         print("matched")
 ```
 
-Static policies and unlinked templates only. A residual from `is_authorized_partial`
-cannot be parsed this way: PST rejects any clause containing an unresolved
-`unknown(...)` node, and every non-trivial residual has one.
+Static policies and unlinked templates only. A residual from `is_authorized_partial` cannot be parsed this way, because PST rejects any clause holding an unresolved `unknown(...)` node and every non-trivial residual has one.
 
-Every closed set Cedar defines stays closed in the type: `UnaryOp.op` and
-`BinaryOp.op` are `Literal` aliases of the operator names (`UnaryOpName`,
-`BinaryOpName`), `Template.effect` is `Literal["permit", "forbid"]`, and
-`Var.name` / `Slot.name` are likewise constrained, so a type checker can prove a
-`match` over one is exhaustive:
+Each closed set Cedar defines is closed in the Python type, so a type checker can prove a `match` over one is exhaustive:
+
+* `UnaryOp.op` and `BinaryOp.op` are `Literal` aliases of the operator names (`UnaryOpName`, `BinaryOpName`).
+* `Template.effect` is `Literal["permit", "forbid"]`, and `Var.name` and `Slot.name` are constrained the same way.
+* Cedar's `Bool` and `Long` literals are separate `BoolLit` and `LongLit` nodes. `bool` is a subclass of `int` in Python, so one node holding either could not tell them apart.
+* An entity type keeps its namespace as structure. `EntityType(basename='User', namespace=('MyApp',))` rather than the string `'MyApp::User'`, and `str()` gives the Cedar form.
 
 ```python
 from typing import assert_never  # typing_extensions on Python < 3.11
@@ -486,68 +485,44 @@ def render_literal(expr: Expr) -> str:
             return "<non-literal>"
 ```
 
-Cedar's `Bool` and `Long` literals are separate nodes (`BoolLit` / `LongLit`)
-because `bool` is a subclass of `int` in Python, so a single node holding either
-could not tell them apart. An entity type keeps its namespace as structure
-rather than a `"::"`-joined string:
+Every node is frozen, slotted, and hashable, so nodes work as dict keys and set members. Mapping-valued fields such as `Record.fields` and `Template.annotations` are declared `Mapping`, so writing to one is a type error, and hold a `FrozenMap` at runtime, which is a `dict` subclass that raises on mutation. `dataclasses.asdict`, `json.dumps`, and comparison against a plain dict all still work.
+
+`pst.entity_uids(node)` collects every entity uid named anywhere under a node, at any depth. Use it to find out what a policy references before you load anything. It takes a node, or a mapping or tuple of nodes such as a `PolicySet`'s `templates`.
 
 ```python
-result.static_policies["policy0"].principal.entity.type
-# EntityType(basename='User', namespace=('MyApp',))  ->  str(...) == 'MyApp::User'
+from cedarpy.pst import EntityType, EntityUid, entity_uids
+
+assert entity_uids(result.static_policies["policy0"]) == frozenset({
+    EntityUid(EntityType("Action"), "view")
+})
 ```
 
-Every node is a frozen, slotted dataclass and is hashable, so nodes work as dict
-keys and set members and carry no per-instance `__dict__`. Mapping-valued fields (`Record.fields`, `Template.annotations`,
-`PolicySet.templates`, ...) are declared as `Mapping`, so writing to one is a
-type error, and hold a `FrozenMap` at runtime: a `dict` subclass that rejects
-mutation, so `dataclasses.asdict(result)`, `json.dumps(...)`, and comparison
-against a plain dict all still work, while the node stays a value.
-
-`pst.entity_uids(node)` collects every entity uid named anywhere under a node, at
-any depth, which is how you find out what a policy actually references before you
-go load it. It takes a node, or a mapping or tuple of nodes such as a
-`PolicySet`'s `templates`:
-
-```python
-from cedarpy.pst import entity_uids
-
-entity_uids(result.static_policies["policy0"])
-# frozenset({EntityUid(type=EntityType(basename='Action', namespace=()), id='view')})
-
-entity_uids(result.static_policies)   # every uid in the whole set
-```
-
-Anything it cannot walk raises `TypeError` rather than returning an empty set, so
-handing it the engine's own `PolicySet` handle by mistake cannot be mistaken for
-"this policy names no entities".
+Anything it cannot walk raises `TypeError` rather than returning an empty set, so passing the `cedarpy.PolicySet` handle by mistake cannot look like "this policy names no entities".
 
 ### Rebuilding a policy set from nodes
 
-`PolicySet.from_pst(nodes)` is the inverse of `PolicySet.to_pst()`, so a set can
-be taken apart, rewritten, and handed back to the engine. `policies_to_pst(text)`
-is `PolicySet.from_str(text).to_pst()`.
+`PolicySet.from_pst` is the inverse of `PolicySet.to_pst`, so you can read a policy set as nodes, change it, and hand it back to the engine. `policies_to_pst(text)` is `PolicySet.from_str(text).to_pst()`.
 
 ```python
 import dataclasses
 
-from cedarpy import PolicySet, is_authorized, policies_to_pst
+from cedarpy import Decision, PolicySet, is_authorized, policies_to_pst
 from cedarpy.pst import EntityType, EntityUid, ScopeEq
 
 nodes = policies_to_pst('permit(principal == User::"alice", action, resource);')
 
-# Point the same policy at a different principal.
+# Point the same policy at a different principal
 policy = nodes.static_policies["policy0"]
-retargeted = dataclasses.replace(
-    policy, principal=ScopeEq(EntityUid(EntityType("User"), "bob")),
-)
+retargeted = dataclasses.replace(policy, principal=ScopeEq(EntityUid(EntityType("User"), "bob")))
 edited = dataclasses.replace(nodes, static_policies={"policy0": retargeted})
 
-policy_set = PolicySet.from_pst(edited)   # authorizes for bob, not alice
+policy_set = PolicySet.from_pst(edited)
+
+request = {"principal": 'User::"bob"', "action": 'Action::"view"', "resource": 'Doc::"d1"', "context": {}}
+assert is_authorized(request, policy_set, "[]").decision == Decision.Allow
 ```
 
-`from_pst` raises `TypeError` if given something that is not a `cedarpy.pst`
-node, and `ValueError` if the nodes do not form a valid policy set (a template
-link naming a template that is not in the set, for instance).
+`from_pst` raises `TypeError` if given something that is not a `cedarpy.pst` node, and `ValueError` if the nodes do not form a valid policy set, such as a template link naming a template that is not present.
 
 ## Developing
 

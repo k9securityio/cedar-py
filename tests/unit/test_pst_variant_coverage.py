@@ -1,19 +1,14 @@
 """Audits cedar_policy::pst's enum variants against a snapshot in this repo.
 
-``cedarpy.pst`` mirrors a set of Rust enums by hand. Those enums are all
-``#[non_exhaustive]``, so an exhaustive ``match`` is impossible from outside
-the crate and the compiler cannot tell us when cedar-policy adds a variant.
-This test is the substitute: it reads the variant names out of the
-cedar-policy-core source that ``Cargo.lock`` resolves to and compares them
-against ``pst_variants.json``.
+Those enums are all `#[non_exhaustive]`, so an exhaustive `match` is impossible
+from outside the crate and the compiler cannot report a variant `cedarpy.pst`
+does not model. This reads the variant names out of the cedar-policy-core
+source that `Cargo.lock` resolves to and compares them against
+`pst_variants.json`, so a cedar-policy bump that adds, removes or renames one
+fails here and names it.
 
-A cedar-policy bump that adds, removes or renames a variant fails here,
-naming it, so the mirror in ``cedarpy/pst.py`` and the converters in
-``src/lib.rs`` get updated deliberately rather than falling through to a
-runtime "unrepresentable variant" error.
-
-To accept a change: read the new variant, handle it (or decide not to), then
-regenerate the snapshot with ``python tests/unit/test_pst_variant_coverage.py``.
+Regenerate the snapshot with `python tests/unit/test_pst_variant_coverage.py`
+after deciding what to do about the change.
 """
 import json
 import re
@@ -67,9 +62,8 @@ def _enabled_cedar_features() -> frozenset[str]:
 def _scrape_variants(source_dir: Path) -> dict[str, dict[str, str | None]]:
     """Map each pst enum to its variants and the cargo feature each needs.
 
-    Reads the source rather than the compiled crate because a feature-gated
-    variant does not exist in our build at all, and the point is to see the
-    whole surface, not only the part we compiled.
+    Reads the source, not the compiled crate, because a feature-gated variant
+    does not exist in our build at all.
     """
     enums: dict[str, dict[str, str | None]] = {}
     for path in sorted((source_dir / "src" / "pst").glob("*.rs")):
@@ -118,17 +112,13 @@ class TestPstVariantCoverage(unittest.TestCase):
         )
 
     def test_every_enabled_expr_variant_is_modelled(self):
-        """The Expr variants cedar can produce here, versus the ones we model.
+        """Which Expr variants can occur here, against the ones we model.
 
-        Which variants exist depends on the cargo features `Cargo.toml` enables,
-        so this reads them from there: a variant behind a feature we do not turn
-        on cannot occur. `Unknown` is excluded because a `pst::Template`'s
-        clauses are validated as they are added and any clause containing one is
-        rejected, so no template cedarpy can receive holds one.
-
-        The modelled side is read off `cedarpy.pst.Expr` rather than listed
-        here, so adding a node type to the union without a matching Rust variant
-        fails too.
+        A variant behind a cargo feature `Cargo.toml` does not enable cannot
+        occur, so the enabled features are read from there. `Unknown` is
+        excluded because `pst::Template` rejects any clause holding one. The
+        modelled side is read off `cedarpy.pst.Expr`, so a node type added to
+        the union without a matching Rust variant fails too.
         """
         source_dir = _core_source_dir()
         if source_dir is None:

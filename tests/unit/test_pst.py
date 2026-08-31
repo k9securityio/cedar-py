@@ -335,12 +335,10 @@ class TestEntityUidsWalk(unittest.TestCase):
 
 
 class TestUnrepresentableNodesAreAbsent(unittest.TestCase):
-    """`Unknown` and `ResidualError` are not part of this module's surface.
+    """Neither node kind can occur, so neither is modelled.
 
-    A `pst::Template`'s clauses are validated when the template is built and
-    any clause holding an `Unknown` is rejected, so no template cedarpy can
-    receive contains one. `ResidualError` only exists with cedar's `tpe`
-    feature, which this build does not enable.
+    `pst::Template` validates each clause as it is added and rejects any
+    holding an `Unknown`. `ResidualError` needs cedar's `tpe` feature.
     """
 
     def test_the_node_types_are_not_exported(self):
@@ -360,7 +358,7 @@ class TestUnrepresentableNodesAreAbsent(unittest.TestCase):
 
 
 class TestEntityUidsRejectsWhatItCannotWalk(unittest.TestCase):
-    """An empty result must mean "names no entity", never "wrong argument"."""
+    """An empty result must mean "names no entity", not "wrong argument"."""
 
     def test_the_engines_own_policy_set_handle_is_rejected(self):
         from cedarpy import PolicySet as EnginePolicySet
@@ -445,7 +443,7 @@ class TestPolicySetRoundTrip(unittest.TestCase):
         self.assertEqual(EnginePolicySet.from_pst(nodes).to_pst(), nodes)
 
     def test_an_edited_node_tree_rebuilds_into_a_working_set(self):
-        """The point of the round trip: change a node, get a usable set back."""
+        """Change a node, get a policy set the engine will authorize against."""
         from cedarpy import Decision, PolicySet as EnginePolicySet, is_authorized
 
         nodes = policies_to_pst(

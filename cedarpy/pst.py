@@ -1,9 +1,8 @@
 """Typed PST nodes, mirroring cedar_policy::pst. Built by Rust, not parsed.
 
-Every node is a frozen, hashable dataclass, and every closed set the Rust
-enums define stays closed here as a `typing.Literal` or a union of node
-types, so a consumer can `match` over one and have a type checker prove the
-match is exhaustive.
+Every node is a frozen, hashable dataclass. Each closed set of the Rust enums
+is a `typing.Literal` or a union of node types here, so a `match` over one can
+be checked for exhaustiveness.
 """
 from __future__ import annotations
 
@@ -29,12 +28,9 @@ _V = TypeVar("_V")
 class FrozenMap(dict[_K, _V]):
     """An immutable, hashable string-keyed mapping.
 
-    A PST node is a value, so its mappings have to be values too: a plain
-    dict would leave `frozen=True` unenforced one field deep, and would make
-    any node containing one unhashable. Subclasses `dict` so `asdict`,
-    `json.dumps`, and `==` against a plain dict keep working. Nodes declare
-    these fields as `Mapping`, which has no mutating methods, so a write is a
-    type error as well as a `TypeError`.
+    A plain dict would leave `frozen=True` unenforced one field deep and make
+    any node holding one unhashable. This subclasses `dict` so `asdict`,
+    `json.dumps`, and `==` against a plain dict keep working.
     """
 
     __slots__ = ()
@@ -304,14 +300,10 @@ def entity_uids(
 ) -> frozenset[EntityUid]:
     """Every entity uid named anywhere under `node`, at any depth.
 
-    Answers "which entities does this policy or residual actually reference",
-    which is what a caller needs to decide what to load before evaluating.
-    Walks the fields generically, so a node kind added later is covered.
-
-    Takes a node, or a mapping or tuple of nodes such as a `PolicySet`'s
-    `templates` or a TPE result's `residual_policies`. Anything else raises
-    `TypeError` rather than reporting an empty result, so passing the engine's
-    own `cedarpy.PolicySet` handle by mistake cannot look like "no entities".
+    Use it to decide which entities to load before evaluating. Takes a node, or
+    a mapping or tuple of nodes such as a `PolicySet`'s `templates`. Anything
+    else raises `TypeError`, so passing a `cedarpy.PolicySet` handle by mistake
+    cannot look like "names no entities".
     """
     if _is_node(node):
         roots: tuple[object, ...] = (node,)
