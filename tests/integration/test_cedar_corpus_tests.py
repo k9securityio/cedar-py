@@ -30,6 +30,7 @@ Not run as part of ``make integration-tests`` — invoke explicitly via
 
 import atexit
 import json
+import re
 import shutil
 import tarfile
 import tempfile
@@ -189,18 +190,24 @@ def test_corpus_policies_convert_to_pst(corpus_dir: Path) -> None:
     conversion and back.
 
     What it asserts is not "everything converts": cedar's own PST construction
-    rejects some fuzzer output, chiefly extension functions called with the
-    wrong number of arguments, and those failures are cedar's to make. What it
-    asserts is that no failure is *cedarpy's*, i.e. none is the
-    "unrepresentable variant" error raised when a node kind is not modelled,
-    and that everything which does convert survives the round trip unchanged.
+    rejects some fuzzer output, and those failures are cedar's to make — but
+    only one shape of them is known and expected, extension functions called
+    with the wrong number of arguments (arity is unchecked at parse time and
+    checked at PST construction). Every cedar-side rejection must match that
+    shape; the first rejection of any other kind fails the test, named. No
+    failure may be *cedarpy's*, i.e. the "unrepresentable variant" error
+    raised when a node kind is not modelled, and everything which does
+    convert must survive the round trip unchanged.
     """
     policy_files = sorted(corpus_dir.glob("*.cedar"))
-    assert policy_files, f"no .cedar files under {corpus_dir}"
+    # Guards against the corpus silently shrinking (7,600 files as of the
+    # v4.12.0 corpus), which the per-failure assertions below cannot see.
+    assert len(policy_files) > 7000, f"only {len(policy_files)} .cedar files under {corpus_dir}"
 
+    expected_rejection = re.compile(r"expects \d+ argument\(s\), got \d+")
     unrepresentable: list[str] = []
+    unexpected_rejections: list[str] = []
     not_identity: list[str] = []
-    converted = 0
     for path in policy_files:
         source = path.read_text()
         try:
@@ -208,8 +215,9 @@ def test_corpus_policies_convert_to_pst(corpus_dir: Path) -> None:
         except ValueError as e:
             if "unrepresentable" in str(e):
                 unrepresentable.append(f"{path.name}: {e}")
+            elif not expected_rejection.search(str(e)):
+                unexpected_rejections.append(f"{path.name}: {e}")
             continue
-        converted += 1
         if cedarpy.PolicySet.from_pst(nodes).to_pst() != nodes:
             not_identity.append(path.name)
 
@@ -217,10 +225,13 @@ def test_corpus_policies_convert_to_pst(corpus_dir: Path) -> None:
         "policies_to_pst met node kinds cedarpy does not model:\n"
         + "\n".join(unrepresentable[:20])
     )
+    assert not unexpected_rejections, (
+        "cedar rejected corpus policies for a reason other than extension\n"
+        "function arity; decide whether the new rejection shape is cedar's\n"
+        "or cedarpy's, then extend expected_rejection if it is cedar's:\n"
+        + "\n".join(unexpected_rejections[:20])
+    )
     assert not not_identity, (
         "policy sets changed when round-tripped through from_pst/to_pst:\n"
         + "\n".join(not_identity[:20])
     )
-    # Guards against the corpus silently shrinking or the conversion regressing
-    # into rejecting nearly everything, which the assertions above would miss.
-    assert converted > len(policy_files) * 0.99
