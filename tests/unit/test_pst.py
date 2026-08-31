@@ -357,3 +357,31 @@ class TestUnrepresentableNodesAreAbsent(unittest.TestCase):
                 'permit(principal, action, resource) when { unknown("x") };'
             )
         self.assertIn("Unknown", str(caught.exception))
+
+
+class TestEntityUidsRejectsWhatItCannotWalk(unittest.TestCase):
+    """An empty result must mean "names no entity", never "wrong argument"."""
+
+    def test_the_engines_own_policy_set_handle_is_rejected(self):
+        from cedarpy import PolicySet as EnginePolicySet
+
+        handle = EnginePolicySet.from_str(
+            'permit(principal == User::"alice", action, resource);'
+        )
+        with self.assertRaises(TypeError) as caught:
+            entity_uids(handle)
+        self.assertIn("cedarpy.pst", str(caught.exception))
+
+    def test_non_nodes_are_rejected(self):
+        for value in (None, 42, "User::\"alice\"", {"a": 1}, object()):
+            with self.subTest(value=value), self.assertRaises(TypeError):
+                entity_uids(value)
+
+    def test_a_mapping_or_tuple_of_nodes_is_accepted(self):
+        result = policies_to_pst(
+            'permit(principal == User::"alice", action, resource);'
+            'permit(principal == User::"bob", action, resource);'
+        )
+        expected = frozenset({_uid("User", "alice"), _uid("User", "bob")})
+        self.assertEqual(entity_uids(result.static_policies), expected)
+        self.assertEqual(entity_uids(tuple(result.static_policies.values())), expected)

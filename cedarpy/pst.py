@@ -16,8 +16,8 @@ __all__ = [
     "BoolLit", "Char", "Clause", "Effect", "entity_uids", "EntityLit",
     "EntityOrSlot", "EntityType", "EntityUid", "Expr", "FrozenMap", "GetAttr",
     "HasAttr", "IfThenElse", "Is", "Like", "Lit", "LongLit", "PatternElem",
-    "PolicySet", "PrincipalOrResourceConstraint", "Record", "ScopeAny",
-    "ScopeEq", "ScopeIn", "ScopeIs", "ScopeIsIn", "Set", "Slot",
+    "PolicySet", "PrincipalOrResourceConstraint", "PstNode", "Record",
+    "ScopeAny", "ScopeEq", "ScopeIn", "ScopeIs", "ScopeIsIn", "Set", "Slot",
     "SlotName", "StringLit", "Template", "TemplateLink", "UnaryOp",
     "UnaryOpName", "Unless", "Var", "VarName", "When", "Wildcard",
 ]
@@ -287,13 +287,51 @@ class PolicySet:
     template_links: tuple[TemplateLink, ...]
 
 
-def entity_uids(node: Any) -> frozenset[EntityUid]:
+PstNode = (
+    PolicySet | Template | TemplateLink | Clause | Expr | EntityUid | EntityType
+    | PrincipalOrResourceConstraint | ActionConstraint | PatternElem
+)
+
+
+def _is_node(value: object) -> bool:
+    """True for an instance of a node type defined in this module."""
+    cls = type(value)
+    return is_dataclass(cls) and cls.__module__ == __name__
+
+
+def entity_uids(
+    node: PstNode | Mapping[str, PstNode] | tuple[PstNode, ...],
+) -> frozenset[EntityUid]:
     """Every entity uid named anywhere under `node`, at any depth.
 
     Answers "which entities does this policy or residual actually reference",
     which is what a caller needs to decide what to load before evaluating.
     Walks the fields generically, so a node kind added later is covered.
+
+    Takes a node, or a mapping or tuple of nodes such as a `PolicySet`'s
+    `templates` or a TPE result's `residual_policies`. Anything else raises
+    `TypeError` rather than reporting an empty result, so passing the engine's
+    own `cedarpy.PolicySet` handle by mistake cannot look like "no entities".
     """
+    if _is_node(node):
+        roots: tuple[object, ...] = (node,)
+    elif isinstance(node, Mapping):
+        roots = tuple(node.values())
+    elif isinstance(node, tuple):
+        roots = node
+    else:
+        raise TypeError(
+            f"entity_uids expects a cedarpy.pst node, or a mapping or tuple of "
+            f"them, not {type(node).__name__}"
+        )
+
+    unwalkable = [r for r in roots if not _is_node(r)]
+    if unwalkable:
+        raise TypeError(
+            f"entity_uids expects cedarpy.pst nodes, got "
+            f"{type(unwalkable[0]).__name__}"
+        )
+
     found: set[EntityUid] = set()
 
     def walk(value: Any) -> None:
@@ -312,5 +350,6 @@ def entity_uids(node: Any) -> frozenset[EntityUid]:
             for f in fields(value):
                 walk(getattr(value, f.name))
 
-    walk(node)
+    for root in roots:
+        walk(root)
     return frozenset(found)
