@@ -494,6 +494,10 @@ impl PyPolicySet {
     ///
     /// `policies_to_pst(text)` is `PolicySet.from_str(text).to_pst()`.
     ///
+    /// The node set tracks the Cedar engine (see the `cedarpy.pst` module
+    /// docs): syntax newer than the modelled node types raises `ValueError`
+    /// until a cedarpy release models it.
+    ///
     /// :raises ValueError: if the set cannot be represented as PST nodes.
     fn to_pst(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let pst = self

@@ -442,6 +442,8 @@ print(format_policies(policies))
 
 `policies_to_pst` parses policy text into typed nodes from `cedarpy.pst`, mirroring `cedar_policy::pst`. Each node is a frozen dataclass, so you can use structural pattern matching instead of walking a tree keyed by string operators.
 
+`cedarpy.pst` tracks the engine: new engine variants mean new node types or `Literal` members in cedarpy minor releases, and unmodelled syntax raises `ValueError` until then.
+
 ```python
 from cedarpy import policies_to_pst
 from cedarpy.pst import BinaryOp, GetAttr, Var

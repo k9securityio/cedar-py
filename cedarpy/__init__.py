@@ -360,7 +360,12 @@ def policies_from_json_str(policies: str) -> str:
 
 
 def policies_to_pst(policies: str) -> "pst.PolicySet":
-    """Parse Cedar policy text into typed PST nodes from cedarpy.pst."""
+    """Parse Cedar policy text into typed PST nodes from cedarpy.pst.
+
+    The node set tracks the Cedar engine (see the ``cedarpy.pst`` module
+    docs): syntax newer than the modelled node types raises ``ValueError``
+    until a cedarpy release models it.
+    """
     return _internal.policies_to_pst(policies)
 
 

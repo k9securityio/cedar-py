@@ -58,6 +58,9 @@ class PolicySet:
         """Return this policy set as the typed nodes from ``cedarpy.pst``.
 
         ``policies_to_pst(text)`` is ``PolicySet.from_str(text).to_pst()``.
+        The node set tracks the Cedar engine (see the ``cedarpy.pst`` module
+        docs): syntax newer than the modelled node types raises ``ValueError``
+        until a cedarpy release models it.
         Raises ``ValueError`` if the set cannot be represented as PST nodes.
         """
         ...
