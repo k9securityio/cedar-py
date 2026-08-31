@@ -346,9 +346,7 @@ class TestEntityUidsOnResiduals(unittest.TestCase):
     """What a residual still needs loaded, which is why `entity_uids` exists.
 
     A residual from `is_authorized_partial` cannot become a PST at all, so this
-    is the case the walk is for: a TPE residual is a `pst.Template`, and asking
-    it which entities it names tells you what to fetch before finishing the
-    evaluation.
+    is the case the walk is for.
     """
 
     SCHEMA = """
@@ -399,14 +397,11 @@ class TestEntityUidsOnResiduals(unittest.TestCase):
         self.assertIsInstance(entity_uids(result.residual_policy_set.to_pst()), frozenset)
 
     def test_the_two_residual_views_are_not_interchangeable(self):
-        """`residual_policies` is the reduced view; the handle is every residual.
+        """`residual_policies` is the reduced view. The handle is every residual.
 
-        `residual_policy_set` carries all residuals, including the ones that
-        came out concretely true, false or erroring, and keeps each policy's
-        original scope. `residual_policies` carries only the ones still
-        undecided, as the evaluator reduced them, with the concrete parts of
-        the request already substituted in. So the entities they name differ,
-        and which one to ask depends on the question.
+        The reduced view has the concrete request substituted in. The handle
+        keeps each policy's original scope and includes the residuals that came
+        out concretely true, false or erroring. So they name different entities.
         """
         result = tpe_authorize(
             'User::"alice"', 'Action::"view"', "Doc", self.POLICIES, "[]", self.SCHEMA

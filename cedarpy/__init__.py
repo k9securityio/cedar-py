@@ -156,10 +156,12 @@ class TpeAuthzResult:
     forbids: TpeClassification
     residual_policies: Mapping[str, pst.Template]
     residual_policy_set: PolicySet
-    """Every residual, including the concretely true/false/error ones, as a
-    reusable ``PolicySet`` handle. Pass it to ``is_authorized`` to decide once
-    the unknowns are bound, or use ``reauthorize``, which additionally checks
-    the concrete request against the partial one."""
+    """Every residual as a reusable ``PolicySet`` handle.
+
+    Includes the residuals that came out concretely true, false or erroring.
+    Pass it to ``is_authorized`` once the unknowns are bound, or use
+    ``reauthorize``, which also checks the concrete request against the
+    partial one."""
     metrics: Mapping[str, int]
     _request_inputs: _TpeInputs | None = field(default=None, repr=False, compare=False)
 
@@ -615,7 +617,7 @@ _TpePartialEuid = str | dict | pst.EntityType
 
 
 def _normalize_tpe_euid(value: str | dict | pst.EntityType) -> str | dict:
-    """A `pst.EntityType` names a type whose id is unknown; pass it on in the
+    """A `pst.EntityType` names a type whose id is unknown. Pass it on in the
     dict form Rust reads, which carries `type` and an optional `id`."""
     if isinstance(value, pst.EntityType):
         return {"type": str(value)}
@@ -633,7 +635,7 @@ def _internal_entities(entities: str | list[dict] | Entities) -> str | _internal
 
 
 def _internal_schema(schema: str | dict | Schema | None) -> str | Schema | None:
-    """Cedar schema text, JSON text, or a handle: what Rust's SchemaArg reads."""
+    """Narrow a schema to what Rust's SchemaArg reads: text or a handle."""
     if isinstance(schema, dict):
         return json.dumps(schema)
     return schema

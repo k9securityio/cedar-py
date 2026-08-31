@@ -391,9 +391,8 @@ class TestEntityUidsRejectsWhatItCannotWalk(unittest.TestCase):
 class TestResidualErrorArrivesWithTpe(unittest.TestCase):
     """`ResidualError` exists only because this build enables cedar's `tpe`.
 
-    TPE emits a statically-known-erroring subexpression as a call to `error()`,
-    which cedar's PST reads back as `Expr::ResidualError`. The interception is
-    behind the `tpe` feature, so without it the variant does not exist at all.
+    TPE emits a subexpression it knows will error as a call to `error()`, which
+    cedar's PST reads back as `Expr::ResidualError`.
     """
 
     def test_it_is_exported_and_is_part_of_the_expr_union(self):

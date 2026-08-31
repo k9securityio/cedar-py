@@ -446,9 +446,9 @@ fn build_policy_set<'py>(c: &PstClasses<'py>, policy_set: &pst::PolicySet) -> Py
         .unbind())
 }
 
-/// A TPE principal/resource: concrete, or an entity type whose id is unknown.
-/// Accepts the same two surface forms the authorization path accepts, plus a
-/// dict carrying only `type`, which is how an unknown id is named.
+/// A TPE principal or resource. Either concrete, or an entity type whose id is
+/// unknown. Accepts the same two surface forms the authorization path accepts,
+/// plus a dict carrying only `type`, which is how an unknown id is named.
 enum PartialEuidInput {
     /// `User::"alice"` (concrete) or a bare `User` (type known, id unknown).
     Cedar(String),
@@ -517,9 +517,9 @@ fn parse_partial_entity_uid(input: &PartialEuidInput, field: &str) -> PyResult<P
     }
 }
 
-/// The entities a TPE call runs against: fully concrete (the same forms the
-/// authorization path accepts), or a partial entity document, in which an
-/// entity's `attrs`, `parents`, or `tags` may be absent to mean unknown.
+/// The entities a TPE call runs against. Either fully concrete, in the same
+/// forms the authorization path accepts, or a partial entity document, in which
+/// an entity's `attrs`, `parents`, or `tags` may be absent to mean unknown.
 enum TpeEntitiesArg {
     Concrete(EntitiesArg),
     Partial(String),
