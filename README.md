@@ -474,7 +474,7 @@ from cedarpy import tpe_authorize
 
 schema = """
     entity User;
-    entity Doc = { status: String };
+    entity Doc = { status: String, owner: User };
     action "view" appliesTo { principal: [User], resource: [Doc] };
 """
 policies = """
@@ -490,6 +490,30 @@ print(result.residual_policies)     # {'policy0': Template(...)}
 
 `permits` and `forbids` are kept separate, each a `TpeClassification` of
 `residual_ids`/`true_ids`/`false_ids`/`error_ids`.
+
+A residual is a `pst.Template`, so `entity_uids` answers what is still needed
+before the evaluation can finish:
+
+```python
+from cedarpy.pst import entity_uids
+
+policies = """
+    permit(principal, action == Action::"view", resource)
+    when { resource.owner == User::"bob" };
+"""
+
+result = tpe_authorize('User::"alice"', 'Action::"view"', "Doc", policies, "[]", schema)
+entity_uids(result.residual_policies)
+# frozenset({EntityUid(type=EntityType(basename='User', namespace=()), id='bob')})
+```
+
+There are two views of the residuals and they are not interchangeable.
+`residual_policies` holds only the policies still undecided, reduced by the
+evaluator with the concrete parts of the request already substituted in.
+`residual_policy_set` is a `PolicySet` handle holding every residual, including
+the ones that came out concretely true, false or erroring, each keeping its
+original scope. Being a handle rather than nodes, it goes through `to_pst()`
+before `entity_uids` will walk it, and the entities the two views name differ.
 
 `principal` and `resource` accept a concrete entity, as a surface-syntax string
 or a `{"type": ..., "id": ...}` dict, or a type whose id is unknown, as a bare

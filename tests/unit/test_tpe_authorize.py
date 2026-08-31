@@ -5,7 +5,9 @@ from cedarpy import (
     Decision, PartialEntities, PolicySet, TpeAuthzResult, TpeClassification,
     is_authorized, is_authorized_partial, tpe_authorize, tpe_reauthorize,
 )
-from cedarpy.pst import BinaryOp, EntityType, GetAttr, Template, Var
+from cedarpy.pst import (
+    BinaryOp, EntityType, EntityUid, GetAttr, Template, Var, entity_uids,
+)
 
 SCHEMA = """
     entity User;
@@ -338,3 +340,89 @@ class TestPartialEntities(unittest.TestCase):
                 'User::"alice"', 'Action::"view"', 'Doc::"d1"',
                 POLICIES, PartialEntities.from_json("not json"), SCHEMA,
             )
+
+
+class TestEntityUidsOnResiduals(unittest.TestCase):
+    """What a residual still needs loaded, which is why `entity_uids` exists.
+
+    A residual from `is_authorized_partial` cannot become a PST at all, so this
+    is the case the walk is for: a TPE residual is a `pst.Template`, and asking
+    it which entities it names tells you what to fetch before finishing the
+    evaluation.
+    """
+
+    SCHEMA = """
+        entity Group;
+        entity User in [Group];
+        entity Doc = { status: String, owner: User };
+        action "view" appliesTo { principal: [User], resource: [Doc] };
+    """
+    POLICIES = """
+        permit(principal, action == Action::"view", resource)
+        when { resource.owner == User::"bob" || principal in Group::"admins" };
+    """
+
+    def test_a_residual_names_the_entities_still_to_be_loaded(self):
+        result = tpe_authorize(
+            'User::"alice"', 'Action::"view"', "Doc", self.POLICIES, "[]", self.SCHEMA
+        )
+        self.assertIsNone(result.decision)
+        self.assertEqual(
+            entity_uids(result.residual_policies["policy0"]),
+            frozenset({
+                EntityUid(EntityType("User"), "bob"),
+                EntityUid(EntityType("User"), "alice"),
+                EntityUid(EntityType("Group"), "admins"),
+            }),
+        )
+
+    def test_the_whole_residual_mapping_can_be_walked_at_once(self):
+        result = tpe_authorize(
+            'User::"alice"', 'Action::"view"', "Doc", self.POLICIES, "[]", self.SCHEMA
+        )
+        self.assertEqual(
+            entity_uids(result.residual_policies),
+            entity_uids(result.residual_policies["policy0"]),
+        )
+
+    def test_the_residual_policy_set_handle_is_not_a_pst_node(self):
+        """`residual_policy_set` is the engine's handle, not nodes.
+
+        Walking it would silently find nothing, so it raises instead. Convert
+        it with `to_pst()` first, or use `residual_policies`.
+        """
+        result = tpe_authorize(
+            'User::"alice"', 'Action::"view"', "Doc", self.POLICIES, "[]", self.SCHEMA
+        )
+        with self.assertRaises(TypeError):
+            entity_uids(result.residual_policy_set)
+        self.assertIsInstance(entity_uids(result.residual_policy_set.to_pst()), frozenset)
+
+    def test_the_two_residual_views_are_not_interchangeable(self):
+        """`residual_policies` is the reduced view; the handle is every residual.
+
+        `residual_policy_set` carries all residuals, including the ones that
+        came out concretely true, false or erroring, and keeps each policy's
+        original scope. `residual_policies` carries only the ones still
+        undecided, as the evaluator reduced them, with the concrete parts of
+        the request already substituted in. So the entities they name differ,
+        and which one to ask depends on the question.
+        """
+        result = tpe_authorize(
+            'User::"alice"', 'Action::"view"', "Doc", self.POLICIES, "[]", self.SCHEMA
+        )
+        reduced = entity_uids(result.residual_policies)
+        everything = entity_uids(result.residual_policy_set.to_pst())
+
+        # The reduced residual has the concrete principal folded in.
+        self.assertIn(EntityUid(EntityType("User"), "alice"), reduced)
+        self.assertNotIn(EntityUid(EntityType("User"), "alice"), everything)
+        # The full set keeps the action scope the reduced residual dropped.
+        self.assertIn(EntityUid(EntityType("Action"), "view"), everything)
+        self.assertNotIn(EntityUid(EntityType("Action"), "view"), reduced)
+        # Both still name what the undecided condition depends on.
+        for uid in (EntityUid(EntityType("User"), "bob"),
+                    EntityUid(EntityType("Group"), "admins")):
+            with self.subTest(uid=str(uid)):
+                self.assertIn(uid, reduced)
+                self.assertIn(uid, everything)
