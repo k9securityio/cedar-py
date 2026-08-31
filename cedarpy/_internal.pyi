@@ -3,6 +3,8 @@
 """
 from typing import Any, Dict, List, Optional, Union
 
+import cedarpy.pst
+
 
 class PolicySet:
     """An opaque, reusable handle wrapping a parsed Cedar policy set.
@@ -39,6 +41,26 @@ class PolicySet:
     @staticmethod
     def from_json_str(s: str) -> "PolicySet":
         """Parse a ``PolicySet`` from the Cedar JSON (EST) policy format. Raises ``ValueError`` on parse errors."""
+        ...
+
+    @staticmethod
+    def from_pst(node: "cedarpy.pst.PolicySet") -> "PolicySet":
+        """Build a ``PolicySet`` from the typed nodes ``policies_to_pst`` returns.
+
+        The inverse of ``policies_to_pst``, so a policy set can be taken apart,
+        inspected or rewritten as nodes, and turned back into something the
+        engine will authorize against. Raises ``TypeError`` if given anything
+        other than a ``cedarpy.pst`` node, ``ValueError`` if the nodes do not
+        form a valid policy set.
+        """
+        ...
+
+    def to_pst(self) -> "cedarpy.pst.PolicySet":
+        """Return this policy set as the typed nodes from ``cedarpy.pst``.
+
+        ``policies_to_pst(text)`` is ``PolicySet.from_str(text).to_pst()``.
+        Raises ``ValueError`` if the set cannot be represented as PST nodes.
+        """
         ...
 
     def with_added_str(self, fragment: str) -> "PolicySet":

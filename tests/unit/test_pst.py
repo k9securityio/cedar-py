@@ -9,7 +9,7 @@ from cedarpy.pst import (
     ActionEq, ActionIn, BinaryOp, BoolLit, Char, EntityLit, EntityType,
     EntityUid, FrozenMap, GetAttr, HasAttr, IfThenElse, Is, Like, LongLit,
     PolicySet, Record, ScopeEq, ScopeIs, ScopeIsIn, Set, Slot, StringLit,
-    Template, UnaryOp, Unless, Var, When, Wildcard, entity_uids,
+    Template, TemplateLink, UnaryOp, Unless, Var, When, Wildcard, entity_uids,
 )
 
 
@@ -385,3 +385,109 @@ class TestEntityUidsRejectsWhatItCannotWalk(unittest.TestCase):
         expected = frozenset({_uid("User", "alice"), _uid("User", "bob")})
         self.assertEqual(entity_uids(result.static_policies), expected)
         self.assertEqual(entity_uids(tuple(result.static_policies.values())), expected)
+
+
+class TestPolicySetRoundTrip(unittest.TestCase):
+    """`PolicySet.from_pst` / `.to_pst` are inverses of each other."""
+
+    POLICIES = (
+        '@id("labelled")\n'
+        'permit(principal == ?principal, action == Action::"view", '
+        'resource is My::App::Doc in ?resource)\n'
+        'when { resource.status like "a*c" && principal has a.b.c }\n'
+        'unless { context.n < 3 };\n'
+        'permit(principal, action in [Action::"a", Action::"b"], resource)\n'
+        'when { if principal.x then true else [1, 2].containsAny([3]) };\n'
+        'forbid(principal is User, action, resource)\n'
+        'when { resource.owner == User::"bob" && {"k": 1}.k == 1 };\n'
+    )
+
+    def test_nodes_survive_a_round_trip_unchanged(self):
+        from cedarpy import PolicySet as EnginePolicySet
+
+        nodes = policies_to_pst(self.POLICIES)
+        self.assertEqual(EnginePolicySet.from_pst(nodes).to_pst(), nodes)
+
+    def test_policies_to_pst_matches_from_str_then_to_pst(self):
+        from cedarpy import PolicySet as EnginePolicySet
+
+        self.assertEqual(
+            policies_to_pst(self.POLICIES),
+            EnginePolicySet.from_str(self.POLICIES).to_pst(),
+        )
+
+    def test_a_rebuilt_set_authorizes_the_same_way(self):
+        from cedarpy import Decision, PolicySet as EnginePolicySet, is_authorized
+
+        policies = 'permit(principal, action, resource) when { resource.public };'
+        rebuilt = EnginePolicySet.from_pst(policies_to_pst(policies))
+        request = {
+            "principal": 'User::"alice"',
+            "action": 'Action::"view"',
+            "resource": 'Doc::"d1"',
+            "context": {},
+        }
+        entities = json.dumps([
+            {"uid": {"type": "Doc", "id": "d1"}, "attrs": {"public": True}, "parents": []}
+        ])
+        self.assertEqual(is_authorized(request, rebuilt, entities).decision, Decision.Allow)
+
+    def test_template_links_survive_a_round_trip(self):
+        from cedarpy import PolicySet as EnginePolicySet
+
+        linked = EnginePolicySet.from_str(self.POLICIES).with_linked(
+            "policy0", "linked1",
+            {"?principal": 'User::"alice"', "?resource": 'My::App::Folder::"f"'},
+        )
+        nodes = linked.to_pst()
+        self.assertEqual(len(nodes.template_links), 1)
+        self.assertEqual(nodes.template_links[0].new_id, "linked1")
+        self.assertEqual(EnginePolicySet.from_pst(nodes).to_pst(), nodes)
+
+    def test_an_edited_node_tree_rebuilds_into_a_working_set(self):
+        """The point of the round trip: change a node, get a usable set back."""
+        from cedarpy import Decision, PolicySet as EnginePolicySet, is_authorized
+
+        nodes = policies_to_pst(
+            'permit(principal == User::"alice", action, resource);'
+        )
+        original = nodes.static_policies["policy0"]
+        retargeted = dataclasses.replace(
+            original,
+            principal=ScopeEq(_uid("User", "bob")),
+        )
+        edited = dataclasses.replace(
+            nodes, static_policies={"policy0": retargeted},
+        )
+        rebuilt = EnginePolicySet.from_pst(edited)
+        entities = "[]"
+        for who, expected in (("bob", Decision.Allow), ("alice", Decision.Deny)):
+            with self.subTest(principal=who):
+                request = {
+                    "principal": f'User::"{who}"',
+                    "action": 'Action::"view"',
+                    "resource": 'Doc::"d1"',
+                    "context": {},
+                }
+                self.assertEqual(
+                    is_authorized(request, rebuilt, entities).decision, expected
+                )
+
+    def test_from_pst_rejects_things_that_are_not_a_policy_set(self):
+        from cedarpy import PolicySet as EnginePolicySet
+
+        nodes = policies_to_pst('permit(principal, action, resource);')
+        for value in (None, 42, nodes.static_policies["policy0"]):
+            with self.subTest(value=value), self.assertRaises(TypeError):
+                EnginePolicySet.from_pst(value)
+
+    def test_from_pst_reports_a_link_to_a_missing_template(self):
+        from cedarpy import PolicySet as EnginePolicySet
+
+        nodes = policies_to_pst('permit(principal, action, resource);')
+        broken = dataclasses.replace(nodes, template_links=(
+            TemplateLink("no-such-template", "linked1",
+                         {"principal": _uid("User", "alice")}),
+        ))
+        with self.assertRaises(ValueError):
+            EnginePolicySet.from_pst(broken)

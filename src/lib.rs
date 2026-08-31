@@ -490,6 +490,37 @@ impl PyPolicySet {
         }
     }
 
+    /// Return this policy set as the typed nodes from `cedarpy.pst`.
+    ///
+    /// `policies_to_pst(text)` is `PolicySet.from_str(text).to_pst()`.
+    ///
+    /// :raises ValueError: if the set cannot be represented as PST nodes.
+    fn to_pst(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        let pst = self
+            .inner
+            .to_pst()
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("{:#}", e)))?;
+        let classes = PstClasses::load(py)?;
+        build_policy_set(&classes, &pst)
+    }
+
+    /// Build a `PolicySet` from the typed nodes `policies_to_pst` returns.
+    ///
+    /// The inverse of `policies_to_pst`, so a policy set can be taken apart,
+    /// inspected or rewritten as nodes, and turned back into something the
+    /// engine will authorize against.
+    ///
+    /// :raises TypeError: if given something other than a `cedarpy.pst` node.
+    /// :raises ValueError: if the nodes do not form a valid policy set.
+    #[staticmethod]
+    fn from_pst(node: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let pst_set = read_policy_set(node)?;
+        match PolicySet::from_pst(pst_set) {
+            Ok(inner) => Ok(PyPolicySet { inner }),
+            Err(e) => Err(pyo3::exceptions::PyValueError::new_err(format!("{:#}", e))),
+        }
+    }
+
     /// Return a NEW `PolicySet` handle: this (compiled) set plus the policies
     /// parsed from `fragment`. The base is cloned, not re-parsed — only the
     /// (typically small) fragment is parsed — so a caller with a static base and
@@ -1948,4 +1979,375 @@ fn _internal(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(policies_to_pst, m)?)?;
     m.add_function(wrap_pyfunction!(validate_policies, m)?)?;
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Reading typed PST nodes back into cedar_policy, the reverse of build_*.
+// Dispatches on the dataclass name, since cedarpy.pst is a closed set.
+// ---------------------------------------------------------------------------
+
+fn node_kind(obj: &Bound<'_, PyAny>) -> PyResult<String> {
+    Ok(obj.get_type().name()?.to_string())
+}
+
+fn read_error(context: &str, kind: &str) -> PyErr {
+    pyo3::exceptions::PyTypeError::new_err(format!(
+        "cedarpy: expected a cedarpy.pst {context}, got {kind}"
+    ))
+}
+
+fn pst_construction_error(e: impl std::fmt::Display) -> PyErr {
+    pyo3::exceptions::PyValueError::new_err(e.to_string())
+}
+
+fn read_entity_type(obj: &Bound<'_, PyAny>) -> PyResult<pst::EntityType> {
+    let kind = node_kind(obj)?;
+    if kind != "EntityType" {
+        return Err(read_error("EntityType", &kind));
+    }
+    let basename: String = obj.getattr("basename")?.extract()?;
+    let namespace: Vec<String> = obj.getattr("namespace")?.extract()?;
+    let name = if namespace.is_empty() {
+        pst::Name::unqualified(&basename)
+    } else {
+        pst::Name::qualified(namespace.iter().map(String::as_str), &basename)
+    }
+    .map_err(pst_construction_error)?;
+    Ok(pst::EntityType::from_name(name))
+}
+
+fn read_entity_uid(obj: &Bound<'_, PyAny>) -> PyResult<pst::EntityUID> {
+    let kind = node_kind(obj)?;
+    if kind != "EntityUid" {
+        return Err(read_error("EntityUid", &kind));
+    }
+    let id: String = obj.getattr("id")?.extract()?;
+    Ok(pst::EntityUID {
+        ty: read_entity_type(&obj.getattr("type")?)?,
+        eid: id.into(),
+    })
+}
+
+fn read_slot_id(name: &str) -> PyResult<pst::SlotId> {
+    match name {
+        "principal" => Ok(pst::SlotId::Principal),
+        "resource" => Ok(pst::SlotId::Resource),
+        other => Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "cedarpy: unknown slot name {other:?}"
+        ))),
+    }
+}
+
+fn read_entity_or_slot(obj: &Bound<'_, PyAny>) -> PyResult<pst::EntityOrSlot> {
+    match node_kind(obj)?.as_str() {
+        "EntityUid" => Ok(pst::EntityOrSlot::Entity(read_entity_uid(obj)?)),
+        "Slot" => Ok(pst::EntityOrSlot::Slot(read_slot_id(
+            &obj.getattr("name")?.extract::<String>()?,
+        )?)),
+        other => Err(read_error("EntityUid or Slot", other)),
+    }
+}
+
+fn read_var(name: &str) -> PyResult<pst::Var> {
+    match name {
+        "principal" => Ok(pst::Var::Principal),
+        "action" => Ok(pst::Var::Action),
+        "resource" => Ok(pst::Var::Resource),
+        "context" => Ok(pst::Var::Context),
+        other => Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "cedarpy: unknown var name {other:?}"
+        ))),
+    }
+}
+
+fn read_unary_op(name: &str) -> PyResult<pst::UnaryOp> {
+    use pst::UnaryOp::*;
+    match name {
+        "not" => Ok(Not), "neg" => Ok(Neg), "is_empty" => Ok(IsEmpty),
+        "datetime" => Ok(Datetime), "decimal" => Ok(Decimal), "duration" => Ok(Duration),
+        "ip" => Ok(Ip), "is_ipv4" => Ok(IsIPv4), "is_ipv6" => Ok(IsIPV6),
+        "is_loopback" => Ok(IsLoopback), "is_multicast" => Ok(IsMulticast),
+        "to_date" => Ok(ToDate), "to_time" => Ok(ToTime),
+        "to_milliseconds" => Ok(ToMilliseconds), "to_seconds" => Ok(ToSeconds),
+        "to_minutes" => Ok(ToMinutes), "to_hours" => Ok(ToHours), "to_days" => Ok(ToDays),
+        other => Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "cedarpy: unknown unary op {other:?}"
+        ))),
+    }
+}
+
+fn read_binary_op(name: &str) -> PyResult<pst::BinaryOp> {
+    use pst::BinaryOp::*;
+    match name {
+        "eq" => Ok(Eq), "not_eq" => Ok(NotEq), "less" => Ok(Less), "less_eq" => Ok(LessEq),
+        "greater" => Ok(Greater), "greater_eq" => Ok(GreaterEq),
+        "and" => Ok(And), "or" => Ok(Or),
+        "add" => Ok(Add), "sub" => Ok(Sub), "mul" => Ok(Mul),
+        "in" => Ok(In), "contains" => Ok(Contains),
+        "contains_all" => Ok(ContainsAll), "contains_any" => Ok(ContainsAny),
+        "get_tag" => Ok(GetTag), "has_tag" => Ok(HasTag),
+        "is_in_range" => Ok(IsInRange), "offset" => Ok(Offset),
+        "duration_since" => Ok(DurationSince),
+        "decimal_less_than" => Ok(DecimalLessThan), "decimal_less_eq" => Ok(DecimalLessEq),
+        "decimal_greater" => Ok(DecimalGreater), "decimal_greater_eq" => Ok(DecimalGreaterEq),
+        other => Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "cedarpy: unknown binary op {other:?}"
+        ))),
+    }
+}
+
+fn read_pattern(obj: &Bound<'_, PyAny>) -> PyResult<Vec<pst::PatternElem>> {
+    let mut elems = Vec::new();
+    for elem in obj.try_iter()? {
+        let elem = elem?;
+        match node_kind(&elem)?.as_str() {
+            "Char" => {
+                let s: String = elem.getattr("value")?.extract()?;
+                let mut chars = s.chars();
+                match (chars.next(), chars.next()) {
+                    (Some(ch), None) => elems.push(pst::PatternElem::Char(ch)),
+                    _ => {
+                        return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                            "cedarpy: Char.value must be exactly one character, got {s:?}"
+                        )))
+                    }
+                }
+            }
+            "Wildcard" => elems.push(pst::PatternElem::Wildcard),
+            other => return Err(read_error("Char or Wildcard", other)),
+        }
+    }
+    Ok(elems)
+}
+
+fn read_expr(obj: &Bound<'_, PyAny>) -> PyResult<pst::Expr> {
+    use std::sync::Arc;
+    let arc = |o: Bound<'_, PyAny>| -> PyResult<Arc<pst::Expr>> { Ok(Arc::new(read_expr(&o)?)) };
+    match node_kind(obj)?.as_str() {
+        "BoolLit" => Ok(pst::Expr::Literal(pst::Literal::Bool(
+            obj.getattr("value")?.extract()?,
+        ))),
+        "LongLit" => Ok(pst::Expr::Literal(pst::Literal::Long(
+            obj.getattr("value")?.extract()?,
+        ))),
+        "StringLit" => Ok(pst::Expr::Literal(pst::Literal::String(
+            obj.getattr("value")?.extract::<String>()?.into(),
+        ))),
+        "EntityLit" => Ok(pst::Expr::Literal(pst::Literal::EntityUID(
+            read_entity_uid(&obj.getattr("value")?)?,
+        ))),
+        "Var" => Ok(pst::Expr::Var(read_var(
+            &obj.getattr("name")?.extract::<String>()?,
+        )?)),
+        "Slot" => Ok(pst::Expr::Slot(read_slot_id(
+            &obj.getattr("name")?.extract::<String>()?,
+        )?)),
+        "UnaryOp" => Ok(pst::Expr::UnaryOp {
+            op: read_unary_op(&obj.getattr("op")?.extract::<String>()?)?,
+            expr: arc(obj.getattr("arg")?)?,
+        }),
+        "BinaryOp" => Ok(pst::Expr::BinaryOp {
+            op: read_binary_op(&obj.getattr("op")?.extract::<String>()?)?,
+            left: arc(obj.getattr("left")?)?,
+            right: arc(obj.getattr("right")?)?,
+        }),
+        "GetAttr" => Ok(pst::Expr::GetAttr {
+            expr: arc(obj.getattr("base")?)?,
+            attr: obj.getattr("attr")?.extract::<String>()?.into(),
+        }),
+        "HasAttr" => {
+            let attrs: Vec<String> = obj.getattr("attrs")?.extract()?;
+            let attrs: Vec<pst::SmolStr> = attrs.into_iter().map(Into::into).collect();
+            let attrs = pst::NonEmpty::from_vec(attrs).ok_or_else(|| {
+                pyo3::exceptions::PyValueError::new_err(
+                    "cedarpy: HasAttr.attrs must name at least one attribute",
+                )
+            })?;
+            Ok(pst::Expr::HasAttr {
+                expr: arc(obj.getattr("base")?)?,
+                attrs,
+            })
+        }
+        "Like" => Ok(pst::Expr::Like {
+            expr: arc(obj.getattr("base")?)?,
+            pattern: read_pattern(&obj.getattr("pattern")?)?,
+        }),
+        "Is" => {
+            let in_expr = obj.getattr("in_expr")?;
+            Ok(pst::Expr::Is {
+                expr: arc(obj.getattr("base")?)?,
+                entity_type: read_entity_type(&obj.getattr("entity_type")?)?,
+                in_expr: if in_expr.is_none() { None } else { Some(arc(in_expr)?) },
+            })
+        }
+        "IfThenElse" => Ok(pst::Expr::IfThenElse {
+            cond: arc(obj.getattr("cond")?)?,
+            then_expr: arc(obj.getattr("then_expr")?)?,
+            else_expr: arc(obj.getattr("else_expr")?)?,
+        }),
+        "Set" => {
+            let mut elements = Vec::new();
+            for e in obj.getattr("elements")?.try_iter()? {
+                elements.push(Arc::new(read_expr(&e?)?));
+            }
+            Ok(pst::Expr::Set(elements))
+        }
+        "Record" => {
+            let mut fields = std::collections::BTreeMap::new();
+            let items = obj.getattr("fields")?.call_method0("items")?;
+            for item in items.try_iter()? {
+                let (k, v): (String, Bound<'_, PyAny>) = item?.extract()?;
+                fields.insert(k, Arc::new(read_expr(&v)?));
+            }
+            Ok(pst::Expr::Record(fields))
+        }
+        other => Err(read_error("expression node", other)),
+    }
+}
+
+fn read_clause(obj: &Bound<'_, PyAny>) -> PyResult<pst::Clause> {
+    use std::sync::Arc;
+    let expr = Arc::new(read_expr(&obj.getattr("expr")?)?);
+    match node_kind(obj)?.as_str() {
+        "When" => Ok(pst::Clause::When(expr)),
+        "Unless" => Ok(pst::Clause::Unless(expr)),
+        other => Err(read_error("When or Unless", other)),
+    }
+}
+
+fn read_principal_constraint(obj: &Bound<'_, PyAny>) -> PyResult<pst::PrincipalConstraint> {
+    match node_kind(obj)?.as_str() {
+        "ScopeAny" => Ok(pst::PrincipalConstraint::Any),
+        "ScopeEq" => Ok(pst::PrincipalConstraint::Eq(read_entity_or_slot(
+            &obj.getattr("entity")?,
+        )?)),
+        "ScopeIn" => Ok(pst::PrincipalConstraint::In(read_entity_or_slot(
+            &obj.getattr("entity")?,
+        )?)),
+        "ScopeIs" => Ok(pst::PrincipalConstraint::Is(read_entity_type(
+            &obj.getattr("entity_type")?,
+        )?)),
+        "ScopeIsIn" => Ok(pst::PrincipalConstraint::IsIn(
+            read_entity_type(&obj.getattr("entity_type")?)?,
+            read_entity_or_slot(&obj.getattr("entity")?)?,
+        )),
+        other => Err(read_error("scope constraint", other)),
+    }
+}
+
+fn read_resource_constraint(obj: &Bound<'_, PyAny>) -> PyResult<pst::ResourceConstraint> {
+    match node_kind(obj)?.as_str() {
+        "ScopeAny" => Ok(pst::ResourceConstraint::Any),
+        "ScopeEq" => Ok(pst::ResourceConstraint::Eq(read_entity_or_slot(
+            &obj.getattr("entity")?,
+        )?)),
+        "ScopeIn" => Ok(pst::ResourceConstraint::In(read_entity_or_slot(
+            &obj.getattr("entity")?,
+        )?)),
+        "ScopeIs" => Ok(pst::ResourceConstraint::Is(read_entity_type(
+            &obj.getattr("entity_type")?,
+        )?)),
+        "ScopeIsIn" => Ok(pst::ResourceConstraint::IsIn(
+            read_entity_type(&obj.getattr("entity_type")?)?,
+            read_entity_or_slot(&obj.getattr("entity")?)?,
+        )),
+        other => Err(read_error("scope constraint", other)),
+    }
+}
+
+fn read_action_constraint(obj: &Bound<'_, PyAny>) -> PyResult<pst::ActionConstraint> {
+    match node_kind(obj)?.as_str() {
+        "ScopeAny" => Ok(pst::ActionConstraint::Any),
+        "ActionEq" => Ok(pst::ActionConstraint::Eq(read_entity_uid(
+            &obj.getattr("entity")?,
+        )?)),
+        "ActionIn" => {
+            let mut euids = Vec::new();
+            for e in obj.getattr("entities")?.try_iter()? {
+                euids.push(read_entity_uid(&e?)?);
+            }
+            Ok(pst::ActionConstraint::In(euids))
+        }
+        other => Err(read_error("action constraint", other)),
+    }
+}
+
+fn read_template(obj: &Bound<'_, PyAny>) -> PyResult<pst::Template> {
+    let kind = node_kind(obj)?;
+    if kind != "Template" {
+        return Err(read_error("Template", &kind));
+    }
+    let effect = match obj.getattr("effect")?.extract::<String>()?.as_str() {
+        "permit" => pst::Effect::Permit,
+        "forbid" => pst::Effect::Forbid,
+        other => {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "cedarpy: unknown effect {other:?}"
+            )))
+        }
+    };
+    let template = pst::Template::new(
+        obj.getattr("id")?.extract::<String>()?.as_str(),
+        effect,
+        read_principal_constraint(&obj.getattr("principal")?)?,
+        read_action_constraint(&obj.getattr("action")?)?,
+        read_resource_constraint(&obj.getattr("resource")?)?,
+    );
+    let mut clauses = Vec::new();
+    for clause in obj.getattr("clauses")?.try_iter()? {
+        clauses.push(read_clause(&clause?)?);
+    }
+    let template = template.try_with_clauses(clauses).map_err(pst_construction_error)?;
+    let mut annotations = std::collections::BTreeMap::new();
+    let items = obj.getattr("annotations")?.call_method0("items")?;
+    for item in items.try_iter()? {
+        let (k, v): (String, String) = item?.extract()?;
+        annotations.insert(k, pst::SmolStr::from(v));
+    }
+    Ok(template.with_annotations(annotations))
+}
+
+fn read_policy_set(obj: &Bound<'_, PyAny>) -> PyResult<pst::PolicySet> {
+    let kind = node_kind(obj)?;
+    if kind != "PolicySet" {
+        return Err(read_error("PolicySet", &kind));
+    }
+    let mut templates = pst::LinkedHashMap::new();
+    for item in obj.getattr("templates")?.call_method0("items")?.try_iter()? {
+        let (id, node): (String, Bound<'_, PyAny>) = item?.extract()?;
+        templates.insert(pst::PolicyID::from(id.as_str()), read_template(&node)?);
+    }
+    let mut policies = pst::LinkedHashMap::new();
+    for item in obj.getattr("static_policies")?.call_method0("items")?.try_iter()? {
+        let (id, node): (String, Bound<'_, PyAny>) = item?.extract()?;
+        let template = read_template(&node)?;
+        let static_policy =
+            pst::StaticPolicy::try_from(template).map_err(pst_construction_error)?;
+        policies.insert(pst::PolicyID::from(id.as_str()), static_policy);
+    }
+    let mut template_links = Vec::new();
+    for link in obj.getattr("template_links")?.try_iter()? {
+        let link = link?;
+        let kind = node_kind(&link)?;
+        if kind != "TemplateLink" {
+            return Err(read_error("TemplateLink", &kind));
+        }
+        let mut values = std::collections::HashMap::new();
+        for item in link.getattr("values")?.call_method0("items")?.try_iter()? {
+            let (slot, euid): (String, Bound<'_, PyAny>) = item?.extract()?;
+            values.insert(read_slot_id(&slot)?, read_entity_uid(&euid)?);
+        }
+        template_links.push(pst::TemplateLink {
+            template_id: pst::PolicyID::from(
+                link.getattr("template_id")?.extract::<String>()?.as_str(),
+            ),
+            new_id: pst::PolicyID::from(link.getattr("new_id")?.extract::<String>()?.as_str()),
+            values,
+        });
+    }
+    Ok(pst::PolicySet {
+        templates,
+        policies,
+        template_links,
+    })
 }
