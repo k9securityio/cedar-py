@@ -41,6 +41,12 @@ class FrozenMap(dict[_K, _V]):
     A plain dict would leave `frozen=True` unenforced one field deep and make
     any node holding one unhashable. This subclasses `dict` so `asdict`,
     `json.dumps`, and `==` against a plain dict keep working.
+
+    Defined here because Python has no frozen mapping to reach for: the
+    stdlib offers only `types.MappingProxyType` (an unhashable view that
+    breaks `asdict`), PEP 603's `frozenmap` never landed, and cedarpy has no
+    runtime Python dependencies, which taking `immutables` or `frozendict`
+    for one class would end.
     """
 
     __slots__ = ()
