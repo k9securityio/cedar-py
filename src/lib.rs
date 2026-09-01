@@ -669,8 +669,8 @@ fn tpe_prepare(
 
 /// Evaluate a request whose principal or resource is known only by type,
 /// returning residual policies as `cedarpy.pst` nodes for the parts the
-/// unknowns leave undecided. Separate from is_authorized_partial; does not
-/// call, change, or share a response shape with it.
+/// unknowns leave undecided. This is separate from is_authorized_partial. It
+/// does not call that function or change it, and its response shape differs.
 ///
 /// :raises ValueError: on input Cedar cannot resolve, including a request that
 ///     the schema does not permit and a residual whose expression nesting
@@ -741,9 +741,9 @@ fn tpe_authorize(
         residual_policies.push((pid, build_template(&classes, pst_policy.body())?));
     }
 
-    // Every residual, including the concretely true/false/error ones, as a
-    // reusable handle: this is what a caller re-evaluates once the unknowns
-    // are bound, and it drops straight into is_authorized.
+    // Every residual, including the concretely true, false, and error ones,
+    // as a reusable handle. A caller re-evaluates it with is_authorized once
+    // the unknowns are bound.
     let residual_policy_set = Py::new(py, PyPolicySet { inner: response.policy_set() })?;
 
     let metrics = PyDict::new(py);
@@ -767,7 +767,7 @@ fn tpe_authorize(
 /// Bind the unknowns a TPE call left open and reach a concrete decision by
 /// evaluating only the residuals. The engine checks the concrete request and
 /// entities against the partial ones it was given, so a request that
-/// contradicts the partial request is an error rather than a wrong answer.
+/// contradicts the partial request raises instead of returning a decision.
 ///
 /// :raises ValueError: on inconsistent or unresolvable input, including a
 ///     concrete request that contradicts the partial one.

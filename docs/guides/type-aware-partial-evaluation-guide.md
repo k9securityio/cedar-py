@@ -1,9 +1,10 @@
 # Type-Aware Partial Evaluation Guide
 
 `tpe_authorize` evaluates an authorization request in which the principal or
-the resource is known only by type, not by id. It requires a schema, because
-the types are what it reasons from, and it returns *residual policies* as typed
-`cedarpy.pst.Template` nodes for the parts it could not decide.
+the resource is known only by type, not by id. A schema is required, because
+the types come from it. For the parts of the request it cannot decide,
+`tpe_authorize` returns *residual policies* as typed `cedarpy.pst.Template`
+nodes.
 
 Use `tpe_authorize` when, for example:
 
@@ -11,7 +12,7 @@ Use `tpe_authorize` when, for example:
   any `Doc` could be viewed before you list them.
 - You **know the shape of the request but not the ids**, such as authorizing a
   request template ahead of the concrete call.
-- You want to **decide what to load** before loading it: a residual names the
+- You want to **decide what to load** before loading it. A residual names the
   entities and attributes still needed to finish the evaluation.
 
 ## TPE and `is_authorized_partial` are different features
@@ -26,8 +27,8 @@ Both leave part of a request unknown, and they are separate entry points.
 | Residual form | JSON policy fragments | `cedarpy.pst.Template` nodes |
 | Cargo feature | `partial-eval` | `tpe` |
 
-Reach for `is_authorized_partial` when you know which entity you mean but have
-not loaded it. Reach for `tpe_authorize` when you know the type and not the id.
+Use `is_authorized_partial` when you know which entity you mean but have not
+loaded it. Use `tpe_authorize` when you know the type and not the id.
 
 ## Basic usage
 
@@ -77,9 +78,9 @@ means the context is unknown, so a policy reading it stays residual. Passing
 unknowns cannot change the outcome, and `None` when they can.
 
 `permits` and `forbids` are kept separate, each a `TpeClassification` holding
-`residual_ids`, `true_ids`, `false_ids`, and `error_ids`. Keeping the two
-effects apart matters because Cedar's forbid policies override permits: a
-residual forbid is not the same risk as a residual permit.
+`residual_ids`, `true_ids`, `false_ids`, and `error_ids`. A forbid policy
+overrides a permit in Cedar, so an undecided forbid and an undecided permit
+need different handling.
 
 ## Finding what to load
 
@@ -109,10 +110,10 @@ you can do with the nodes.
 the policies still undecided, reduced by the evaluator with the concrete parts
 of the request already substituted in.
 
-`residual_policy_set` is a `PolicySet` handle holding every residual, including
-the ones that came out concretely true, false, or erroring, each keeping its
-original scope. It is a handle rather than nodes, so call `to_pst()` on it
-before `entity_uids` will walk it.
+`residual_policy_set` is a `PolicySet` handle holding every residual,
+including the ones that came out concretely true, false, or erroring. Each one
+keeps its original scope. The handle holds compiled policies and not nodes, so
+call `to_pst()` on it before passing it to `entity_uids`.
 
 The two views name different entities. Pick `residual_policies` to inspect what
 is undecided, and `residual_policy_set` to evaluate against.
@@ -156,8 +157,8 @@ entities = '[{"uid": {"type": "Doc", "id": "d1"}, "attrs": {"owner": {"__entity"
 assert is_authorized(request, result.residual_policy_set, entities, schema).decision == Decision.Allow
 ```
 
-This path skips the consistency check `reauthorize` performs, so it is on you
-to pass a request the partial evaluation actually covers.
+This path skips the consistency check `reauthorize` performs, so you have to
+pass a request the partial evaluation covers.
 
 ## Entities that are only partly known
 
@@ -196,8 +197,8 @@ re-evaluate, with `reauthorize` or `is_authorized`, before acting on it.
 
 A residual can hold `pst.ResidualError`, a node for a subexpression TPE knows
 will error if it is evaluated. Cedar has no surface syntax for it, so
-`PolicySet.from_pst` raises `TypeError` on a node tree containing one. Residual
-nodes are for reading, not for rebuilding a policy set.
+`PolicySet.from_pst` raises `TypeError` on a node tree containing one. You can
+read residual nodes, and you cannot rebuild a policy set from them.
 
 TPE residuals convert through the same PST machinery as parsed policies, so the
 100-level expression nesting limit applies. See the [Policy Syntax Tree

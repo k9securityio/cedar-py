@@ -128,8 +128,10 @@ class PartialEntities:
 
 @dataclass(frozen=True)
 class _TpeInputs:
-    """The inputs one ``tpe_authorize`` call ran with, so its result can
-    reauthorize without the caller repeating them."""
+    """The inputs one ``tpe_authorize`` call ran with.
+
+    ``TpeAuthzResult.reauthorize`` reads them, so a caller does not have to
+    pass them again."""
     principal: str | dict | pst.EntityType
     action: str | dict
     resource: str | dict | pst.EntityType
@@ -141,7 +143,7 @@ class _TpeInputs:
 
 @dataclass(frozen=True)
 class TpeClassification:
-    """Policy ids TPE could not resolve, and the ones it did, for one effect."""
+    """The policy ids of one effect, grouped by what TPE resolved them to."""
     residual_ids: tuple[str, ...]
     true_ids: tuple[str, ...]
     false_ids: tuple[str, ...]
@@ -189,7 +191,7 @@ class TpeAuthzResult:
         against a ``PartialEntities`` document. The engine checks the concrete
         request and entities for consistency with the partial ones, so a
         request that contradicts them raises rather than returning a decision
-        Cedar never sanctioned.
+        the partial evaluation does not cover.
 
         :returns an AuthzResult, the same type ``is_authorized`` returns.
         """
@@ -637,8 +639,10 @@ def _normalize_tpe_euid(value: str | dict | pst.EntityType) -> str | dict:
 
 
 def _internal_entities(entities: str | list[dict] | Entities) -> str | _internal.Entities:
-    """Narrow the public entities forms to what the extension accepts: JSON
-    text, or the Rust-backed handle unwrapped from the public one."""
+    """Narrow the public entities forms to what the extension accepts.
+
+    That is either JSON text, or the Rust-backed handle unwrapped from the
+    public one."""
     if isinstance(entities, list):
         return json.dumps(entities)
     if isinstance(entities, Entities):
@@ -678,7 +682,8 @@ def tpe_authorize(principal: _TpePartialEuid,
 
     Returns residual policies, as typed ``cedarpy.pst`` nodes, for the parts
     the unknowns leave undecided. This is a separate feature from
-    ``is_authorized_partial``, which it neither calls nor changes.
+    ``is_authorized_partial``. It does not call that function or change it, and
+    its result is a different type.
 
     ``principal`` / ``resource`` accept a concrete entity, as a Cedar
     surface-syntax string (``'User::"alice"'``) or a ``{"type": ..., "id": ...}``
@@ -686,9 +691,9 @@ def tpe_authorize(principal: _TpePartialEuid,
     a ``pst.EntityType``, or a dict carrying only ``type``. ``action`` must be
     concrete and takes either of the two concrete forms.
 
-    ``context`` follows ``is_authorized_partial``: ``None`` (the default) means
-    the context is unknown, so policies reading it stay residual, and ``{}``
-    means a known-empty context.
+    ``context`` follows ``is_authorized_partial``. ``None``, the default, means
+    the context is unknown, so a policy reading it stays residual. ``{}`` means
+    the context is known and empty.
 
     ``entities`` must be fully concrete unless wrapped in ``PartialEntities``,
     which additionally allows an entity's attributes, parents, or tags to be
@@ -727,9 +732,9 @@ def tpe_reauthorize(request: dict,
     its residuals.
 
     Every parameter after ``request`` is the corresponding ``tpe_authorize``
-    input; ``TpeAuthzResult.reauthorize`` calls this with the ones its own call
-    used. ``request`` is a fully concrete request in the form ``is_authorized``
-    accepts. ``concrete_entities`` overrides the entities to evaluate against,
+    input. ``TpeAuthzResult.reauthorize`` calls this function with the inputs
+    its own call used. ``request`` is a fully concrete request in the form
+    ``is_authorized`` accepts. ``concrete_entities`` overrides the entities to evaluate against,
     and is required when ``entities`` was a ``PartialEntities`` document.
 
     Cedar checks the concrete request and entities against the partial ones

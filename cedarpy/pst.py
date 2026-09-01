@@ -220,7 +220,7 @@ class Record:
 
 @dataclass(frozen=True, slots=True)
 class ResidualError:
-    """A residual subexpression TPE found will error if it is ever evaluated.
+    """A subexpression TPE knows will error if it is ever evaluated.
 
     Cedar has no surface syntax for this, so it only ever appears inside a
     residual from `tpe_authorize`, never in a parsed policy. `PolicySet` has no

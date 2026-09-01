@@ -343,10 +343,10 @@ class TestPartialEntities(unittest.TestCase):
 
 
 class TestEntityUidsOnResiduals(unittest.TestCase):
-    """What a residual still needs loaded, which is why `entity_uids` exists.
+    """`entity_uids` on a residual reports what still needs loading.
 
-    A residual from `is_authorized_partial` cannot become a PST at all, so this
-    is the case the walk is for.
+    A residual from `is_authorized_partial` cannot be represented as PST nodes
+    at all, so a TPE residual is the only residual it can walk.
     """
 
     SCHEMA = """
