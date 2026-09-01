@@ -83,6 +83,18 @@ Documented in `docs/release-process.md`. Highlights:
 - **Adding or widening a public API touches five surfaces** — reviewing PR #103 caught two of these missed: `src/lib.rs` (the binding), `cedarpy/_internal.pyi` (the typed stub — typed callers see nothing without it), the `:param` docstrings in `cedarpy/__init__.py`, `CHANGELOG.md` under `[Unreleased]` (ending `([#<PR>](...)). Thanks [@contributor](...)!` for outside contributions), and the README.
 - **The pre-parsed handle trio (`PolicySet`, `Entities`, `Schema`) shares one pattern** — follow it for any future handle: `#[pyclass(frozen)]` (immutable → borrowable across calls, `Py::get()` needs it), a `XxxArg` `FromPyObject` enum with `Source(String)` listed *before* `Handle` (a `str` arg then pays no failed handle extraction), a `<name>_pre_parsed` metrics flag, eager `ValueError` on construction vs errors folded into the authz response on the string path, `__str__` rendering the parsed contents back out (with an `<unrenderable …>` fallback, never raising) and a count-style `__repr__`. Rust-only helpers go in a separate plain `impl` block — only `#[pymethods]` methods are visible to Python.
 
+## Documentation copy standard
+
+Applies to the README, docs/guides, pydocs/docstrings, and Rust `///` doc comments — anything a user or contributor reads.
+
+- **The README serves engineers who are new or intermediate users of cedar-py.** It shows what the library can do and how to start solving their problem quickly: one clear, concise example per feature. It is not exhaustive documentation. Advanced features (partial authorization/residuals, the typed PST, …) get a short README section with one example and a pointer to a comprehensive guide in `docs/guides/` (pattern: `partial-authorization-guide.md`, `policy-syntax-tree-guide.md`).
+- **Lead with the contract.** First sentence: what it does or guarantees. Caveats and mechanics after.
+- **State behavior, not virtue.** No "powerful", "seamless", "robust"; say what happens, including what raises and when.
+- **Short declarative sentences.** One idea each. Prefer "is/has/raises" over "serves as / provides / leverages". No participle tails ("...ensuring X"), ration em dashes.
+- **Precision over familiarity.** Use the exact verb (a residual is *represented*, not *parsed*); backtick every identifier; name error types and the condition that triggers them.
+- **Document the why when it isn't obvious** — a constraint, a rejected alternative, an upstream limitation — in the docstring or comment, not the commit message alone.
+- Review prose against these rules before a PR; AI-writing-tell checklists (e.g. Wikipedia's "Signs of AI writing") are the mechanical pass for the same goal.
+
 ## Cedar API gotchas
 
 - **Annotations are inert in Cedar evaluation.** Per the [Cedar docs](https://docs.cedarpolicy.com/policies/syntax-policy.html#term-parc-annotations), "an annotation has no impact on policy evaluation" and "`@id` is not special in the Cedar language." The Cedar CLI applies `@id` as a labeling convention by renaming `PolicyId`s at load time; the `cedar-policy` Rust library does not. cedar-py is a library, not a CLI consumer — to surface `@id` in `diagnostics.reasons` or `ValidationError.policy_id`, post-process at response-serialization time. Do **not** rebuild the `PolicySet` to apply `@id` (that's `O(|PolicySet|)` cost per call for a labeling concern; see #66/#68/#74 history).
