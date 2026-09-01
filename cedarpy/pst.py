@@ -6,12 +6,12 @@ be checked for exhaustiveness.
 
 Compatibility contract: this module tracks the Cedar engine, not cedarpy's
 usual pure-additive API stability. The Rust enums it mirrors are
-``#[non_exhaustive]`` and grow as the Cedar language does, so a cedarpy
+`#[non_exhaustive]` and grow as the Cedar language does, so a cedarpy
 release that bumps the engine may add node types, fields, or `Literal`
-members here, and a ``match`` that was exhaustive may need new arms. Until a
-new engine construct is modelled, ``to_pst`` / ``policies_to_pst`` raise
-``ValueError`` naming the unmodelled variant rather than building an
-incomplete tree. ``tests/unit/test_pst_variant_coverage.py`` audits this
+members here, and a `match` that was exhaustive may need new arms. Until a
+new engine construct is modelled, `to_pst` and `policies_to_pst` raise
+`ValueError` naming the unmodelled variant rather than building an
+incomplete tree. `tests/unit/test_pst_variant_coverage.py` audits this
 mirror against the engine's own source on every engine bump.
 """
 from __future__ import annotations
@@ -44,9 +44,9 @@ class FrozenMap(dict[_K, _V]):
 
     Defined here because Python has no frozen mapping to reach for: the
     stdlib offers only `types.MappingProxyType` (an unhashable view that
-    breaks `asdict`), PEP 603's `frozenmap` never landed, and cedarpy has no
-    runtime Python dependencies, which taking `immutables` or `frozendict`
-    for one class would end.
+    breaks `asdict`), and PEP 603's `frozenmap` never landed. cedarpy has no
+    runtime Python dependencies; taking `immutables` or `frozendict` for one
+    class would end that.
     """
 
     __slots__ = ()

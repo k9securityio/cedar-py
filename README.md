@@ -440,7 +440,7 @@ print(format_policies(policies))
 
 ### Inspecting policies as a typed tree
 
-`policies_to_pst` parses policy text into typed nodes from `cedarpy.pst`, mirroring `cedar_policy::pst`. Each node is a frozen dataclass, so you can use structural pattern matching instead of walking a tree keyed by string operators.
+`policies_to_pst` parses policy text into typed nodes from `cedarpy.pst`, which mirrors `cedar_policy::pst`. Each node is a frozen dataclass, so you can use structural pattern matching instead of walking a tree keyed by string operators.
 
 `cedarpy.pst` tracks the engine: new engine variants mean new node types or `Literal` members in cedarpy minor releases, and unmodelled syntax raises `ValueError` until then.
 
@@ -461,7 +461,7 @@ match clause.expr:
         print("matched")
 ```
 
-Static policies and unlinked templates only. A residual from `is_authorized_partial` cannot be parsed this way, because PST rejects any clause holding an unresolved `unknown(...)` node and every non-trivial residual has one.
+Static policies and unlinked templates only. A residual from `is_authorized_partial` cannot be represented this way, because PST rejects any clause holding an unresolved `unknown(...)` node and every non-trivial residual has one.
 
 Each closed set Cedar defines is closed in the Python type, so a type checker can prove a `match` over one is exhaustive:
 
@@ -487,7 +487,7 @@ def render_literal(expr: Expr) -> str:
             return "<non-literal>"
 ```
 
-Every node is frozen, slotted, and hashable, so nodes work as dict keys and set members. Mapping-valued fields such as `Record.fields` and `Template.annotations` are declared `Mapping`, so writing to one is a type error, and hold a `FrozenMap` at runtime, which is a `dict` subclass that raises on mutation. `dataclasses.asdict`, `json.dumps`, and comparison against a plain dict all still work.
+Every node is frozen, slotted, and hashable, so nodes work as dict keys and set members. Mapping-valued fields such as `Record.fields` and `Template.annotations` are declared `Mapping`, so writing to one is a type error. At runtime they hold a `FrozenMap`, a `dict` subclass that raises on mutation; `dataclasses.asdict`, `json.dumps`, and comparison against a plain dict all still work.
 
 `pst.entity_uids(node)` collects every entity uid named anywhere under a node, at any depth. Use it to find out what a policy references before you load anything. It takes a node, or a mapping or tuple of nodes such as a `PolicySet`'s `templates`.
 
