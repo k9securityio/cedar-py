@@ -17,10 +17,10 @@ Use the PST when, for example:
 
 ## Compatibility
 
-`cedarpy.pst` tracks the engine: new engine variants mean new node types or
-`Literal` members in cedarpy minor releases, and unmodelled syntax raises
-`ValueError` until then. See the `cedarpy.pst` module docstring for the full
-contract.
+`cedarpy.pst` tracks the Cedar Policy engine. New `cedarpy.pst` node types or
+`Literal` members are introduced when upgrading the `cedar-policy` engine
+brings Cedar Policy syntax changes. Unmodelled syntax raises `ValueError`
+until then. See the `cedarpy.pst` module docstring for the full contract.
 
 Static policies and unlinked templates only. A residual from
 `is_authorized_partial` cannot be represented this way, because PST rejects any
