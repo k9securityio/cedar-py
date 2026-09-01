@@ -1,0 +1,123 @@
+{
+  "ActionConstraint": {
+    "Any": null,
+    "Eq": null,
+    "In": null
+  },
+  "BinaryOp": {
+    "Add": null,
+    "And": null,
+    "Contains": null,
+    "ContainsAll": null,
+    "ContainsAny": null,
+    "DecimalGreater": null,
+    "DecimalGreaterEq": null,
+    "DecimalLessEq": null,
+    "DecimalLessThan": null,
+    "DurationSince": null,
+    "Eq": null,
+    "GetTag": null,
+    "Greater": null,
+    "GreaterEq": null,
+    "HasTag": null,
+    "In": null,
+    "IsInRange": null,
+    "Less": null,
+    "LessEq": null,
+    "Mul": null,
+    "NotEq": null,
+    "Offset": null,
+    "Or": null,
+    "Sub": null
+  },
+  "Clause": {
+    "Unless": null,
+    "When": null
+  },
+  "Effect": {
+    "Forbid": null,
+    "Permit": null
+  },
+  "EntityOrSlot": {
+    "Entity": null,
+    "Slot": null
+  },
+  "Expr": {
+    "BinaryOp": null,
+    "GetAttr": null,
+    "HasAttr": null,
+    "IfThenElse": null,
+    "Is": null,
+    "Like": null,
+    "Literal": null,
+    "Record": null,
+    "ResidualError": "tpe",
+    "Set": null,
+    "Slot": null,
+    "UnaryOp": null,
+    "Unknown": null,
+    "Var": null,
+    "VariadicOp": "variadic-is-in-range"
+  },
+  "Literal": {
+    "Bool": null,
+    "EntityUID": null,
+    "Long": null,
+    "String": null
+  },
+  "PatternElem": {
+    "Char": null,
+    "Wildcard": null
+  },
+  "Policy": {
+    "Linked": null,
+    "Static": null
+  },
+  "PrincipalConstraint": {
+    "Any": null,
+    "Eq": null,
+    "In": null,
+    "Is": null,
+    "IsIn": null
+  },
+  "ResourceConstraint": {
+    "Any": null,
+    "Eq": null,
+    "In": null,
+    "Is": null,
+    "IsIn": null
+  },
+  "SlotId": {
+    "Principal": null,
+    "Resource": null
+  },
+  "UnaryOp": {
+    "Datetime": null,
+    "Decimal": null,
+    "Duration": null,
+    "Ip": null,
+    "IsEmpty": null,
+    "IsIPV6": null,
+    "IsIPv4": null,
+    "IsLoopback": null,
+    "IsMulticast": null,
+    "Neg": null,
+    "Not": null,
+    "ToDate": null,
+    "ToDays": null,
+    "ToHours": null,
+    "ToMilliseconds": null,
+    "ToMinutes": null,
+    "ToSeconds": null,
+    "ToTime": null
+  },
+  "Var": {
+    "Action": null,
+    "Context": null,
+    "Principal": null,
+    "Resource": null
+  },
+  "VariadicOp": {
+    "IsInRange": null
+  }
+}

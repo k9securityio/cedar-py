@@ -3,6 +3,8 @@
 """
 from typing import Any, Dict, List, Optional, Union
 
+import cedarpy.pst
+
 
 class PolicySet:
     """An opaque, reusable handle wrapping a parsed Cedar policy set.
@@ -18,9 +20,9 @@ class PolicySet:
     A ``PolicySet`` is accepted anywhere a policies string is accepted:
     ``is_authorized``, ``is_authorized_batch``, and ``is_authorized_partial``.
 
-    Construct with ``PolicySet.from_str(cedar_text)`` or
-    ``PolicySet.from_json_str(cedar_json)``; both raise ``ValueError`` on parse
-    errors. The handle is immutable, and its memory is released automatically
+    Construct with ``PolicySet.from_str(cedar_text)``,
+    ``PolicySet.from_json_str(cedar_json)``, or ``PolicySet.from_pst(nodes)``;
+    all raise ``ValueError`` on parse errors. The handle is immutable, and its memory is released automatically
     when the last Python reference is dropped.
 
     A set may also contain Cedar *templates* (policies with ``?principal`` /
@@ -39,6 +41,30 @@ class PolicySet:
     @staticmethod
     def from_json_str(s: str) -> "PolicySet":
         """Parse a ``PolicySet`` from the Cedar JSON (EST) policy format. Raises ``ValueError`` on parse errors."""
+        ...
+
+    @staticmethod
+    def from_pst(node: "cedarpy.pst.PolicySet") -> "PolicySet":
+        """Build a ``PolicySet`` from the typed nodes ``policies_to_pst`` returns.
+
+        The inverse of ``PolicySet.to_pst``, so a policy set can be read as
+        nodes, rewritten, and handed back to the engine. Raises ``TypeError``
+        if given anything other than a ``cedarpy.pst`` node, and ``ValueError``
+        if the nodes do not form a valid policy set, including expression
+        nesting deeper than 100 levels.
+        """
+        ...
+
+    def to_pst(self) -> "cedarpy.pst.PolicySet":
+        """Return this policy set as the typed nodes from ``cedarpy.pst``.
+
+        ``policies_to_pst(text)`` is ``PolicySet.from_str(text).to_pst()``.
+        The node set tracks the Cedar engine (see the ``cedarpy.pst`` module
+        docs): syntax newer than the modelled node types raises ``ValueError``
+        until a cedarpy release models it.
+        Raises ``ValueError`` if the set cannot be represented as PST nodes,
+        including expression nesting deeper than 100 levels.
+        """
         ...
 
     def with_added_str(self, fragment: str) -> "PolicySet":
@@ -267,6 +293,9 @@ def policies_to_json_str(s: str) -> str: ...
 
 
 def policies_from_json_str(s: str) -> str: ...
+
+
+def policies_to_pst(s: str) -> "cedarpy.pst.PolicySet": ...
 
 
 def validate_policies(policies: str, schema: Union[str, "Schema"]) -> str: ...

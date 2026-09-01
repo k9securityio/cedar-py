@@ -8,6 +8,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `policies_to_pst(policies)` parses Cedar policy text into typed `cedarpy.pst` nodes, one frozen dataclass per `cedar_policy::pst` node kind, so a consumer can pattern-match on real types instead of an untyped tree keyed by string operators ([#107](https://github.com/k9securityio/cedar-py/issues/107)). Each closed set Cedar defines is closed in the Python type, so a `match` over one can be checked for exhaustiveness. Nodes are frozen, slotted, hashable values, and their mapping fields reject mutation. Static policies and unlinked templates only: a residual from `is_authorized_partial` cannot be represented this way, because PST validates each clause as it is built and rejects any containing an unresolved `unknown(...)` node. The node set tracks the engine: syntax not yet modelled by `cedarpy.pst` raises `ValueError` rather than building an incomplete tree. See the [Policy Syntax Tree Guide](docs/guides/policy-syntax-tree-guide.md) for the node types and the guarantees. ([#108](https://github.com/k9securityio/cedar-py/pull/108)). Thanks [@h0rv](https://github.com/h0rv)!
+
+- `PolicySet.from_pst(nodes)` and `PolicySet.to_pst()` are the round trip, so a policy set can be read as nodes, rewritten, and turned back into a handle the engine authorizes against. `policies_to_pst(text)` is now `PolicySet.from_str(text).to_pst()`. `from_pst` raises `TypeError` for anything that is not a `cedarpy.pst` node, and `ValueError` for nodes that do not form a valid set. Expression nesting is limited to 100 levels in both conversion directions; deeper input raises `ValueError`. Raising this limit later is backwards compatible; lowering it would be breaking.
+
+- `pst.entity_uids(node)` collects every entity uid named anywhere under a node, for deciding what to load before evaluating. It takes a node, or a mapping or tuple of nodes such as a `PolicySet`'s `templates`. Anything it cannot walk raises `TypeError` rather than returning an empty result, so passing a `PolicySet` handle by mistake cannot look like "this policy names no entities".
+
+### Changed
+
+- Updated the remaining declared Rust dependencies to their latest patch releases: `pyo3` 0.27.1 → 0.27.2 (crash fix for Rust 1.92+ builds with debug assertions; no API changes), `serde` 1.0.228 → 1.0.229, and `serde_json` 1.0.145 → 1.0.151 (float formatting switched from Ryū to Żmij upstream — output can differ textually while remaining valid; the 60,800-case Cedar corpus passes unchanged). No behavior changes observed across unit, integration, corpus, or benchmark suites.
+
+- Removed the unused `cedar-policy-cli` crate dependency, present since the project's initial scaffold but never referenced from code. Drops 34 transitive crates (`clap`, `miette`'s terminal-support stack, `rustix`, …) from `Cargo.lock`, shrinking build time, audit surface, and the version-resolution coupling its exact `=X.Y.Z` pin on `cedar-policy` imposed. No functional change — `cedar-policy-formatter` (which backs `format_policies`) remains.
+- **Cedar Policy engine upgraded from v4.8.2 to [v4.12.0](https://github.com/cedar-policy/cedar/releases/tag/v4.12.0)** (Cedar language version 4.4 → 4.5, adding the extended `has` operator in JSON policies). No `cedarpy` API changes: the engine's breaking changes between 4.9 and 4.12 are confined to experimental features `cedarpy` does not enable (`tpe`, `protobuf`, `tolerant-ast`) and to the then-unused `pst` module; the `partial-eval` surface is unchanged. Verified against the upstream v4.12.0 integration corpus (60,800 request cases), including the new JSON-policy-format and JSON-schema-format suites ([#106](https://github.com/k9securityio/cedar-py/pull/106)). Thanks [@h0rv](https://github.com/h0rv)!
+
 ### Removed
 
 - **Dropped support for Python 3.9**, which reached end-of-life on 2025-10-31 and no longer receives security fixes. `requires-python` is now `>=3.10`, so cp39 wheels are no longer built and pip will not install new cedarpy releases on 3.9; existing releases remain available. Python 3.10 (security-supported until October 2026) through 3.14 remain supported.
@@ -15,13 +30,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Security
 
 - Updated `anyhow` 1.0.95 → 1.0.104, clearing the [RUSTSEC-2026-0190](https://rustsec.org/advisories/RUSTSEC-2026-0190) unsoundness warning in `Error::downcast_mut` (fixed upstream in 1.0.103).
-
-### Changed
-
-- Updated the remaining declared Rust dependencies to their latest patch releases: `pyo3` 0.27.1 → 0.27.2 (crash fix for Rust 1.92+ builds with debug assertions; no API changes), `serde` 1.0.228 → 1.0.229, and `serde_json` 1.0.145 → 1.0.151 (float formatting switched from Ryū to Żmij upstream — output can differ textually while remaining valid; the 60,800-case Cedar corpus passes unchanged). No behavior changes observed across unit, integration, corpus, or benchmark suites.
-
-- Removed the unused `cedar-policy-cli` crate dependency, present since the project's initial scaffold but never referenced from code. Drops 34 transitive crates (`clap`, `miette`'s terminal-support stack, `rustix`, …) from `Cargo.lock`, shrinking build time, audit surface, and the version-resolution coupling its exact `=X.Y.Z` pin on `cedar-policy` imposed. No functional change — `cedar-policy-formatter` (which backs `format_policies`) remains.
-- **Cedar Policy engine upgraded from v4.8.2 to [v4.12.0](https://github.com/cedar-policy/cedar/releases/tag/v4.12.0)** (Cedar language version 4.4 → 4.5, adding the extended `has` operator in JSON policies). No `cedarpy` API changes: the engine's breaking changes between 4.9 and 4.12 are confined to experimental features `cedarpy` does not enable (`pst`, `tpe`, `protobuf`, `tolerant-ast`), and the `partial-eval` surface is unchanged. Verified against the upstream v4.12.0 integration corpus (60,800 request cases), including the new JSON-policy-format and JSON-schema-format suites ([#106](https://github.com/k9securityio/cedar-py/pull/106)). Thanks [@h0rv](https://github.com/h0rv)!
 
 ## [4.8.7] - 2026-07-10
 

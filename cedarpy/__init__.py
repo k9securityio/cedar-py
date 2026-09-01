@@ -4,6 +4,7 @@ from enum import Enum
 from typing import Union, List, Optional, Any
 
 from cedarpy import _internal
+from cedarpy import pst
 
 # Re-export the Rust-implemented PolicySet and Schema handles.
 PolicySet = _internal.PolicySet
@@ -356,6 +357,16 @@ def policies_from_json_str(policies: str) -> str:
     :raises ValueError: if the input policies cannot be parsed
     """
     return _internal.policies_from_json_str(policies)
+
+
+def policies_to_pst(policies: str) -> "pst.PolicySet":
+    """Parse Cedar policy text into typed PST nodes from cedarpy.pst.
+
+    The node set tracks the Cedar engine (see the ``cedarpy.pst`` module
+    docs): syntax newer than the modelled node types raises ``ValueError``
+    until a cedarpy release models it.
+    """
+    return _internal.policies_to_pst(policies)
 
 
 class PartialDiagnostics(_DiagnosticsBase):

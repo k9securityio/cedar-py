@@ -438,6 +438,31 @@ print(format_policies(policies))
 # when { resource.owner == principal };
 ```
 
+### Inspecting policies as a typed tree
+
+You can inspect policies as a typed tree by using `policies_to_pst` to parse policy text into typed nodes from `cedarpy.pst`, which mirrors `cedar_policy::pst`. Each node is a frozen dataclass, so structural pattern matching replaces walking a tree keyed by string operators. To rewrite a policy set, edit the nodes and hand them back to the engine with `PolicySet.from_pst`.
+
+```python
+from cedarpy import policies_to_pst
+from cedarpy.pst import BinaryOp, GetAttr, Var
+
+policies = """
+    permit(principal, action == Action::"view", resource)
+    when { resource.owner == principal };
+"""
+
+result = policies_to_pst(policies)
+clause = result.static_policies["policy0"].clauses[0]
+
+match clause.expr:
+    case BinaryOp(op="eq", left=GetAttr(attr="owner"), right=Var(name="principal")):
+        print("matched")
+```
+
+`cedarpy.pst` tracks the Cedar Policy engine. New `cedarpy.pst` node types or `Literal` members are introduced when upgrading the `cedar-policy` engine brings Cedar Policy syntax changes. Unmodelled syntax raises `ValueError` until then.
+
+See the [Policy Syntax Tree Guide](docs/guides/policy-syntax-tree-guide.md) for the type guarantees, finding the entities a policy names with `entity_uids`, and rewriting policy sets through `from_pst`.
+
 ## Developing
 
 
