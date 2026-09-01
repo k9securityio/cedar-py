@@ -62,6 +62,24 @@ def _enabled_cedar_features() -> frozenset[str]:
 def _scrape_variants(source_dir: Path) -> dict[str, dict[str, str | None]]:
     """Map each pst enum to its variants and the cargo feature each needs.
 
+    The result is a two-level mapping, enum name -> {variant name -> cargo
+    feature gate, or None when the variant is unconditional}. When serialized to
+    ``pst_variants.json`` (None becomes null), it looks like:
+
+        {
+          "BinaryOp": {
+            "Add": null,
+            "DurationSince": null,
+            "IsInRange": null,
+            ...
+          },
+          "Expr": {
+            ...
+            "ResidualError": "tpe",
+            "VariadicOp": "variadic-is-in-range"
+          }
+        }
+
     Reads the source, not the compiled crate, because a feature-gated variant
     does not exist in our build at all.
     """
