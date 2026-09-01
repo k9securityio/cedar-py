@@ -223,7 +223,9 @@ class ResidualError:
     """A residual subexpression TPE found will error if it is ever evaluated.
 
     Cedar has no surface syntax for this, so it only ever appears inside a
-    residual from `tpe_authorize`, never in a parsed policy.
+    residual from `tpe_authorize`, never in a parsed policy. `PolicySet` has no
+    way to hold one either: `PolicySet.from_pst` raises `TypeError` on a node
+    tree containing one.
     """
 
 

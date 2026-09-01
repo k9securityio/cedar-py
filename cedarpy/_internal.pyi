@@ -309,7 +309,14 @@ def tpe_authorize(
     schema: str | "Schema",
     context: str | None = ...,
     verbose: bool | None = ...,
-) -> "cedarpy.TpeAuthzResult": ...
+) -> "cedarpy.TpeAuthzResult":
+    """Evaluate a request whose principal or resource is known only by type.
+
+    Returns residual policies, as typed ``cedarpy.pst`` nodes, for the parts
+    the unknowns leave undecided. ``context`` is JSON text, or ``None`` for an
+    unknown context. Raises ``ValueError`` on input Cedar cannot resolve.
+    """
+    ...
 
 
 def tpe_reauthorize(
@@ -323,7 +330,13 @@ def tpe_reauthorize(
     context: str | None = ...,
     concrete_entities: str | "Entities" | None = ...,
     verbose: bool | None = ...,
-) -> str: ...
+) -> str:
+    """Bind the unknowns a TPE call left open and decide from its residuals.
+
+    Returns the authorization response as JSON text. Raises ``ValueError`` if
+    the concrete request or entities contradict the partial ones.
+    """
+    ...
 
 
 def validate_policies(policies: str, schema: str | "Schema") -> str: ...

@@ -409,6 +409,35 @@ class TestResidualErrorArrivesWithTpe(unittest.TestCase):
         self.assertEqual(ResidualError(), ResidualError())
         self.assertEqual(len({ResidualError(), ResidualError()}), 1)
 
+    def test_a_policy_set_cannot_be_rebuilt_from_one(self):
+        from cedarpy import PolicySet as EnginePolicySet
+        from cedarpy.pst import (
+            PolicySet,
+            ResidualError,
+            ScopeAny,
+            Template,
+            When,
+        )
+
+        nodes = PolicySet(
+            templates={},
+            static_policies={
+                "policy0": Template(
+                    id="policy0",
+                    effect="permit",
+                    principal=ScopeAny(),
+                    action=ScopeAny(),
+                    resource=ScopeAny(),
+                    clauses=(When(ResidualError()),),
+                    annotations={},
+                )
+            },
+            template_links=(),
+        )
+        with self.assertRaises(TypeError) as caught:
+            EnginePolicySet.from_pst(nodes)
+        self.assertIn("ResidualError", str(caught.exception))
+
 
 class TestPolicySetRoundTrip(unittest.TestCase):
     """`PolicySet.from_pst` / `.to_pst` are inverses of each other."""

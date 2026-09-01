@@ -150,18 +150,30 @@ class TpeClassification:
 
 @dataclass(frozen=True)
 class TpeAuthzResult:
+    """The outcome of one ``tpe_authorize`` call.
+
+    ``decision`` is ``Decision.Allow`` or ``Decision.Deny`` when the unknowns
+    cannot change the outcome, and ``None`` when they can. ``permits`` and
+    ``forbids`` classify the policy ids of each effect separately.
+    """
     decision: Decision | None
     reason: tuple[str, ...]
     permits: TpeClassification
     forbids: TpeClassification
     residual_policies: Mapping[str, pst.Template]
+    """The undecided policies, as typed ``cedarpy.pst`` nodes.
+
+    Each is reduced by the evaluator, with the concrete parts of the request
+    already substituted in. ``pst.entity_uids`` on this mapping reports the
+    entities still needed to finish the evaluation. This is a different view
+    from ``residual_policy_set``, and the two name different entities."""
     residual_policy_set: PolicySet
     """Every residual as a reusable ``PolicySet`` handle.
 
-    Includes the residuals that came out concretely true, false or erroring.
-    Pass it to ``is_authorized`` once the unknowns are bound, or use
-    ``reauthorize``, which also checks the concrete request against the
-    partial one."""
+    Includes the residuals that came out concretely true, false or erroring,
+    each keeping its original scope. Pass it to ``is_authorized`` once the
+    unknowns are bound, or use ``reauthorize``, which also checks the concrete
+    request against the partial one."""
     metrics: Mapping[str, int]
     _request_inputs: _TpeInputs | None = field(default=None, repr=False, compare=False)
 
@@ -662,8 +674,11 @@ def tpe_authorize(principal: _TpePartialEuid,
                   schema: str | dict | Schema,
                   context: dict | None = None,
                   verbose: bool = False) -> TpeAuthzResult:
-    """Type-aware partial evaluation (TPE) on a request with an unknown
-    principal and/or resource identity.
+    """Evaluate a request whose principal or resource is known only by type.
+
+    Returns residual policies, as typed ``cedarpy.pst`` nodes, for the parts
+    the unknowns leave undecided. This is a separate feature from
+    ``is_authorized_partial``, which it neither calls nor changes.
 
     ``principal`` / ``resource`` accept a concrete entity, as a Cedar
     surface-syntax string (``'User::"alice"'``) or a ``{"type": ..., "id": ...}``

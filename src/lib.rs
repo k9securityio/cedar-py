@@ -667,9 +667,14 @@ fn tpe_prepare(
     })
 }
 
-/// Perform type-aware partial evaluation (TPE) on a request whose principal
-/// and/or resource identity is unknown. Separate from is_authorized_partial;
-/// does not call, change, or share a response shape with it.
+/// Evaluate a request whose principal or resource is known only by type,
+/// returning residual policies as `cedarpy.pst` nodes for the parts the
+/// unknowns leave undecided. Separate from is_authorized_partial; does not
+/// call, change, or share a response shape with it.
+///
+/// :raises ValueError: on input Cedar cannot resolve, including a request that
+///     the schema does not permit and a residual whose expression nesting
+///     exceeds 100 levels.
 #[pyfunction]
 #[pyo3(signature = (principal, action, resource, policies, entities, schema, context = None, verbose = false))]
 #[allow(clippy::too_many_arguments)]
@@ -763,6 +768,9 @@ fn tpe_authorize(
 /// evaluating only the residuals. The engine checks the concrete request and
 /// entities against the partial ones it was given, so a request that
 /// contradicts the partial request is an error rather than a wrong answer.
+///
+/// :raises ValueError: on inconsistent or unresolvable input, including a
+///     concrete request that contradicts the partial one.
 #[pyfunction]
 #[pyo3(signature = (request, principal, action, resource, policies, entities, schema, context = None, concrete_entities = None, verbose = false))]
 #[allow(clippy::too_many_arguments)]
