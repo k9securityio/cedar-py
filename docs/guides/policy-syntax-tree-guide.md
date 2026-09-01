@@ -22,6 +22,10 @@ Use the PST when, for example:
 brings Cedar Policy syntax changes. Unmodelled syntax raises `ValueError`
 until then. See the `cedarpy.pst` module docstring for the full contract.
 
+Expression nesting is limited to 100 levels; deeper policy text or node trees
+raise `ValueError`. Raising this limit later is backwards compatible, so code
+should treat it as a floor, not an exact ceiling.
+
 Static policies and unlinked templates only. A residual from
 `is_authorized_partial` cannot be represented this way, because PST rejects any
 clause holding an unresolved `unknown(...)` node and every non-trivial residual

@@ -249,7 +249,31 @@ fn build_literal<'py>(c: &PstClasses<'py>, literal: &pst::Literal) -> PyResult<P
     }
 }
 
+/// Maximum expression nesting depth converted between `cedar_policy::pst`
+/// expressions and `cedarpy.pst` nodes, enforced in both directions.
+///
+/// This limit is a behavioral contract: raising it later is backwards
+/// compatible; lowering it is a breaking change. 100 gives ~6x headroom over
+/// the deepest expression in the upstream fuzzer corpus (17 tree levels,
+/// ~13 of them expression nesting, measured 2026-09-01 across 7,551
+/// policies) while keeping conversion recursion far from the thread's stack
+/// limit, where overflow aborts the process instead of raising.
+const MAX_EXPR_DEPTH: usize = 100;
+
+fn expr_depth_error() -> PyErr {
+    pyo3::exceptions::PyValueError::new_err(format!(
+        "cedarpy: expression nesting exceeds the supported limit of {MAX_EXPR_DEPTH} levels"
+    ))
+}
+
 fn build_expr<'py>(c: &PstClasses<'py>, expr: &pst::Expr) -> PyResult<Py<PyAny>> {
+    build_expr_at(c, expr, 0)
+}
+
+fn build_expr_at<'py>(c: &PstClasses<'py>, expr: &pst::Expr, depth: usize) -> PyResult<Py<PyAny>> {
+    if depth >= MAX_EXPR_DEPTH {
+        return Err(expr_depth_error());
+    }
     match expr {
         pst::Expr::Literal(lit) => build_literal(c, lit),
         pst::Expr::Var(var) => {
@@ -264,38 +288,38 @@ fn build_expr<'py>(c: &PstClasses<'py>, expr: &pst::Expr) -> PyResult<Py<PyAny>>
         pst::Expr::Slot(slot) => build_slot_id(c, *slot),
         pst::Expr::UnaryOp { op, expr: arg } => {
             let name = unary_op_name(*op)?;
-            Ok(c.unary_op.call1((name, build_expr(c, arg)?))?.unbind())
+            Ok(c.unary_op.call1((name, build_expr_at(c, arg, depth + 1)?))?.unbind())
         }
         pst::Expr::BinaryOp { op, left, right } => {
             let name = binary_op_name(*op)?;
-            Ok(c.binary_op.call1((name, build_expr(c, left)?, build_expr(c, right)?))?.unbind())
+            Ok(c.binary_op.call1((name, build_expr_at(c, left, depth + 1)?, build_expr_at(c, right, depth + 1)?))?.unbind())
         }
         pst::Expr::GetAttr { expr: base, attr } => {
-            Ok(c.get_attr.call1((build_expr(c, base)?, attr.to_string()))?.unbind())
+            Ok(c.get_attr.call1((build_expr_at(c, base, depth + 1)?, attr.to_string()))?.unbind())
         }
         pst::Expr::HasAttr { expr: base, attrs } => {
             let items: Vec<String> = attrs.iter().map(|a| a.to_string()).collect();
             let tuple = PyTuple::new(c.has_attr.py(), items)?;
-            Ok(c.has_attr.call1((build_expr(c, base)?, tuple))?.unbind())
+            Ok(c.has_attr.call1((build_expr_at(c, base, depth + 1)?, tuple))?.unbind())
         }
         pst::Expr::Like { expr: base, pattern } => {
-            Ok(c.like.call1((build_expr(c, base)?, build_pattern(c, pattern)?))?.unbind())
+            Ok(c.like.call1((build_expr_at(c, base, depth + 1)?, build_pattern(c, pattern)?))?.unbind())
         }
         pst::Expr::Is { expr: base, entity_type, in_expr } => {
             let in_expr = match in_expr {
-                Some(e) => Some(build_expr(c, e)?),
+                Some(e) => Some(build_expr_at(c, e, depth + 1)?),
                 None => None,
             };
-            Ok(c.is_.call1((build_expr(c, base)?, build_entity_type(c, entity_type)?, in_expr))?.unbind())
+            Ok(c.is_.call1((build_expr_at(c, base, depth + 1)?, build_entity_type(c, entity_type)?, in_expr))?.unbind())
         }
         pst::Expr::IfThenElse { cond, then_expr, else_expr } => Ok(c
             .if_then_else
-            .call1((build_expr(c, cond)?, build_expr(c, then_expr)?, build_expr(c, else_expr)?))?
+            .call1((build_expr_at(c, cond, depth + 1)?, build_expr_at(c, then_expr, depth + 1)?, build_expr_at(c, else_expr, depth + 1)?))?
             .unbind()),
         pst::Expr::Set(elements) => {
             let mut items = Vec::with_capacity(elements.len());
             for e in elements {
-                items.push(build_expr(c, e)?);
+                items.push(build_expr_at(c, e, depth + 1)?);
             }
             let tuple = PyTuple::new(c.set.py(), items)?;
             Ok(c.set.call1((tuple,))?.unbind())
@@ -303,7 +327,7 @@ fn build_expr<'py>(c: &PstClasses<'py>, expr: &pst::Expr) -> PyResult<Py<PyAny>>
         pst::Expr::Record(fields) => {
             let mut items = Vec::with_capacity(fields.len());
             for (k, v) in fields {
-                items.push((k.clone(), build_expr(c, v)?));
+                items.push((k.clone(), build_expr_at(c, v, depth + 1)?));
             }
             Ok(c.record.call1((build_mapping(c, items)?,))?.unbind())
         }
@@ -420,6 +444,9 @@ fn build_policy_set<'py>(c: &PstClasses<'py>, policy_set: &pst::PolicySet) -> Py
 }
 
 /// Parse Cedar policy text into typed cedarpy.pst nodes.
+///
+/// :raises ValueError: on unparseable policies, unmodelled syntax, or
+///     expression nesting deeper than 100 levels.
 #[pyfunction]
 #[pyo3(signature = (s))]
 fn policies_to_pst(py: Python<'_>, s: String) -> PyResult<Py<PyAny>> {
@@ -498,7 +525,8 @@ impl PyPolicySet {
     /// docs): syntax newer than the modelled node types raises `ValueError`
     /// until a cedarpy release models it.
     ///
-    /// :raises ValueError: if the set cannot be represented as PST nodes.
+    /// :raises ValueError: if the set cannot be represented as PST nodes,
+    ///     including expression nesting deeper than 100 levels.
     fn to_pst(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let pst = self
             .inner
@@ -514,7 +542,8 @@ impl PyPolicySet {
     /// nodes, rewritten, and handed back to the engine.
     ///
     /// :raises TypeError: if given something other than a `cedarpy.pst` node.
-    /// :raises ValueError: if the nodes do not form a valid policy set.
+    /// :raises ValueError: if the nodes do not form a valid policy set,
+    ///     including expression nesting deeper than 100 levels.
     #[staticmethod]
     fn from_pst(node: &Bound<'_, PyAny>) -> PyResult<Self> {
         let pst_set = read_policy_set(node)?;
@@ -2123,8 +2152,17 @@ fn read_pattern(obj: &Bound<'_, PyAny>) -> PyResult<Vec<pst::PatternElem>> {
 }
 
 fn read_expr(obj: &Bound<'_, PyAny>) -> PyResult<pst::Expr> {
+    read_expr_at(obj, 0)
+}
+
+fn read_expr_at(obj: &Bound<'_, PyAny>, depth: usize) -> PyResult<pst::Expr> {
     use std::sync::Arc;
-    let arc = |o: Bound<'_, PyAny>| -> PyResult<Arc<pst::Expr>> { Ok(Arc::new(read_expr(&o)?)) };
+    if depth >= MAX_EXPR_DEPTH {
+        return Err(expr_depth_error());
+    }
+    let arc = |o: Bound<'_, PyAny>| -> PyResult<Arc<pst::Expr>> {
+        Ok(Arc::new(read_expr_at(&o, depth + 1)?))
+    };
     match node_kind(obj)?.as_str() {
         "BoolLit" => Ok(pst::Expr::Literal(pst::Literal::Bool(
             obj.getattr("value")?.extract()?,
@@ -2190,7 +2228,7 @@ fn read_expr(obj: &Bound<'_, PyAny>) -> PyResult<pst::Expr> {
         "Set" => {
             let mut elements = Vec::new();
             for e in obj.getattr("elements")?.try_iter()? {
-                elements.push(Arc::new(read_expr(&e?)?));
+                elements.push(Arc::new(read_expr_at(&e?, depth + 1)?));
             }
             Ok(pst::Expr::Set(elements))
         }
@@ -2199,7 +2237,7 @@ fn read_expr(obj: &Bound<'_, PyAny>) -> PyResult<pst::Expr> {
             let items = obj.getattr("fields")?.call_method0("items")?;
             for item in items.try_iter()? {
                 let (k, v): (String, Bound<'_, PyAny>) = item?.extract()?;
-                fields.insert(k, Arc::new(read_expr(&v)?));
+                fields.insert(k, Arc::new(read_expr_at(&v, depth + 1)?));
             }
             Ok(pst::Expr::Record(fields))
         }

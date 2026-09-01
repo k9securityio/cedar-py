@@ -50,7 +50,8 @@ class PolicySet:
         The inverse of ``PolicySet.to_pst``, so a policy set can be read as
         nodes, rewritten, and handed back to the engine. Raises ``TypeError``
         if given anything other than a ``cedarpy.pst`` node, and ``ValueError``
-        if the nodes do not form a valid policy set.
+        if the nodes do not form a valid policy set, including expression
+        nesting deeper than 100 levels.
         """
         ...
 
@@ -61,7 +62,8 @@ class PolicySet:
         The node set tracks the Cedar engine (see the ``cedarpy.pst`` module
         docs): syntax newer than the modelled node types raises ``ValueError``
         until a cedarpy release models it.
-        Raises ``ValueError`` if the set cannot be represented as PST nodes.
+        Raises ``ValueError`` if the set cannot be represented as PST nodes,
+        including expression nesting deeper than 100 levels.
         """
         ...
 

@@ -1,15 +1,18 @@
 """Unit tests for policies_to_pst and cedarpy.pst."""
 import dataclasses
 import json
+
+import cedarpy
 import typing
 import unittest
 
 from cedarpy import policies_to_pst
 from cedarpy.pst import (
     ActionEq, ActionIn, BinaryOp, BoolLit, Char, EntityLit, EntityType,
-    EntityUid, FrozenMap, GetAttr, HasAttr, IfThenElse, Is, Like, LongLit,
-    PolicySet, Record, ScopeEq, ScopeIs, ScopeIsIn, Set, Slot, StringLit,
-    Template, TemplateLink, UnaryOp, Unless, Var, When, Wildcard, entity_uids,
+    EntityUid, Expr, FrozenMap, GetAttr, HasAttr, IfThenElse, Is, Like,
+    LongLit, PolicySet, Record, ScopeAny, ScopeEq, ScopeIs, ScopeIsIn, Set,
+    Slot, StringLit, Template, TemplateLink, UnaryOp, Unless, Var, When,
+    Wildcard, entity_uids,
 )
 
 
@@ -489,3 +492,49 @@ class TestPolicySetRoundTrip(unittest.TestCase):
         ))
         with self.assertRaises(ValueError):
             EnginePolicySet.from_pst(broken)
+
+
+class TestExpressionDepthLimit(unittest.TestCase):
+    """Expression nesting is capped at 100 levels in both directions.
+
+    The limit is a behavioral contract: a later release may raise it, and
+    lowering it would be a breaking change, so the boundary is pinned here.
+    """
+
+    @staticmethod
+    def _nested_policy(n: int) -> str:
+        return ("permit(principal, action, resource) when { "
+                + "[" * n + "1" + "]" * n + " == 1 };")
+
+    @staticmethod
+    def _deep_nodes(n: int) -> PolicySet:
+        expr: Expr = BoolLit(True)
+        for _ in range(n):
+            expr = UnaryOp("not", expr)
+        template = Template(
+            id="policy0", effect="permit",
+            principal=ScopeAny(), action=ScopeAny(), resource=ScopeAny(),
+            clauses=(When(expr),), annotations={},
+        )
+        return PolicySet(templates={}, static_policies={"policy0": template},
+                         template_links=())
+
+    def test_nesting_at_the_limit_converts(self):
+        nodes = policies_to_pst(self._nested_policy(98))
+        self.assertIn("policy0", nodes.static_policies)
+
+    def test_nesting_past_the_limit_raises(self):
+        with self.assertRaisesRegex(ValueError, "nesting exceeds the supported limit of 100"):
+            policies_to_pst(self._nested_policy(99))
+
+    def test_from_pst_accepts_nesting_under_the_limit(self):
+        cedarpy.PolicySet.from_pst(self._deep_nodes(80))
+
+    def test_from_pst_rejects_nesting_past_the_limit(self):
+        with self.assertRaisesRegex(ValueError, "nesting exceeds the supported limit of 100"):
+            cedarpy.PolicySet.from_pst(self._deep_nodes(150))
+
+    def test_entity_uids_walks_trees_far_past_the_limit(self):
+        # The walk is iterative, so hand-built trees deeper than the
+        # conversion limit read fine rather than hitting RecursionError.
+        self.assertEqual(entity_uids(self._deep_nodes(5000)), frozenset())

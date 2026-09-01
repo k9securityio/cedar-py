@@ -13,6 +13,10 @@ new engine construct is modelled, `to_pst` and `policies_to_pst` raise
 `ValueError` naming the unmodelled variant rather than building an
 incomplete tree. `tests/unit/test_pst_variant_coverage.py` audits this
 mirror against the engine's own source on every engine bump.
+
+Expression nesting is limited to 100 levels: converting deeper policy text
+or node trees raises `ValueError`. This limit is a behavioral contract; a
+later release may raise it, and lowering it would be a breaking change.
 """
 from __future__ import annotations
 
@@ -340,24 +344,18 @@ def entity_uids(
             f"{type(unwalkable[0]).__name__}"
         )
 
+    # An explicit work stack rather than recursion, so tree depth is bounded
+    # by memory, not the interpreter's frame limit.
     found: set[EntityUid] = set()
-
-    def walk(value: Any) -> None:
+    stack: list[Any] = list(roots)
+    while stack:
+        value = stack.pop()
         if isinstance(value, EntityUid):
             found.add(value)
-            return
-        if isinstance(value, Mapping):
-            for item in value.values():
-                walk(item)
-            return
-        if isinstance(value, tuple):
-            for item in value:
-                walk(item)
-            return
-        if is_dataclass(value) and not isinstance(value, type):
-            for f in fields(value):
-                walk(getattr(value, f.name))
-
-    for root in roots:
-        walk(root)
+        elif isinstance(value, Mapping):
+            stack.extend(value.values())
+        elif isinstance(value, tuple):
+            stack.extend(value)
+        elif is_dataclass(value) and not isinstance(value, type):
+            stack.extend(getattr(value, f.name) for f in fields(value))
     return frozenset(found)
