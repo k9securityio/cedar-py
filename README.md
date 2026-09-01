@@ -459,7 +459,7 @@ match clause.expr:
         print("matched")
 ```
 
-`cedarpy.pst` tracks the engine: new engine variants mean new node types or `Literal` members in cedarpy minor releases, and unmodelled syntax raises `ValueError` until then.
+`cedarpy.pst` tracks the Cedar Policy engine. New `cedarpy.pst` node types or `Literal` members are introduced when upgrading the `cedar-policy` engine brings Cedar Policy syntax changes. Unmodelled syntax raises `ValueError` until then.
 
 See the [Policy Syntax Tree Guide](docs/guides/policy-syntax-tree-guide.md) for the type guarantees, finding the entities a policy names with `entity_uids`, and rewriting policy sets through `from_pst`.
 
