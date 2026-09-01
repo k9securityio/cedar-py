@@ -465,14 +465,14 @@ See the [Policy Syntax Tree Guide](docs/guides/policy-syntax-tree-guide.md) for 
 
 ### Type-aware partial evaluation (TPE) on an unknown principal or resource
 
-`tpe_authorize` handles a different situation than `is_authorized_partial`. Use it when you know the type of the principal or resource but not which one. It requires a schema, and its residuals are `cedarpy.pst.Template` nodes rather than JSON.
+Use `tpe_authorize` when you know the type of the principal or resource but not which one, such as deciding whether any `Doc` could be viewed before you list them. It is a separate feature from `is_authorized_partial`: it requires a schema, and its residual policies are typed `cedarpy.pst.Template` nodes rather than JSON.
 
 ```python
 from cedarpy import tpe_authorize
 
 schema = """
     entity User;
-    entity Doc = { status: String, owner: User };
+    entity Doc = { status: String };
     action "view" appliesTo { principal: [User], resource: [Doc] };
 """
 policies = """
@@ -488,87 +488,11 @@ assert result.decision is None
 assert result.permits.residual_ids == ("policy0",)
 ```
 
-`permits` and `forbids` are kept separate, each a `TpeClassification` of `residual_ids`, `true_ids`, `false_ids`, and `error_ids`.
+Once you know the rest of the request, `result.reauthorize(request, entities)` decides it by evaluating only the residuals, and returns an ordinary `AuthzResult`.
 
-`principal` and `resource` each accept two kinds of value:
+> **Note:** A TPE result is not a final authorization decision. Always bind the unknowns and re-evaluate before acting on it.
 
-* A concrete entity, as a surface-syntax string such as `'User::"alice"'`, or a `{"type": ..., "id": ...}` dict.
-* A type whose id is unknown, as a bare type string such as `"User"`, a `pst.EntityType`, or a dict carrying only `type`.
-
-`action` must be concrete. `context` follows `is_authorized_partial`. Omitting it, or passing `None`, means the context is unknown, so a policy reading it stays residual. Passing `{}` means a known-empty context.
-
-A residual is a `pst.Template`, so `entity_uids` tells you what is still needed before the evaluation can finish:
-
-```python
-from cedarpy.pst import EntityType, EntityUid, entity_uids
-
-policies = """
-    permit(principal, action == Action::"view", resource)
-    when { resource.owner == User::"bob" };
-"""
-
-result = tpe_authorize('User::"alice"', 'Action::"view"', "Doc", policies, "[]", schema)
-assert entity_uids(result.residual_policies) == frozenset({EntityUid(EntityType("User"), "bob")})
-```
-
-There are two views of the residuals and they are not interchangeable. `residual_policies` holds only the policies still undecided, reduced by the evaluator with the concrete parts of the request already substituted in. `residual_policy_set` is a `PolicySet` handle holding every residual, including the ones that came out concretely true, false or erroring, each keeping its original scope. Because it is a handle rather than nodes, call `to_pst()` on it before `entity_uids` will walk it. The two views name different entities.
-
-#### Binding the unknowns later
-
-The point of TPE is that you re-evaluate the residuals rather than the whole policy set once you know the rest. `reauthorize` does that. Cedar checks your concrete request against the partial one first, so a request that contradicts it raises instead of returning a decision the partial evaluation never sanctioned.
-
-```python
-from cedarpy import Decision
-
-decided = result.reauthorize(
-    {"principal": 'User::"alice"', "action": 'Action::"view"', "resource": 'Doc::"d1"'},
-    entities='[{"uid": {"type": "Doc", "id": "d1"}, "attrs": {"owner": {"__entity": {"type": "User", "id": "bob"}}, "status": "active"}, "parents": []}]',
-)
-assert decided.decision == Decision.Allow
-```
-
-`reauthorize` returns an ordinary `AuthzResult`, the same type `is_authorized` returns. `entities` defaults to the entities the `tpe_authorize` call ran against. `cedarpy.tpe_reauthorize(...)` is the same operation as a free function, taking the TPE inputs explicitly.
-
-`result.residual_policy_set` is every residual as a reusable `PolicySet` handle, for when you want to drive evaluation yourself:
-
-```python
-from cedarpy import is_authorized
-
-request = {
-    "principal": 'User::"alice"',
-    "action": 'Action::"view"',
-    "resource": 'Doc::"d1"',
-    "context": {},
-}
-entities = '[{"uid": {"type": "Doc", "id": "d1"}, "attrs": {"owner": {"__entity": {"type": "User", "id": "bob"}}, "status": "active"}, "parents": []}]'
-
-assert is_authorized(request, result.residual_policy_set, entities, schema).decision == Decision.Allow
-```
-
-#### Entities that are only partly known
-
-A concrete entity set asserts that every entity's attributes, parents, and tags are known. TPE also accepts a document in which an entity exists but one of those is not yet loaded, so policies reading it stay residual. That is what lets you decide what to fetch before you fetch it.
-
-```python
-from cedarpy import PartialEntities
-
-policies = """
-    permit(principal, action == Action::"view", resource)
-    when { resource.status == "active" };
-"""
-
-result = tpe_authorize(
-    'User::"alice"', 'Action::"view"', 'Doc::"d1"', policies,
-    PartialEntities.from_json([{"uid": {"type": "Doc", "id": "d1"}, "parents": []}]),
-    schema,
-)
-
-# The Doc exists, but its attrs are not loaded, so status is unknown.
-assert result.decision is None
-assert result.permits.residual_ids == ("policy0",)
-```
-
-Each of `attrs`, `parents`, and `tags` must be wholly present or wholly absent per entity, and a parent entity cannot itself have unknown parents.
+See the [Type-Aware Partial Evaluation Guide](docs/guides/type-aware-partial-evaluation-guide.md) for the argument forms, the `context` contract, reading residuals with `entity_uids`, and entity documents that are only partly loaded.
 
 ## Developing
 
