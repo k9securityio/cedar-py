@@ -440,7 +440,7 @@ print(format_policies(policies))
 
 ### Inspecting policies as a typed tree
 
-`policies_to_pst` parses policy text into typed nodes from `cedarpy.pst`, which mirrors `cedar_policy::pst`. Each node is a frozen dataclass, so you can use structural pattern matching instead of walking a tree keyed by string operators, and `PolicySet.from_pst` turns edited nodes back into a policy set the engine authorizes against.
+You can inspect policies as a typed tree by using `policies_to_pst` to parse policy text into typed nodes from `cedarpy.pst`, which mirrors `cedar_policy::pst`. Each node is a frozen dataclass, so structural pattern matching replaces walking a tree keyed by string operators. To rewrite a policy set, edit the nodes and hand them back to the engine with `PolicySet.from_pst`.
 
 ```python
 from cedarpy import policies_to_pst
