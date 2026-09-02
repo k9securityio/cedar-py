@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Security
 
+- Updated `pyo3` 0.27.2 → 0.29.2, fixing [GHSA-36hh-v3qg-5jq4](https://github.com/advisories/GHSA-36hh-v3qg-5jq4) (out-of-bounds read in `nth`/`nth_back` on `PyList`/`PyTuple` iterators) and [GHSA-chgr-c6px-7xpp](https://github.com/advisories/GHSA-chgr-c6px-7xpp) (missing `Sync` bound on `PyCFunction::new_closure` closures). Neither vulnerable path is reachable from `cedarpy`'s API — both alerts had been triaged and dismissed as unreachable — so this is defense-in-depth. No source changes were required; unit, integration, 60,800-case corpus, and benchmark suites pass unchanged ([#115](https://github.com/k9securityio/cedar-py/pull/115)). Thanks [@swenger](https://github.com/swenger)!
 - Updated `anyhow` 1.0.95 → 1.0.104, clearing the [RUSTSEC-2026-0190](https://rustsec.org/advisories/RUSTSEC-2026-0190) unsoundness warning in `Error::downcast_mut` (fixed upstream in 1.0.103).
 
 ### Changed
