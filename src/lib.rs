@@ -78,6 +78,7 @@ struct PstClasses<'py> {
     if_then_else: Bound<'py, PyAny>,
     set: Bound<'py, PyAny>,
     record: Bound<'py, PyAny>,
+    residual_error: Bound<'py, PyAny>,
     when: Bound<'py, PyAny>,
     unless: Bound<'py, PyAny>,
     scope_any: Bound<'py, PyAny>,
@@ -117,6 +118,7 @@ impl<'py> PstClasses<'py> {
             if_then_else: get("IfThenElse")?,
             set: get("Set")?,
             record: get("Record")?,
+            residual_error: get("ResidualError")?,
             when: get("When")?,
             unless: get("Unless")?,
             scope_any: get("ScopeAny")?,
@@ -331,6 +333,7 @@ fn build_expr_at<'py>(c: &PstClasses<'py>, expr: &pst::Expr, depth: usize) -> Py
             }
             Ok(c.record.call1((build_mapping(c, items)?,))?.unbind())
         }
+        pst::Expr::ResidualError => Ok(c.residual_error.call0()?.unbind()),
         other => Err(pst_error("Expr variant", other)),
     }
 }
@@ -441,6 +444,399 @@ fn build_policy_set<'py>(c: &PstClasses<'py>, policy_set: &pst::PolicySet) -> Py
     Ok(c.policy_set
         .call1((build_mapping(c, templates)?, build_mapping(c, static_policies)?, links))?
         .unbind())
+}
+
+/// A TPE principal or resource. Either concrete, or an entity type whose id is
+/// unknown. Accepts the same two surface forms the authorization path accepts,
+/// plus a dict carrying only `type`, which is how an unknown id is named.
+enum PartialEuidInput {
+    /// `User::"alice"` (concrete) or a bare `User` (type known, id unknown).
+    Cedar(String),
+    /// `{"type": "User", "id": "alice"}`, or `{"type": "User"}` for an unknown id.
+    Json { type_name: String, id: Option<String> },
+}
+
+fn partial_euid_from_value(
+    value: &Bound<'_, PyAny>,
+    field: &str,
+) -> PyResult<PartialEuidInput> {
+    if let Ok(s) = value.cast::<PyString>() {
+        return Ok(PartialEuidInput::Cedar(s.to_string()));
+    }
+    if let Ok(d) = value.cast::<PyDict>() {
+        let type_name: String = d
+            .get_item("type")?
+            .ok_or_else(|| pyo3::exceptions::PyKeyError::new_err(
+                format!("{field} dict missing 'type' key")))?
+            .extract()?;
+        let id: Option<String> = match d.get_item("id")? {
+            None => None,
+            Some(v) if v.is_none() => None,
+            Some(v) => Some(v.extract()?),
+        };
+        return Ok(PartialEuidInput::Json { type_name, id });
+    }
+    Err(pyo3::exceptions::PyTypeError::new_err(format!(
+        "{field} must be a Cedar entity uid string (User::\"alice\"), a bare entity type (User), \
+         or a dict with 'type' and an optional 'id'"
+    )))
+}
+
+fn parse_partial_entity_uid(input: &PartialEuidInput, field: &str) -> PyResult<PartialEntityUid> {
+    let type_error = |ty: &str, e: String| {
+        pyo3::exceptions::PyValueError::new_err(format!(
+            "failed to parse {field} entity type '{ty}': {e}"
+        ))
+    };
+    match input {
+        PartialEuidInput::Cedar(s) => {
+            if let Ok(euid) = EntityUid::from_str(s) {
+                return Ok(PartialEntityUid::from_concrete(euid));
+            }
+            match EntityTypeName::from_str(s) {
+                Ok(ty) => Ok(PartialEntityUid::new(ty, None)),
+                Err(e) => Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "failed to parse {field} '{s}' as an entity uid (Type::\"id\") or a bare entity type (Type): {e}"
+                ))),
+            }
+        }
+        PartialEuidInput::Json { type_name, id } => {
+            let ty = EntityTypeName::from_str(type_name)
+                .map_err(|e| type_error(type_name, e.to_string()))?;
+            match id {
+                None => Ok(PartialEntityUid::new(ty, None)),
+                Some(id) => {
+                    let euid = EntityUid::from_json(json!({"type": type_name, "id": id}))
+                        .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!(
+                            "failed to parse {field} as an entity uid (JSON form): {e}"
+                        )))?;
+                    Ok(PartialEntityUid::from_concrete(euid))
+                }
+            }
+        }
+    }
+}
+
+/// The entities a TPE call runs against. Either fully concrete, in the same
+/// forms the authorization path accepts, or a partial entity document, in which
+/// an entity's `attrs`, `parents`, or `tags` may be absent to mean unknown.
+enum TpeEntitiesArg {
+    Concrete(EntitiesArg),
+    Partial(String),
+}
+
+impl<'a, 'py> FromPyObject<'a, 'py> for TpeEntitiesArg {
+    type Error = PyErr;
+
+    fn extract(obj: pyo3::Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
+        if let Ok(json) = obj.getattr("_partial_entities_json") {
+            return Ok(TpeEntitiesArg::Partial(json.extract()?));
+        }
+        Ok(TpeEntitiesArg::Concrete(obj.extract()?))
+    }
+}
+
+fn resolve_policies_eager<'a>(
+    policies: &'a PoliciesArg,
+    slot: &'a mut Option<PolicySet>,
+) -> PyResult<&'a PolicySet> {
+    let mut errs: Vec<Error> = vec![];
+    let resolved = policies.resolve(slot, &mut errs, false);
+    match errs.into_iter().next() {
+        Some(e) => Err(pyo3::exceptions::PyValueError::new_err(e.to_string())),
+        None => Ok(resolved),
+    }
+}
+
+fn resolve_entities_eager<'a>(
+    entities: &'a EntitiesArg,
+    slot: &'a mut Option<Entities>,
+    schema: Option<&Schema>,
+) -> PyResult<&'a Entities> {
+    let mut errs: Vec<Error> = vec![];
+    let resolved = entities.resolve(slot, schema, &mut errs);
+    match errs.into_iter().next() {
+        Some(e) => Err(pyo3::exceptions::PyValueError::new_err(e.to_string())),
+        None => Ok(resolved),
+    }
+}
+
+fn build_classification<'py>(
+    py: Python<'py>,
+    cls: &Bound<'py, PyAny>,
+    residual_ids: Vec<String>,
+    true_ids: Vec<String>,
+    false_ids: Vec<String>,
+    error_ids: Vec<String>,
+) -> PyResult<Py<PyAny>> {
+    Ok(cls
+        .call1((
+            PyTuple::new(py, residual_ids)?,
+            PyTuple::new(py, true_ids)?,
+            PyTuple::new(py, false_ids)?,
+            PyTuple::new(py, error_ids)?,
+        ))?
+        .unbind())
+}
+
+/// The owned Cedar state one TPE call needs. Owned rather than borrowed so
+/// both `tpe_authorize` and `tpe_reauthorize` can build it the same way.
+struct TpePrepared {
+    schema: Schema,
+    policy_set: PolicySet,
+    partial_request: PartialRequest,
+    partial_entities: PartialEntities,
+    /// The concrete entities TPE ran against, absent when a partial entity
+    /// document was supplied (reauthorization then requires concrete ones).
+    concrete_entities: Option<Entities>,
+    build_request_duration: std::time::Duration,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn tpe_prepare(
+    principal: &Bound<'_, PyAny>,
+    action: &Bound<'_, PyAny>,
+    resource: &Bound<'_, PyAny>,
+    policies: &PoliciesArg,
+    entities: &TpeEntitiesArg,
+    schema: &Option<SchemaArg>,
+    context: Option<&str>,
+) -> PyResult<TpePrepared> {
+    let mut schema_slot: Option<Schema> = None;
+    let schema = resolve_schema_arg_eager(schema, &mut schema_slot)?
+        .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("tpe_authorize requires a non-empty schema"))?
+        .clone();
+
+    let mut policy_set_slot: Option<PolicySet> = None;
+    let policy_set = resolve_policies_eager(policies, &mut policy_set_slot)?.clone();
+
+    let action_euid: EntityUid = euid_input_from_value(action, || "action".to_string())?
+        .parse("action")
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("{e:#}")))?;
+
+    let (partial_entities, concrete_entities) = match entities {
+        TpeEntitiesArg::Concrete(arg) => {
+            let mut entities_slot: Option<Entities> = None;
+            let concrete = resolve_entities_eager(arg, &mut entities_slot, Some(&schema))?.clone();
+            let partial = PartialEntities::from_concrete(concrete.clone(), &schema).map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(format!("failed to load entities for tpe: {e}"))
+            })?;
+            (partial, Some(concrete))
+        }
+        TpeEntitiesArg::Partial(json_text) => {
+            let value: serde_json::Value = serde_json::from_str(json_text).map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(format!("failed to parse partial entities as JSON: {e}"))
+            })?;
+            let partial = PartialEntities::from_json_value(value, &schema).map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(format!("failed to load partial entities for tpe: {e}"))
+            })?;
+            (partial, None)
+        }
+    };
+
+    // `None` means the context is unknown and policies reading it stay
+    // residual, matching `PartialRequest`'s own contract and
+    // `is_authorized_partial`. An explicitly empty context is `{}`.
+    let cedar_context = match context {
+        Some(ctx_json) => Some(
+            Context::from_json_str(ctx_json, Some((&schema, &action_euid))).map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(format!("failed to parse context: {e}"))
+            })?,
+        ),
+        None => None,
+    };
+
+    let t_build_request = Instant::now();
+    let partial_request = PartialRequest::new(
+        parse_partial_entity_uid(&partial_euid_from_value(principal, "principal")?, "principal")?,
+        action_euid,
+        parse_partial_entity_uid(&partial_euid_from_value(resource, "resource")?, "resource")?,
+        cedar_context,
+        &schema,
+    )
+    .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("failed to build partial request: {e}")))?;
+    let build_request_duration = t_build_request.elapsed();
+
+    Ok(TpePrepared {
+        schema,
+        policy_set,
+        partial_request,
+        partial_entities,
+        concrete_entities,
+        build_request_duration,
+    })
+}
+
+/// Evaluate a request whose principal or resource is known only by type,
+/// returning residual policies as `cedarpy.pst` nodes for the parts the
+/// unknowns leave undecided. This is separate from is_authorized_partial. It
+/// does not call that function or change it, and its response shape differs.
+///
+/// :raises ValueError: on input Cedar cannot resolve, including a request that
+///     the schema does not permit and a residual whose expression nesting
+///     exceeds 100 levels.
+#[pyfunction]
+#[pyo3(signature = (principal, action, resource, policies, entities, schema, context = None, verbose = false))]
+#[allow(clippy::too_many_arguments)]
+fn tpe_authorize(
+    py: Python<'_>,
+    principal: &Bound<'_, PyAny>,
+    action: &Bound<'_, PyAny>,
+    resource: &Bound<'_, PyAny>,
+    policies: PoliciesArg,
+    entities: TpeEntitiesArg,
+    schema: SchemaArg,
+    context: Option<String>,
+    verbose: Option<bool>,
+) -> PyResult<Py<PyAny>> {
+    let verbose = verbose.unwrap_or(false);
+    let prepared = tpe_prepare(
+        principal, action, resource, &policies, &entities, &Some(schema), context.as_deref(),
+    )?;
+
+    let t_tpe = Instant::now();
+    let response = prepared
+        .policy_set
+        .tpe(&prepared.partial_request, &prepared.partial_entities, &prepared.schema)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("tpe evaluation failed: {e}")))?;
+    let tpe_duration = t_tpe.elapsed();
+
+    if verbose {
+        println!("tpe_authorize decision: {:?}", response.decision());
+    }
+
+    let cedarpy = PyModule::import(py, "cedarpy")?;
+    let decision_cls = cedarpy.getattr("Decision")?;
+    let decision = match response.decision() {
+        Some(Decision::Allow) => Some(decision_cls.getattr("Allow")?),
+        Some(Decision::Deny) => Some(decision_cls.getattr("Deny")?),
+        None => None,
+    };
+    let reason_ids: Vec<String> = response.reason().into_iter().flatten().map(|id| id.to_string()).collect();
+    let reason = PyTuple::new(py, reason_ids)?;
+
+    let classification_cls = cedarpy.getattr("TpeClassification")?;
+    let permits = build_classification(
+        py, &classification_cls,
+        response.residual_permits().map(|id| id.to_string()).collect(),
+        response.true_permits().map(|id| id.to_string()).collect(),
+        response.false_permits().map(|id| id.to_string()).collect(),
+        response.error_permits().map(|id| id.to_string()).collect(),
+    )?;
+    let forbids = build_classification(
+        py, &classification_cls,
+        response.residual_forbids().map(|id| id.to_string()).collect(),
+        response.true_forbids().map(|id| id.to_string()).collect(),
+        response.false_forbids().map(|id| id.to_string()).collect(),
+        response.error_forbids().map(|id| id.to_string()).collect(),
+    )?;
+
+    let classes = PstClasses::load(py)?;
+    let mut residual_policies = Vec::new();
+    for policy in response.residual_policies() {
+        let pid = policy.id().to_string();
+        let pst_policy = policy.to_pst().map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("residual policy `{pid}` could not be converted to pst: {e}"))
+        })?;
+        residual_policies.push((pid, build_template(&classes, pst_policy.body())?));
+    }
+
+    // Every residual, including the concretely true, false, and error ones,
+    // as a reusable handle. A caller re-evaluates it with is_authorized once
+    // the unknowns are bound.
+    let residual_policy_set = Py::new(py, PyPolicySet { inner: response.policy_set() })?;
+
+    let metrics = PyDict::new(py);
+    metrics.set_item("build_request_duration_micros", prepared.build_request_duration.as_micros())?;
+    metrics.set_item("tpe_duration_micros", tpe_duration.as_micros())?;
+
+    let result_cls = cedarpy.getattr("TpeAuthzResult")?;
+    Ok(result_cls
+        .call1((
+            decision,
+            reason,
+            permits,
+            forbids,
+            build_mapping(&classes, residual_policies)?,
+            residual_policy_set,
+            metrics,
+        ))?
+        .unbind())
+}
+
+/// Bind the unknowns a TPE call left open and reach a concrete decision by
+/// evaluating only the residuals. The engine checks the concrete request and
+/// entities against the partial ones it was given, so a request that
+/// contradicts the partial request raises instead of returning a decision.
+///
+/// :raises ValueError: on inconsistent or unresolvable input, including a
+///     concrete request that contradicts the partial one.
+#[pyfunction]
+#[pyo3(signature = (request, principal, action, resource, policies, entities, schema, context = None, concrete_entities = None, verbose = false))]
+#[allow(clippy::too_many_arguments)]
+fn tpe_reauthorize(
+    request: &Bound<'_, PyDict>,
+    principal: &Bound<'_, PyAny>,
+    action: &Bound<'_, PyAny>,
+    resource: &Bound<'_, PyAny>,
+    policies: PoliciesArg,
+    entities: TpeEntitiesArg,
+    schema: SchemaArg,
+    context: Option<String>,
+    concrete_entities: Option<EntitiesArg>,
+    verbose: Option<bool>,
+) -> PyResult<String> {
+    let verbose = verbose.unwrap_or(false);
+    let prepared = tpe_prepare(
+        principal, action, resource, &policies, &entities, &Some(schema), context.as_deref(),
+    )?;
+
+    let mut supplied_slot: Option<Entities> = None;
+    let concrete = match &concrete_entities {
+        Some(arg) => resolve_entities_eager(arg, &mut supplied_slot, Some(&prepared.schema))?,
+        None => prepared.concrete_entities.as_ref().ok_or_else(|| {
+            pyo3::exceptions::PyValueError::new_err(
+                "reauthorize needs concrete entities: the tpe_authorize call it came from ran \
+                 against a partial entity document, so pass entities=... to reauthorize",
+            )
+        })?,
+    };
+
+    let request_args = to_request_args(request)?;
+    let concrete_request = request_args
+        .get_request(Some(&prepared.schema))
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("{e:#}")))?;
+
+    let t_tpe = Instant::now();
+    let response = prepared
+        .policy_set
+        .tpe(&prepared.partial_request, &prepared.partial_entities, &prepared.schema)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("tpe evaluation failed: {e}")))?;
+    let tpe_duration = t_tpe.elapsed();
+
+    let t_reauthorize = Instant::now();
+    let reauthorized = response
+        .reauthorize(&concrete_request, concrete)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("reauthorization failed: {e}")))?;
+    let reauthorize_duration = t_reauthorize.elapsed();
+
+    if verbose {
+        println!("tpe_reauthorize decision: {:?}", reauthorized.decision());
+    }
+
+    let mut metrics: HashMap<String, u128> = HashMap::new();
+    metrics.insert(String::from("build_request_duration_micros"), prepared.build_request_duration.as_micros());
+    metrics.insert(String::from("tpe_duration_micros"), tpe_duration.as_micros());
+    metrics.insert(String::from("reauthorize_duration_micros"), reauthorize_duration.as_micros());
+
+    // The residuals carry the PolicyId and annotations of the policies they
+    // came from, so the response labels match a full is_authorized call.
+    let residual_policy_set = response.policy_set();
+    let ans = AuthzResponse::new(
+        reauthorized, &residual_policy_set, metrics, request_args.correlation_id.clone(),
+    );
+    serde_json::to_string(&ans)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
 }
 
 /// Parse Cedar policy text into typed cedarpy.pst nodes.
@@ -2009,6 +2405,8 @@ fn _internal(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(policies_to_json_str, m)?)?;
     m.add_function(wrap_pyfunction!(policies_from_json_str, m)?)?;
     m.add_function(wrap_pyfunction!(policies_to_pst, m)?)?;
+    m.add_function(wrap_pyfunction!(tpe_authorize, m)?)?;
+    m.add_function(wrap_pyfunction!(tpe_reauthorize, m)?)?;
     m.add_function(wrap_pyfunction!(validate_policies, m)?)?;
     Ok(())
 }

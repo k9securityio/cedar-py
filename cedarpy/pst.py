@@ -30,7 +30,8 @@ __all__ = [
     "EntityOrSlot", "EntityType", "EntityUid", "Expr", "FrozenMap", "GetAttr",
     "HasAttr", "IfThenElse", "Is", "Like", "Lit", "LongLit", "PatternElem",
     "PolicySet", "PrincipalOrResourceConstraint", "PstNode", "Record",
-    "ScopeAny", "ScopeEq", "ScopeIn", "ScopeIs", "ScopeIsIn", "Set", "Slot",
+    "ResidualError", "ScopeAny", "ScopeEq", "ScopeIn", "ScopeIs", "ScopeIsIn",
+    "Set", "Slot",
     "SlotName", "StringLit", "Template", "TemplateLink", "UnaryOp",
     "UnaryOpName", "Unless", "Var", "VarName", "When", "Wildcard",
 ]
@@ -217,9 +218,20 @@ class Record:
     fields: Mapping[str, Expr]
 
 
+@dataclass(frozen=True, slots=True)
+class ResidualError:
+    """A subexpression TPE knows will error if it is ever evaluated.
+
+    Cedar has no surface syntax for this, so it only ever appears inside a
+    residual from `tpe_authorize`, never in a parsed policy. `PolicySet` has no
+    way to hold one either: `PolicySet.from_pst` raises `TypeError` on a node
+    tree containing one.
+    """
+
+
 Expr = (
     Var | Slot | BoolLit | LongLit | StringLit | EntityLit | UnaryOp | BinaryOp
-    | GetAttr | HasAttr | Like | Is | IfThenElse | Set | Record
+    | GetAttr | HasAttr | Like | Is | IfThenElse | Set | Record | ResidualError
 )
 
 

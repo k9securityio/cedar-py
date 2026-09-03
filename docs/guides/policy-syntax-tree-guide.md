@@ -95,9 +95,9 @@ dict all still work.
 ## Finding the entities a policy names
 
 `pst.entity_uids(node)` collects every entity uid named anywhere under a node,
-at any depth. Use it to find out what a policy references before you load
-anything. It takes a node, or a mapping or tuple of nodes such as a
-`PolicySet`'s `templates`.
+at any depth. Use it to find out what a policy, or a TPE residual, references
+before you load anything. It takes a node, or a mapping or tuple of nodes such
+as a `PolicySet`'s `templates` or a TPE result's `residual_policies`.
 
 ```python
 from cedarpy.pst import EntityType, EntityUid, entity_uids

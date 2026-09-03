@@ -463,6 +463,37 @@ match clause.expr:
 
 See the [Policy Syntax Tree Guide](docs/guides/policy-syntax-tree-guide.md) for the type guarantees, finding the entities a policy names with `entity_uids`, and rewriting policy sets through `from_pst`.
 
+### Type-aware partial evaluation (TPE) on an unknown principal or resource
+
+Use `tpe_authorize` when you know the type of the principal or resource but not which one, such as deciding whether any `Doc` could be viewed before you list them. It is a separate feature from `is_authorized_partial`: it requires a schema, and its residual policies are typed `cedarpy.pst.Template` nodes rather than JSON.
+
+```python
+from cedarpy import tpe_authorize
+
+schema = """
+    entity User;
+    entity Doc = { status: String };
+    action "view" appliesTo { principal: [User], resource: [Doc] };
+"""
+policies = """
+    permit(principal, action == Action::"view", resource)
+    when { resource.status == "active" };
+"""
+
+result = tpe_authorize('User::"alice"', 'Action::"view"', "Doc", policies, "[]", schema)
+
+# Cedar can't decide yet: the policy depends on resource.status, and the
+# resource is only known to be some Doc.
+assert result.decision is None
+assert result.permits.residual_ids == ("policy0",)
+```
+
+Once you know the rest of the request, `result.reauthorize(request, entities)` decides it by evaluating only the residuals, and returns an ordinary `AuthzResult`.
+
+> **Note:** A TPE result is not a final authorization decision. Always bind the unknowns and re-evaluate before acting on it.
+
+See the [Type-Aware Partial Evaluation Guide](docs/guides/type-aware-partial-evaluation-guide.md) for the argument forms, the `context` contract, reading residuals with `entity_uids`, and entity documents that are only partly loaded.
+
 ## Developing
 
 
