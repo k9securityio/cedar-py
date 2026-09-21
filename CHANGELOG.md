@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `is_authorized` and `is_authorized_batch` now say why a request could not be built. A `context` that Cedar rejects (a JSON `null`, a float, a record that does not match the action's schema) produced the single diagnostic `failed to parse schema from request`, which hid the cause and named a schema even when none was passed. The diagnostic is now `failed to build request: <cause>`, for example ``failed to build request: while parsing context, found a `null`; JSON `null`s are not allowed in Cedar``. Diagnostics for a principal, action, or resource that fails to parse, and for entities that fail to parse, carry their cause the same way ([#118](https://github.com/k9securityio/cedar-py/pull/118)). Thanks [@david-long1](https://github.com/david-long1)!
+
 ## [4.12.0] - 2026-09-12
 
 ### Added

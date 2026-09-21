@@ -499,8 +499,39 @@ class AuthorizeTestCase(unittest.TestCase):
 
         authz_result: AuthzResult = is_authorized(request, policies, entities, schema=schema)
         self.assertEqual(Decision.NoDecision, authz_result.decision)
-        self.assertEqual(["failed to parse schema from request"],
-                         authz_result.diagnostics.errors)
+        self.assertEqual(1, len(authz_result.diagnostics.errors))
+        error = authz_result.diagnostics.errors[0]
+        self.assertTrue(error.startswith("failed to build request: "), error)
+        # The context is missing `photo`, which the schema requires for addPhoto.
+        self.assertIn("expected the record to have an attribute `photo`", error)
+
+    def test_is_authorized_with_unparseable_context_reports_the_cause(self):
+        # No schema, so the context value itself is the only thing that can fail.
+        # Before the fix the whole chain flattened to "failed to parse schema
+        # from request", naming a schema that was never passed.
+        policies = self.policies["alice"]
+        entities = load_file_as_str("resources/sandbox_b/entities.json")
+
+        for name, context, expected_cause in [
+            ("null", "null", "null"),
+            # Cedar has no float type; it reports serde's untagged-enum mismatch,
+            # so only assert that some cause follows the label.
+            ("float", json.dumps({"authenticated": 1.5}), ""),
+        ]:
+            with self.subTest(context=name):
+                request = {
+                    "principal": 'User::"alice"',
+                    "action": 'Action::"view"',
+                    "resource": 'Photo::"alice_w2.jpg"',
+                    "context": context,
+                }
+                authz_result: AuthzResult = is_authorized(request, policies, entities)
+                self.assertEqual(Decision.NoDecision, authz_result.decision)
+                self.assertEqual(1, len(authz_result.diagnostics.errors))
+                label, sep, cause = authz_result.diagnostics.errors[0].partition(": ")
+                self.assertEqual("failed to build request", label)
+                self.assertTrue(cause, "expected the underlying cause after the label")
+                self.assertIn(expected_cause, cause)
 
 
     def test_is_authorized_with_policies_that_errors(self):

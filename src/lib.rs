@@ -1455,7 +1455,7 @@ fn make_authz_result_for_errors(errs: &Vec<Error>) -> String {
 }
 
 fn stringify_errors(errs: &Vec<Error>) -> Vec<String> {
-    errs.iter().map(|e| e.to_string()).collect()
+    errs.iter().map(|e| format!("{:#}", e)).collect()
 }
 
 /// Classify a Python entity-uid value as a Cedar surface-syntax string
@@ -1666,7 +1666,7 @@ fn execute_authorization_request(
     let request = match request_args.get_request(schema) {
         Ok(q) => Some(q),
         Err(e) => {
-            errs.push(e.context("failed to parse schema from request"));
+            errs.push(e.context("failed to build request"));
             None
         }
     };
