@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [4.12.1] - 2026-09-23
+
 ### Fixed
 
 - `is_authorized` and `is_authorized_batch` now say why a request could not be built. A `context` that Cedar rejects (a JSON `null`, a float, a record that does not match the action's schema) produced the single diagnostic `failed to parse schema from request`, which hid the cause and named a schema even when none was passed. The diagnostic is now `failed to build request: <cause>`, for example ``failed to build request: while parsing context, found a `null`; JSON `null`s are not allowed in Cedar``. Diagnostics for a principal, action, or resource that fails to parse, and for entities that fail to parse, carry their cause the same way ([#118](https://github.com/k9securityio/cedar-py/pull/118)). Thanks [@david-long1](https://github.com/david-long1)!
@@ -131,7 +133,8 @@ Dependency update release. No functional or API changes — Cedar Policy engine 
 
 - Performance regression test suite built on `pytest-benchmark` ([#39](https://github.com/k9securityio/cedar-py/pull/39))
 
-[Unreleased]: https://github.com/k9securityio/cedar-py/compare/v4.12.0...HEAD
+[Unreleased]: https://github.com/k9securityio/cedar-py/compare/v4.12.1...HEAD
+[4.12.1]: https://github.com/k9securityio/cedar-py/compare/v4.12.0...v4.12.1
 [4.12.0]: https://github.com/k9securityio/cedar-py/compare/v4.8.7...v4.12.0
 [4.8.7]: https://github.com/k9securityio/cedar-py/compare/v4.8.6...v4.8.7
 [4.8.6]: https://github.com/k9securityio/cedar-py/compare/v4.8.5...v4.8.6
