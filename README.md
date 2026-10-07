@@ -201,6 +201,25 @@ When a `Schema` handle is used,
 the authorization response sets `metrics["schema_pre_parsed"]` to `1`
 (vs. `0` when a string is parsed on the fly).
 
+### Calling cedarpy from threads and asyncio
+
+cedarpy releases the GIL while the Cedar engine works:
+parsing policies, schemas and entities, validating policies, and authorizing.
+Other Python threads keep running during those calls,
+so `asyncio.to_thread` moves slow Cedar work off an event loop:
+
+```python
+import asyncio
+from cedarpy import Schema, validate_policies
+
+async def policies_are_valid(policies: str, schema: Schema) -> bool:
+    result = await asyncio.to_thread(validate_policies, policies, schema)
+    return result.validation_passed
+```
+
+Reading Python arguments (request dicts, template link dicts) and building Python results still hold the GIL.
+`policies_to_pst` and `PolicySet.to_pst` hold it while they build their `cedarpy.pst` nodes.
+
 ### Linking policy templates
 
 A Cedar [policy template](https://docs.cedarpolicy.com/policies/templates.html) is a policy with `?principal` / `?resource` *slots*. A **slot** is a placeholder that marks where a principal or resource is filled in later, when the template is *linked* to concrete entities to produce a real, evaluatable policy. So a template is a rule written once and linked per use. The canonical case is per-principal and per-resource grants — *allow this person to view this photo while their subscription is active*. You write that rule once as a template, then link it per grant.

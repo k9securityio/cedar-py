@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- cedarpy releases the GIL while the Cedar engine works, so other Python threads run during its calls and `asyncio.to_thread` keeps an event loop responsive ([#120](https://github.com/k9securityio/cedar-py/issues/120)). Previously a 1-second `validate_policies` call stopped every other thread in the process for that second. The GIL is released while `is_authorized`, `is_authorized_batch`, `is_authorized_partial`, `validate_policies`, `format_policies`, `policies_to_json_str` and `policies_from_json_str` run, while the `PolicySet`, `Entities` and `Schema` constructors parse, and while `PolicySet.with_added_str`, `with_linked`, `with_linked_batch` and `without_linked` build their new set. `policies_to_pst` and `PolicySet.to_pst` release it to parse and convert, then hold it to build the `cedarpy.pst` nodes. Reading Python arguments, such as request and link dicts, still holds the GIL. Results and errors are unchanged.
+
 ## [4.12.1] - 2026-09-23
 
 ### Fixed
