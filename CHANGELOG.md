@@ -8,9 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### Changed
+### Added
 
-- cedarpy releases the GIL while the Cedar engine works, so other Python threads run during its calls and `asyncio.to_thread` keeps an event loop responsive ([#120](https://github.com/k9securityio/cedar-py/issues/120)). Previously a 1-second `validate_policies` call stopped every other thread in the process for that second. The GIL is released while `is_authorized`, `is_authorized_batch`, `is_authorized_partial`, `validate_policies`, `format_policies`, `policies_to_json_str` and `policies_from_json_str` run, while the `PolicySet`, `Entities` and `Schema` constructors parse, and while `PolicySet.with_added_str`, `with_linked`, `with_linked_batch` and `without_linked` build their new set. `policies_to_pst` and `PolicySet.to_pst` release it to parse and convert, then hold it to build the `cedarpy.pst` nodes. Reading Python arguments, such as request and link dicts, still holds the GIL. Results and errors are unchanged ([#121](https://github.com/k9securityio/cedar-py/pull/121)). Thanks [@kousun12](https://github.com/kousun12)!
+- With the new keyword-only `release_gil=True`, other Python threads run while Cedar validates policies or builds a handle, so `asyncio.to_thread` keeps an event loop responsive during those calls ([#120](https://github.com/k9securityio/cedar-py/issues/120)). The default, `False`, holds the GIL for the whole call, as before. These entry points take it:
+
+  - `validate_policies`
+  - `PolicySet.from_str`, `PolicySet.from_json_str` and `PolicySet.from_pst`
+  - `Schema.from_str` and `Schema.from_json_str`
+  - `Entities.from_json_str`
+
+  When another thread is busy, a released call typically waits about `sys.getswitchinterval()` (5 ms by default) to resume, so releasing pays off for calls that take milliseconds or more. Reading the arguments and building the result still hold the GIL. See the [Threads and asyncio Guide](docs/guides/threads-and-asyncio-guide.md) ([#121](https://github.com/k9securityio/cedar-py/pull/121)). Thanks [@kousun12](https://github.com/kousun12)!
 
 ## [4.12.1] - 2026-09-23
 

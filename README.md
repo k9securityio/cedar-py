@@ -203,22 +203,26 @@ the authorization response sets `metrics["schema_pre_parsed"]` to `1`
 
 ### Calling cedarpy from threads and asyncio
 
-cedarpy releases the GIL while the Cedar engine works:
-parsing policies, schemas and entities, validating policies, and authorizing.
-Other Python threads keep running during those calls,
-so `asyncio.to_thread` moves slow Cedar work off an event loop:
+By default, a cedarpy call holds the GIL until it returns, so no other Python thread runs during it.
+`validate_policies` and the `from_*` constructors of `PolicySet`, `Schema` and `Entities`
+take a keyword-only `release_gil` argument.
+With `release_gil=True`, other Python threads run while Cedar works,
+so `asyncio.to_thread` moves slow validation off an event loop:
 
 ```python
 import asyncio
 from cedarpy import Schema, validate_policies
 
 async def policies_are_valid(policies: str, schema: Schema) -> bool:
-    result = await asyncio.to_thread(validate_policies, policies, schema)
+    result = await asyncio.to_thread(validate_policies, policies, schema, release_gil=True)
     return result.validation_passed
 ```
 
-Reading Python arguments (request dicts, template link dicts) and building Python results still hold the GIL.
-`policies_to_pst` and `PolicySet.to_pst` hold it while they build their `cedarpy.pst` nodes.
+When another thread is busy, a released call typically waits about `sys.getswitchinterval()` (5 ms by default),
+sometimes longer, to resume.
+That makes it worth it for calls that take milliseconds or more, not for ones that take microseconds.
+Reading the arguments and building the result still hold the GIL.
+See the [Threads and asyncio Guide](docs/guides/threads-and-asyncio-guide.md) for measurements and a case study.
 
 ### Linking policy templates
 

@@ -11,6 +11,13 @@ use cedar_policy::pst;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+/// Run `f` with the GIL released when the caller passed `release_gil=True`,
+/// and with it held otherwise. Both paths take the same `Send` closure, so the
+/// compiler rejects a closure that touches a Python object on either path.
+fn maybe_detach<T: Send>(py: Python<'_>, release_gil: bool, f: impl FnOnce() -> T + Send) -> T {
+    if release_gil { py.detach(f) } else { f() }
+}
+
 /// Echo (return) the input string
 #[pyfunction]
 #[pyo3(signature = (s))]
@@ -21,36 +28,40 @@ fn echo(s: String) -> PyResult<String> {
 // Pretty-print the input policy according to the input parameters.
 #[pyfunction]
 #[pyo3(signature = (s, line_width, indent_width))]
-fn format_policies(py: Python<'_>, s: String, line_width: usize, indent_width: isize) -> PyResult<String> {
+fn format_policies(s: String, line_width: usize, indent_width: isize) -> PyResult<String> {
     let config = Config {
         line_width,
         indent_width,
     };
 
-    py.detach(|| policies_str_to_pretty(&s, &config).map_err(|e| e.to_string()))
-        .map_err(pyo3::exceptions::PyValueError::new_err)
+    match policies_str_to_pretty(&s, &config) {
+        Ok(s) => Ok(s),
+        Err(e) => Err(pyo3::exceptions::PyValueError::new_err(e.to_string())),
+    }
 }
 
 #[pyfunction]
 #[pyo3(signature = (s))]
-fn policies_to_json_str(py: Python<'_>, s: String) -> PyResult<String> {
-    py.detach(|| {
-        let p = PolicySet::from_str(&s).map_err(|e| e.to_string())?;
-        let v = p.to_json().map_err(|e| e.to_string())?;
-        serde_json::to_string(&v).map_err(|e| e.to_string())
-    })
-    .map_err(pyo3::exceptions::PyValueError::new_err)
+fn policies_to_json_str(s: String) -> PyResult<String> {
+    match PolicySet::from_str(&s) {
+        Ok(p) => match p.to_json() {
+            Ok(v) => match serde_json::to_string(&v) {
+                Ok(s) => Ok(s),
+                Err(e) => Err(pyo3::exceptions::PyValueError::new_err(e.to_string()))
+            },
+            Err(e) => Err(pyo3::exceptions::PyValueError::new_err(e.to_string()))
+        },
+        Err(e) => Err(pyo3::exceptions::PyValueError::new_err(e.to_string())),
+    }
 }
 
 #[pyfunction]
 #[pyo3(signature = (s))]
-fn policies_from_json_str(py: Python<'_>, s: String) -> PyResult<String> {
-    py.detach(|| {
-        PolicySet::from_json_str(&s)
-            .map(|p| p.to_string())
-            .map_err(|e| e.to_string())
-    })
-    .map_err(pyo3::exceptions::PyValueError::new_err)
+fn policies_from_json_str(s: String) -> PyResult<String> {
+    match PolicySet::from_json_str(&s) {
+        Ok(p) => Ok(p.to_string()),
+        Err(e) => Err(pyo3::exceptions::PyValueError::new_err(e.to_string())),
+    }
 }
 
 struct PstClasses<'py> {
@@ -446,13 +457,8 @@ fn build_policy_set<'py>(c: &PstClasses<'py>, policy_set: &pst::PolicySet) -> Py
 #[pyfunction]
 #[pyo3(signature = (s))]
 fn policies_to_pst(py: Python<'_>, s: String) -> PyResult<Py<PyAny>> {
-    // Parse and convert without the GIL; building the Python nodes needs it.
-    let pst = py
-        .detach(|| {
-            let policies = PolicySet::from_str(&s).map_err(|e| e.to_string())?;
-            policies.to_pst().map_err(|e| e.to_string())
-        })
-        .map_err(pyo3::exceptions::PyValueError::new_err)?;
+    let policies = PolicySet::from_str(&s).map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    let pst = policies.to_pst().map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
     let classes = PstClasses::load(py)?;
     build_policy_set(&classes, &pst)
 }
@@ -496,26 +502,44 @@ impl PyPolicySet {
     /// Unlike passing policy text to `is_authorized`, parse errors are raised
     /// eagerly here rather than folded into an authorization result.
     ///
+    /// :param release_gil: keyword-only, default `False`. When `True`, the GIL
+    ///     is released while Cedar parses, so other Python threads run during
+    ///     the call. If another thread is busy, the call typically waits about
+    ///     `sys.getswitchinterval()` (5 ms by default), sometimes longer, to
+    ///     resume. Reading the arguments and building the result still hold the
+    ///     GIL. On free-threaded builds the call detaches from the interpreter,
+    ///     so garbage collection and other stop-the-world events do not wait on
+    ///     it.
     /// :raises ValueError: if the policies cannot be parsed.
     #[staticmethod]
-    fn from_str(py: Python<'_>, s: &str) -> PyResult<Self> {
-        match py.detach(|| PolicySet::from_str(s).map_err(|e| format!("{:#}", e))) {
+    #[pyo3(signature = (s, *, release_gil = false))]
+    fn from_str(py: Python<'_>, s: &str, release_gil: bool) -> PyResult<Self> {
+        maybe_detach(py, release_gil, || match PolicySet::from_str(s) {
             Ok(inner) => Ok(PyPolicySet { inner }),
             // `{:#}` renders the full, span-annotated set of parse errors,
             // matching the detail of the string-authorization parse path.
-            Err(e) => Err(pyo3::exceptions::PyValueError::new_err(e)),
-        }
+            Err(e) => Err(pyo3::exceptions::PyValueError::new_err(format!("{:#}", e))),
+        })
     }
 
     /// Parse a `PolicySet` from the Cedar JSON (EST) policy format.
     ///
+    /// :param release_gil: keyword-only, default `False`. When `True`, the GIL
+    ///     is released while Cedar parses, so other Python threads run during
+    ///     the call. If another thread is busy, the call typically waits about
+    ///     `sys.getswitchinterval()` (5 ms by default), sometimes longer, to
+    ///     resume. Reading the arguments and building the result still hold the
+    ///     GIL. On free-threaded builds the call detaches from the interpreter,
+    ///     so garbage collection and other stop-the-world events do not wait on
+    ///     it.
     /// :raises ValueError: if the JSON policies cannot be parsed.
     #[staticmethod]
-    fn from_json_str(py: Python<'_>, s: &str) -> PyResult<Self> {
-        match py.detach(|| PolicySet::from_json_str(s).map_err(|e| format!("{:#}", e))) {
+    #[pyo3(signature = (s, *, release_gil = false))]
+    fn from_json_str(py: Python<'_>, s: &str, release_gil: bool) -> PyResult<Self> {
+        maybe_detach(py, release_gil, || match PolicySet::from_json_str(s) {
             Ok(inner) => Ok(PyPolicySet { inner }),
-            Err(e) => Err(pyo3::exceptions::PyValueError::new_err(e)),
-        }
+            Err(e) => Err(pyo3::exceptions::PyValueError::new_err(format!("{:#}", e))),
+        })
     }
 
     /// Return this policy set as the typed nodes from `cedarpy.pst`.
@@ -529,9 +553,10 @@ impl PyPolicySet {
     /// :raises ValueError: if the set cannot be represented as PST nodes,
     ///     including expression nesting deeper than 100 levels.
     fn to_pst(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        let pst = py
-            .detach(|| self.inner.to_pst().map_err(|e| format!("{:#}", e)))
-            .map_err(pyo3::exceptions::PyValueError::new_err)?;
+        let pst = self
+            .inner
+            .to_pst()
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("{:#}", e)))?;
         let classes = PstClasses::load(py)?;
         build_policy_set(&classes, &pst)
     }
@@ -541,17 +566,25 @@ impl PyPolicySet {
     /// The inverse of `PolicySet.to_pst`, so a policy set can be read as
     /// nodes, rewritten, and handed back to the engine.
     ///
+    /// :param release_gil: keyword-only, default `False`. When `True`, the GIL
+    ///     is released while Cedar builds the set, so other Python threads run
+    ///     during that part of the call. Reading the `cedarpy.pst` nodes still
+    ///     holds the GIL. If another thread is busy, the call typically waits
+    ///     about `sys.getswitchinterval()` (5 ms by default), sometimes longer,
+    ///     to resume. On free-threaded builds the call detaches from the
+    ///     interpreter, so garbage collection and other stop-the-world events
+    ///     do not wait on it.
     /// :raises TypeError: if given something other than a `cedarpy.pst` node.
     /// :raises ValueError: if the nodes do not form a valid policy set,
     ///     including expression nesting deeper than 100 levels.
     #[staticmethod]
-    fn from_pst(py: Python<'_>, node: &Bound<'_, PyAny>) -> PyResult<Self> {
-        // Reading the Python nodes needs the GIL; building the set does not.
+    #[pyo3(signature = (node, *, release_gil = false))]
+    fn from_pst(py: Python<'_>, node: &Bound<'_, PyAny>, release_gil: bool) -> PyResult<Self> {
         let pst_set = read_policy_set(node)?;
-        match py.detach(|| PolicySet::from_pst(pst_set).map_err(|e| format!("{:#}", e))) {
+        maybe_detach(py, release_gil, || match PolicySet::from_pst(pst_set) {
             Ok(inner) => Ok(PyPolicySet { inner }),
-            Err(e) => Err(pyo3::exceptions::PyValueError::new_err(e)),
-        }
+            Err(e) => Err(pyo3::exceptions::PyValueError::new_err(format!("{:#}", e))),
+        })
     }
 
     /// Return a NEW `PolicySet` handle: this (compiled) set plus the policies
@@ -571,20 +604,20 @@ impl PyPolicySet {
     /// unaffected.
     ///
     /// :raises ValueError: if `fragment` cannot be parsed.
-    fn with_added_str(&self, py: Python<'_>, fragment: &str) -> PyResult<Self> {
-        py.detach(|| -> Result<Self, String> {
-            let added = PolicySet::from_str(fragment).map_err(|e| format!("{:#}", e))?;
-            let mut merged = self.inner.clone();
-            // `rename_duplicates = true`: renumber the fragment's per-parse ids that
-            // collide with the base, so a surface-syntax fragment (whose ids always
-            // restart at `policy0`) composes with a non-empty base exactly as the
-            // concatenated text would. cedar updates any internal references to the
-            // renamed ids. The only error path left is a malformed fragment, caught
-            // by `from_str` above; `merge` itself cannot fail here.
-            merged.merge(&added, true).map_err(|e| e.to_string())?;
-            Ok(PyPolicySet { inner: merged })
-        })
-        .map_err(pyo3::exceptions::PyValueError::new_err)
+    fn with_added_str(&self, fragment: &str) -> PyResult<Self> {
+        let added = PolicySet::from_str(fragment)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("{:#}", e)))?;
+        let mut merged = self.inner.clone();
+        // `rename_duplicates = true`: renumber the fragment's per-parse ids that
+        // collide with the base, so a surface-syntax fragment (whose ids always
+        // restart at `policy0`) composes with a non-empty base exactly as the
+        // concatenated text would. cedar updates any internal references to the
+        // renamed ids. The only error path left is a malformed fragment, caught
+        // by `from_str` above; `merge` itself cannot fail here.
+        merged
+            .merge(&added, true)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+        Ok(PyPolicySet { inner: merged })
     }
 
     /// Return a NEW `PolicySet` handle: this set with `links` applied. Each
@@ -622,12 +655,12 @@ impl PyPolicySet {
     /// A `template_id` may be either the template's literal Cedar id or, when no
     /// template has that literal id, the value of a template's `@id` annotation
     /// (see `with_linked` / `resolve_template_id` for the resolution rule).
-    fn with_linked_batch(&self, py: Python<'_>, links: Vec<Bound<'_, PyDict>>) -> PyResult<Self> {
+    fn with_linked_batch(&self, links: Vec<Bound<'_, PyDict>>) -> PyResult<Self> {
         let mut specs = Vec::with_capacity(links.len());
         for link in &links {
             specs.push(parse_link_spec(link)?);
         }
-        py.detach(|| self.apply_links(specs))
+        self.apply_links(specs)
     }
 
     /// Return a NEW `PolicySet` handle with a single template linked. Sugar for
@@ -644,7 +677,6 @@ impl PyPolicySet {
     #[pyo3(signature = (template_id, new_id, values))]
     fn with_linked(
         &self,
-        py: Python<'_>,
         template_id: &str,
         new_id: &str,
         values: &Bound<'_, PyDict>,
@@ -654,7 +686,7 @@ impl PyPolicySet {
             new_id.to_string(),
             parse_slot_values(values)?,
         );
-        py.detach(|| self.apply_links(vec![spec]))
+        self.apply_links(vec![spec])
     }
 
     /// The templates in this set — the linkable `?principal` / `?resource`
@@ -725,15 +757,12 @@ impl PyPolicySet {
     ///
     /// :raises ValueError: if `link_id` is not a template-linked policy in the
     ///     set (no such id, or it names a static policy or a template).
-    fn without_linked(&self, py: Python<'_>, link_id: &str) -> PyResult<Self> {
-        py.detach(|| -> Result<Self, String> {
-            let mut merged = self.inner.clone();
-            merged
-                .unlink(PolicyId::new(link_id))
-                .map_err(|e| format!("unlink failed: {e}"))?;
-            Ok(PyPolicySet { inner: merged })
-        })
-        .map_err(pyo3::exceptions::PyValueError::new_err)
+    fn without_linked(&self, link_id: &str) -> PyResult<Self> {
+        let mut merged = self.inner.clone();
+        merged
+            .unlink(PolicyId::new(link_id))
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("unlink failed: {e}")))?;
+        Ok(PyPolicySet { inner: merged })
     }
 
     /// The number of policies in the set.
@@ -932,12 +961,21 @@ impl PyEntities {
     /// construction time. Parse errors are raised eagerly here rather than
     /// folded into an authorization result.
     ///
+    /// :param release_gil: keyword-only, default `False`. When `True`, the GIL
+    ///     is released while Cedar parses the entities (and a `schema` given as
+    ///     text), so other Python threads run during the call. If another
+    ///     thread is busy, the call typically waits about
+    ///     `sys.getswitchinterval()` (5 ms by default), sometimes longer, to
+    ///     resume. Reading the arguments and building the result still hold the
+    ///     GIL. On free-threaded builds the call detaches from the interpreter,
+    ///     so garbage collection and other stop-the-world events do not wait on
+    ///     it.
     /// :raises ValueError: if the entities (or schema) cannot be parsed, or the
     ///     entities do not conform to `schema`.
     #[staticmethod]
-    #[pyo3(signature = (s, schema = None))]
-    fn from_json_str(py: Python<'_>, s: &str, schema: Option<SchemaArg>) -> PyResult<Self> {
-        py.detach(|| {
+    #[pyo3(signature = (s, schema = None, *, release_gil = false))]
+    fn from_json_str(py: Python<'_>, s: &str, schema: Option<SchemaArg>, release_gil: bool) -> PyResult<Self> {
+        maybe_detach(py, release_gil, || {
             let mut slot: Option<Schema> = None;
             let schema_ref = resolve_schema_arg_eager(&schema, &mut slot)?;
             match Entities::from_json_str(s, schema_ref) {
@@ -958,18 +996,16 @@ impl PyEntities {
     /// :raises ValueError: if `delta` (or `schema`) cannot be parsed, if a
     ///     `delta` uid duplicates a base uid, or the result violates `schema`.
     #[pyo3(signature = (delta, schema = None))]
-    fn with_added_json_str(&self, py: Python<'_>, delta: &str, schema: Option<SchemaArg>) -> PyResult<Self> {
-        py.detach(|| {
-            let mut slot: Option<Schema> = None;
-            let schema_ref = resolve_schema_arg_eager(&schema, &mut slot)?;
-            // Clone keeps the handle immutable; `add_entities_from_json_str` consumes
-            // the clone and parses only `delta` (not the base) before recomputing the
-            // transitive closure.
-            match self.inner.clone().add_entities_from_json_str(delta, schema_ref) {
-                Ok(inner) => Ok(PyEntities { inner }),
-                Err(e) => Err(pyo3::exceptions::PyValueError::new_err(format!("{:#}", e))),
-            }
-        })
+    fn with_added_json_str(&self, delta: &str, schema: Option<SchemaArg>) -> PyResult<Self> {
+        let mut slot: Option<Schema> = None;
+        let schema_ref = resolve_schema_arg_eager(&schema, &mut slot)?;
+        // Clone keeps the handle immutable; `add_entities_from_json_str` consumes
+        // the clone and parses only `delta` (not the base) before recomputing the
+        // transitive closure.
+        match self.inner.clone().add_entities_from_json_str(delta, schema_ref) {
+            Ok(inner) => Ok(PyEntities { inner }),
+            Err(e) => Err(pyo3::exceptions::PyValueError::new_err(format!("{:#}", e))),
+        }
     }
 
     /// The number of entities in the set.
@@ -1041,14 +1077,23 @@ impl PySchema {
 impl PySchema {
     /// Parse a `Schema` from Cedar human-readable schema syntax.
     ///
+    /// :param release_gil: keyword-only, default `False`. When `True`, the GIL
+    ///     is released while Cedar parses and compiles the schema, so other
+    ///     Python threads run during the call. If another thread is busy, the
+    ///     call typically waits about `sys.getswitchinterval()` (5 ms by
+    ///     default), sometimes longer, to resume. Reading the arguments and
+    ///     building the result still hold the GIL. On free-threaded builds the
+    ///     call detaches from the interpreter, so garbage collection and other
+    ///     stop-the-world events do not wait on it.
     /// :raises ValueError: if the schema cannot be parsed.
     #[staticmethod]
-    fn from_str(py: Python<'_>, s: &str) -> PyResult<Self> {
+    #[pyo3(signature = (s, *, release_gil = false))]
+    fn from_str(py: Python<'_>, s: &str, release_gil: bool) -> PyResult<Self> {
         // Parse to a fragment first (rather than `Schema::from_str`) so the
         // handle can render itself; `Schema`'s own constructors go through the
         // same fragment parse internally. Schema warnings are dropped, as
         // `Schema::from_str` drops them.
-        py.detach(|| match SchemaFragment::from_cedarschema_str(s) {
+        maybe_detach(py, release_gil, || match SchemaFragment::from_cedarschema_str(s) {
             Ok((fragment, _warnings)) => Self::from_fragment(fragment),
             Err(e) => Err(pyo3::exceptions::PyValueError::new_err(format!("{:#}", e))),
         })
@@ -1056,10 +1101,19 @@ impl PySchema {
 
     /// Parse a `Schema` from the Cedar JSON schema format.
     ///
+    /// :param release_gil: keyword-only, default `False`. When `True`, the GIL
+    ///     is released while Cedar parses and compiles the schema, so other
+    ///     Python threads run during the call. If another thread is busy, the
+    ///     call typically waits about `sys.getswitchinterval()` (5 ms by
+    ///     default), sometimes longer, to resume. Reading the arguments and
+    ///     building the result still hold the GIL. On free-threaded builds the
+    ///     call detaches from the interpreter, so garbage collection and other
+    ///     stop-the-world events do not wait on it.
     /// :raises ValueError: if the JSON schema cannot be parsed.
     #[staticmethod]
-    fn from_json_str(py: Python<'_>, s: &str) -> PyResult<Self> {
-        py.detach(|| match SchemaFragment::from_json_str(s) {
+    #[pyo3(signature = (s, *, release_gil = false))]
+    fn from_json_str(py: Python<'_>, s: &str, release_gil: bool) -> PyResult<Self> {
+        maybe_detach(py, release_gil, || match SchemaFragment::from_json_str(s) {
             Ok(fragment) => Self::from_fragment(fragment),
             Err(e) => Err(pyo3::exceptions::PyValueError::new_err(format!("{:#}", e))),
         })
@@ -1331,54 +1385,36 @@ impl RequestArgs {
 
 #[pyfunction]
 #[pyo3(signature = (request, policies, entities, schema = None, verbose = false,))]
-fn is_authorized(py: Python<'_>,
-                 request: Bound<'_, PyDict>,
+fn is_authorized(request: Bound<'_, PyDict>,
                  policies: PoliciesArg,
                  entities: EntitiesArg,
                  schema: Option<SchemaArg>,
                  verbose: Option<bool>)
                  -> PyResult<String> {
-    Ok(is_authorized_batch(py, vec![request], policies, entities, schema, verbose)?[0].clone())
+    Ok(is_authorized_batch(vec![request], policies, entities, schema, verbose)?[0].clone())
 }
 
 #[pyfunction]
 #[pyo3(signature = (requests, policies, entities, schema = None, verbose = false,))]
-fn is_authorized_batch(py: Python<'_>,
-                       requests: Vec<Bound<'_, PyDict>>,
+fn is_authorized_batch(requests: Vec<Bound<'_, PyDict>>,
                        policies: PoliciesArg,
                        entities: EntitiesArg,
                        schema: Option<SchemaArg>,
                        verbose: Option<bool>)
                        -> PyResult<Vec<String>> {
-    // Reading the request dicts needs the GIL; everything after it is Rust work.
-    let mut request_args_vec: Vec<RequestArgs> = Vec::new();
-    for request in requests.iter() {
-        request_args_vec.push(to_request_args(request)?);
-    }
-    let verbose = verbose.unwrap_or(false);
-    Ok(py.detach(|| authorize_batch(&request_args_vec, &policies, &entities, &schema, verbose)))
-}
-
-/// The body of `is_authorized_batch` once the requests are Rust values. It
-/// touches no Python objects, so it runs with the GIL released.
-fn authorize_batch(request_args_vec: &[RequestArgs],
-                   policies: &PoliciesArg,
-                   entities: &EntitiesArg,
-                   schema: &Option<SchemaArg>,
-                   verbose: bool)
-                   -> Vec<String> {
     // CLI AuthorizeArgs: https://github.com/cedar-policy/cedar/blob/main/cedar-policy-cli/src/lib.rs#L183
+    let verbose = verbose.unwrap_or(false);
     if verbose {
         //println!("requests: {}", requests);
-        match policies {
+        match &policies {
             PoliciesArg::Source(p) => println!("policies: {}", p),
             PoliciesArg::Handle(_) => println!("policies: <pre-parsed PolicySet handle>"),
         }
-        match entities {
+        match &entities {
             EntitiesArg::Source(e) => println!("entities: {}", e),
             EntitiesArg::Handle(_) => println!("entities: <pre-parsed Entities handle>"),
         }
-        match schema {
+        match &schema {
             None => println!("schema: <none>"),
             Some(SchemaArg::Source(s)) => println!("schema: {}", s),
             Some(SchemaArg::Handle(_)) => println!("schema: <pre-parsed Schema handle>"),
@@ -1391,24 +1427,30 @@ fn authorize_batch(request_args_vec: &[RequestArgs],
     // parse policies (or borrow the pre-parsed PolicySet handle, skipping the parse)
     // When a pre-parsed handle is supplied, parse_policies_duration_micros measures only
     // the (near-zero) borrow, not the original parse; policies_pre_parsed flags this.
-    let policies_pre_parsed = matches!(policies, PoliciesArg::Handle(_));
+    let policies_pre_parsed = matches!(&policies, PoliciesArg::Handle(_));
     let t_parse_policies = Instant::now();
     let mut policy_set_slot: Option<PolicySet> = None;
     let policy_set = policies.resolve(&mut policy_set_slot, &mut errs, verbose);
     let t_parse_policies_duration = t_parse_policies.elapsed();
 
     // parse schema (or borrow the pre-parsed Schema handle, skipping the parse)
-    let schema_pre_parsed = matches!(schema, Some(SchemaArg::Handle(_)));
+    let schema_pre_parsed = matches!(&schema, Some(SchemaArg::Handle(_)));
     let t_start_schema = Instant::now();
     let mut schema_slot: Option<Schema> = None;
-    let schema_ref = resolve_schema_arg(schema, &mut schema_slot, &mut errs, verbose);
+    let schema_ref = resolve_schema_arg(&schema, &mut schema_slot, &mut errs, verbose);
     let t_parse_schema_duration = t_start_schema.elapsed();
     // load entities (or borrow the pre-parsed Entities handle, skipping the parse)
-    let entities_pre_parsed = matches!(entities, EntitiesArg::Handle(_));
+    let entities_pre_parsed = matches!(&entities, EntitiesArg::Handle(_));
     let t_load_entities = Instant::now();
     let mut entities_slot: Option<Entities> = None;
     let entities = entities.resolve(&mut entities_slot, schema_ref, &mut errs);
     let t_load_entities_duration = t_load_entities.elapsed();
+
+    // build a list of RequestArgs
+    let mut request_args_vec: Vec<RequestArgs> = Vec::new();
+    for request in requests.iter() {
+        request_args_vec.push(to_request_args(request)?);
+    }
 
     let mut responses_vec: Vec<String> = Vec::new();
 
@@ -1460,7 +1502,7 @@ fn authorize_batch(request_args_vec: &[RequestArgs],
 
     }
 
-    responses_vec
+    Ok(responses_vec)
 }
 
 fn make_authz_result_for_errors(errs: &Vec<Error>) -> String {
@@ -1747,13 +1789,14 @@ fn lookup_id_annotation(policy_set: &PolicySet, pid: &PolicyId) -> Option<String
 }
 
 /// Validate Cedar policies against a schema and return a JSON result.
+/// `release_gil=True` runs the validation with the GIL released.
 #[pyfunction]
-#[pyo3(signature = (policies, schema))]
-fn validate_policies(py: Python<'_>, policies: String, schema: SchemaArg) -> String {
-    py.detach(|| validate(&policies, &schema))
+#[pyo3(signature = (policies, schema, *, release_gil = false))]
+fn validate_policies(py: Python<'_>, policies: String, schema: SchemaArg, release_gil: bool) -> String {
+    maybe_detach(py, release_gil, || validate(&policies, &schema))
 }
 
-/// The body of `validate_policies`. It touches no Python objects, so it runs
+/// The body of `validate_policies`. It touches no Python objects, so it can run
 /// with the GIL released.
 fn validate(policies: &str, schema: &SchemaArg) -> String {
     // Parse policies
@@ -1856,7 +1899,6 @@ struct PartialAuthzResponse {
 #[pyfunction]
 #[pyo3(signature = (request, policies, entities, schema = None, verbose = false))]
 fn is_authorized_partial(
-    py: Python<'_>,
     request: HashMap<String, Option<String>>,
     policies: PoliciesArg,
     entities: EntitiesArg,
@@ -1864,34 +1906,22 @@ fn is_authorized_partial(
     verbose: Option<bool>,
 ) -> String {
     let verbose = verbose.unwrap_or(false);
-    py.detach(|| authorize_partial(&request, &policies, &entities, &schema, verbose))
-}
-
-/// The body of `is_authorized_partial`. It touches no Python objects, so it
-/// runs with the GIL released.
-fn authorize_partial(
-    request: &HashMap<String, Option<String>>,
-    policies: &PoliciesArg,
-    entities: &EntitiesArg,
-    schema: &Option<SchemaArg>,
-    verbose: bool,
-) -> String {
     let mut errs: Vec<Error> = vec![];
 
-    let policies_pre_parsed = matches!(policies, PoliciesArg::Handle(_));
+    let policies_pre_parsed = matches!(&policies, PoliciesArg::Handle(_));
     let t_parse_policies = Instant::now();
     let mut policy_set_slot: Option<PolicySet> = None;
     let policy_set = policies.resolve(&mut policy_set_slot, &mut errs, verbose);
     let t_parse_policies_duration = t_parse_policies.elapsed();
 
-    let schema_pre_parsed = matches!(schema, Some(SchemaArg::Handle(_)));
+    let schema_pre_parsed = matches!(&schema, Some(SchemaArg::Handle(_)));
     let t_start_schema = Instant::now();
     let mut schema_slot: Option<Schema> = None;
-    let schema_ref = resolve_schema_arg(schema, &mut schema_slot, &mut errs, verbose);
+    let schema_ref = resolve_schema_arg(&schema, &mut schema_slot, &mut errs, verbose);
     let t_parse_schema_duration = t_start_schema.elapsed();
     let schema = schema_ref;
 
-    let entities_pre_parsed = matches!(entities, EntitiesArg::Handle(_));
+    let entities_pre_parsed = matches!(&entities, EntitiesArg::Handle(_));
     let t_load_entities = Instant::now();
     let entities = entities.resolve_partial(schema, &mut errs);
     let t_load_entities_duration = t_load_entities.elapsed();
