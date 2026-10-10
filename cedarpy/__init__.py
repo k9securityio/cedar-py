@@ -41,18 +41,30 @@ class Entities:
         self._inner = _inner
 
     @staticmethod
-    def from_json_str(s: str, schema: Union[str, dict, Schema, None] = None) -> "Entities":
+    def from_json_str(s: str,
+                      schema: Union[str, dict, Schema, None] = None,
+                      *,
+                      release_gil: bool = False) -> "Entities":
         """Parse an ``Entities`` handle from a Cedar JSON entities document.
 
         :param schema: (optional) a Cedar schema as a JSON/Cedar string, a
             dict, or a pre-parsed ``Schema`` handle; when supplied, the entities
             are validated against it.
+        :param release_gil: (keyword-only, default ``False``) when ``True``,
+            the GIL is released while Cedar parses the entities (and a
+            ``schema`` given as text), so other Python threads run during the
+            call. If another thread is busy, the call typically waits about
+            ``sys.getswitchinterval()`` (5 ms by default), sometimes longer, to
+            resume. Reading the arguments and building the result still hold
+            the GIL. On free-threaded builds the call detaches from the
+            interpreter, so garbage collection and other stop-the-world events
+            do not wait on it. See ``docs/guides/threads-and-asyncio-guide.md``.
         :raises ValueError: if the entities (or schema) cannot be parsed, or the
             entities do not conform to ``schema``.
         """
         if isinstance(schema, dict):
             schema = json.dumps(schema)
-        return Entities(_internal.Entities.from_json_str(s, schema))
+        return Entities(_internal.Entities.from_json_str(s, schema, release_gil=release_gil))
 
     def with_added_json_str(self, delta: str, schema: Union[str, dict, Schema, None] = None) -> "Entities":
         """Return a NEW ``Entities`` handle: this base plus the entities parsed
@@ -532,7 +544,9 @@ def is_authorized_partial(request: dict,
 
 
 def validate_policies(policies: str,
-                      schema: Union[str, dict, Schema]) -> ValidationResult:
+                      schema: Union[str, dict, Schema],
+                      *,
+                      release_gil: bool = False) -> ValidationResult:
     """Validate Cedar policies against a schema.
 
     This function checks that policies are valid according to the provided schema,
@@ -542,6 +556,14 @@ def validate_policies(policies: str,
     :param policies: Cedar policies as a string
     :param schema: Cedar schema (JSON dict, JSON string, Cedar schema string,
         or a pre-parsed ``Schema`` handle)
+    :param release_gil: (keyword-only, default ``False``) when ``True``, the
+        GIL is released while Cedar validates, so other Python threads run
+        during the call. If another thread is busy, the call typically waits
+        about ``sys.getswitchinterval()`` (5 ms by default), sometimes longer,
+        to resume. Reading the arguments and building the result still hold
+        the GIL. On free-threaded builds the call detaches from the
+        interpreter, so garbage collection and other stop-the-world events do
+        not wait on it. See ``docs/guides/threads-and-asyncio-guide.md``.
 
     :returns: ValidationResult with validation_passed boolean and list of errors
 
@@ -557,6 +579,6 @@ def validate_policies(policies: str,
         schema = json.dumps(schema)
     # str and Schema handles pass through directly to Rust's SchemaArg
 
-    result_str = _internal.validate_policies(policies, schema)
+    result_str = _internal.validate_policies(policies, schema, release_gil=release_gil)
     result_dict = json.loads(result_str)
     return ValidationResult(result_dict)
