@@ -206,6 +206,10 @@ class ReleaseGilResultsTestCase(unittest.TestCase):
             Schema.from_json_str("{}", True)
         with self.assertRaises(TypeError):
             validate_policies("", "{}", True)
+        # `Entities.from_json_str` is a Python wrapper, not a `#[pymethods]`,
+        # so it needs its own check.
+        with self.assertRaises(TypeError):
+            Entities.from_json_str("[]", None, True)
 
 
 SCHEMA = """
