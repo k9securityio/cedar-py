@@ -54,15 +54,16 @@ Measure with your workload. The trade-off depends on how long the call takes, wh
 
 ## Measurements
 
-CPython 3.11, macOS on Apple silicon, release build.
+CPython 3.11.15 on macOS 26.4 with an Apple M4 Max (16 cores), release build.
 Each call ran repeatedly for 2 seconds on its own, then beside one Python thread running a CPU-bound loop.
+Each latency is the median per-call duration over its 2-second run.
 The Alone column is each call's duration with no other Python thread running.
 The Beside a CPU-bound thread column is each call's duration while that busy thread runs.
 The last column is how much of its solo rate the busy thread kept.
 Values a little over 100% are possibly measurement noise.
 The schemas are a synthetic one with 150 actions and 2,114 action × principal type × resource type combinations,
-a 230-byte schema with two entity types, and the 142 KB production schema from the case study.
-                                                
+a 230-byte schema with two entity types, and the 142 KB schema from the case study.
+
 | Call | `release_gil` | Alone | Beside a CPU-bound thread | Busy thread's share of its solo rate |
 |---|---|---|---|---|
 | `validate_policies`, one two-slot template, 2,114-combination schema | `False` | 22.8 ms | 29.2 ms | 21% |
@@ -91,32 +92,40 @@ With the default, it takes the same time beside the busy thread as alone, and th
 With `release_gil=True`, it gives up the GIL on every call and waits about 6 ms to get it back, so it goes from microseconds to about 6 ms.
 
 To produce results for a similar workload on your own machine, run `make benchmark-gil` from a cedar-py source checkout.
-It runs `tests/benchmark/gil_contention.py`, which measures these calls and `PolicySet.from_str` with synthetic inputs in place of the production schema.
+It runs `tests/benchmark/gil_contention.py`, which measures these calls and `PolicySet.from_str` with synthetic inputs in place of the case study's schema.
 It reports the median per-call duration and the environment it ran in.
 
 ## Case study: validating policies in an asyncio service
 
 A multi-tenant API service runs one asyncio event loop per process and authorizes with Cedar.
-Its schema has 147 actions and about 2,150 action × principal type × resource type combinations.
+The schema in this test is the service's built-in catalog: 124 actions and 2,030 action × principal type × resource type combinations, 142 KB as Cedar JSON.
 Its 49 built-in policies are all two-slot templates: `permit(principal in ?principal, action in [...], resource in ?resource)`.
 It caches validation results by policy and schema digest.
 Validation still runs inside the server when a policy is published and after a cedarpy upgrade changes the schema digest.
-Validating all 49 takes about 2.9 seconds on the machine above, about 60 ms per policy.
+Validating all 49 takes about 3 seconds on the machine above, about 60 ms per policy.
 Each template takes about 9 times longer to validate than the same policy written as a static policy.
 
-This test validates all 49 in `asyncio.to_thread` while the event loop runs a ticker every 5 ms and records how late each tick runs.
-The worst event-loop delay in the table is the largest of those delays.
+This test validates all 49 in `asyncio.to_thread`.
+Meanwhile, a ticker coroutine on the event loop sleeps 5 ms in a loop and records how much longer than 5 ms each sleep took.
+The worst event-loop delay in the table is the largest of those.
 In the busy case, the loop also runs a handler that does 1 ms of CPU work and yields, in place of request handling.
+The last column counts the slices it completed while the policies validated.
+Each value is the median of 5 runs.
 
 | Event loop | `release_gil` | Validation took | Worst event-loop delay | Handler slices run meanwhile |
 |---|---|---|---|---|
-| idle | `False` | 2.83 s | 182 ms | — |
-| idle | `True` | 2.83 s | 1 ms | — |
-| busy | `False` | 2.89 s | 176 ms | 103 |
-| busy | `True` | 2.87 s | 2 ms | 2,876 |
+| idle | `False` | 3.13 s | 197 ms | — |
+| idle | `True` | 3.09 s | 3 ms | — |
+| busy | `False` | 3.12 s | 196 ms | 53 |
+| busy | `True` | 3.03 s | 5 ms | 2,952 |
 
-With the default, the event loop stops for the length of each validation call, up to 182 ms, and runs about 100 handler slices while the policies validate.
-With `release_gil=True`, its worst delay is 2 ms and it runs about 28 times as many.
-Validation takes the same time.
+With the default, the event loop stops for the length of each validation call, up to 197 ms, and runs about one handler slice between calls.
+With `release_gil=True`, its worst delay is 5 ms and it runs about 56 times as many slices.
+Validation takes about the same time.
 The event loop gives up the GIL each time it polls for I/O.
 So the validation thread got the GIL back without waiting out the switch interval, unlike when running beside a thread that never blocks, as in the measurements above.
+
+To reproduce this shape on your own machine, run `make benchmark-gil-asyncio` from a cedar-py source checkout.
+It runs `tests/benchmark/gil_asyncio.py`, which validates 49 synthetic two-slot templates against the 2,114-combination schema from the Measurements table, in place of the service's schema and policies, and reports the same columns.
+Each synthetic template validates in about 23 ms, so its delays are shorter than the service's.
+On the machine above, its worst event-loop delay was 45 ms with the default and 1 ms with `release_gil=True`, and the busy loop ran 53 handler slices with the default and 1,146 with `release_gil=True`.

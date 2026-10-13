@@ -101,6 +101,16 @@ benchmark-gil:
 	maturin develop --release ;\
 	python3 tests/benchmark/gil_contention.py
 
+.PHONY: benchmark-gil-asyncio
+# Validate synthetic two-slot templates in asyncio.to_thread on an idle and a
+# busy event loop; prints the case study table's shape for
+# docs/guides/threads-and-asyncio-guide.md. Takes ~30 s.
+benchmark-gil-asyncio:
+	@echo Measuring the event loop while templates validate
+	set -e ;\
+	maturin develop --release ;\
+	python3 tests/benchmark/gil_asyncio.py
+
 .PHONY: benchmark-baseline
 # Synthesize a median-of-N baseline JSON from BASELINE_STATE's committed
 # historical runs (default v4_12_0; override with BASELINE_STATE=...). Output

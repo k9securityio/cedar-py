@@ -12,9 +12,6 @@ import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 
-from parameterized import parameterized
-
-import cedarpy
 from cedarpy import Entities, PolicySet, Schema, policies_to_pst, validate_policies
 
 
@@ -156,14 +153,16 @@ class GilReleaseTestCase(unittest.TestCase):
         self.assertGreater(duration, 0.04, f"{name} took {duration * 1000:.0f} ms; enlarge its workload")
         return duration, stall
 
-    @parameterized.expand([(name,) for name in CASES])
-    def test_release_gil_lets_other_threads_run(self, name: str) -> None:
-        duration, stall = self._measure(name, self.released)
-        self.assertLess(
-            stall,
-            duration / 2,
-            f"{name}(release_gil=True) stalled another thread for {stall * 1000:.0f} ms of a {duration * 1000:.0f} ms call",
-        )
+    def test_release_gil_lets_other_threads_run(self) -> None:
+        for name in CASES:
+            with self.subTest(name):
+                duration, stall = self._measure(name, self.released)
+                self.assertLess(
+                    stall,
+                    duration / 2,
+                    f"{name}(release_gil=True) stalled another thread for {stall * 1000:.0f} ms "
+                    f"of a {duration * 1000:.0f} ms call",
+                )
 
     def test_default_holds_the_gil(self) -> None:
         duration, stall = self._measure("validate_policies", self.held)
