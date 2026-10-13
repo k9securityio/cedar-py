@@ -11,6 +11,8 @@
 - `test_benchmark_authorize.py` — the benchmarks themselves.
 - `run_current.sh` — runs N=5 release-mode benchmarks at HEAD; writes ephemeral per-run JSONs into `results/current/` (gitignored).
 - `capture_history.sh` — captures release-mode runs at each historical commit; writes native pytest-benchmark JSONs.
+- `gil_contention.py` — measures the `release_gil` entry points alone and beside a CPU-bound Python thread, and prints the Measurements table in `docs/guides/threads-and-asyncio-guide.md` (`make benchmark-gil`). It reports the median per-call duration. It is a script, not a pytest module, so `pytest tests/benchmark` does not collect it.
+- `gil_asyncio.py` — validates synthetic two-slot templates in `asyncio.to_thread` on an idle and a busy event loop, and prints a table in the shape of the case study in `docs/guides/threads-and-asyncio-guide.md` (`make benchmark-gil-asyncio`). It reports medians over `--runs` runs. Like `gil_contention.py`, it is a script that pytest does not collect.
 - `aggregate.py` — three modes:
   - default (`--phase ab`): reads native JSONs, writes per-commit summary JSONs and `HISTORY.md`.
   - `--build-baseline-from <state>`: synthesizes a median-of-N baseline JSON from a committed historical state.

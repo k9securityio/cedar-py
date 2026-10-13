@@ -34,24 +34,31 @@ class PolicySet:
     """
 
     @staticmethod
-    def from_str(s: str) -> "PolicySet":
-        """Parse a ``PolicySet`` from Cedar policy text. Raises ``ValueError`` on parse errors."""
+    def from_str(s: str, *, release_gil: bool = ...) -> "PolicySet":
+        """Parse a ``PolicySet`` from Cedar policy text. Raises ``ValueError`` on parse errors.
+
+        ``release_gil=True`` releases the GIL while Cedar parses.
+        """
         ...
 
     @staticmethod
-    def from_json_str(s: str) -> "PolicySet":
-        """Parse a ``PolicySet`` from the Cedar JSON (EST) policy format. Raises ``ValueError`` on parse errors."""
+    def from_json_str(s: str, *, release_gil: bool = ...) -> "PolicySet":
+        """Parse a ``PolicySet`` from the Cedar JSON (EST) policy format. Raises ``ValueError`` on parse errors.
+
+        ``release_gil=True`` releases the GIL while Cedar parses.
+        """
         ...
 
     @staticmethod
-    def from_pst(node: "cedarpy.pst.PolicySet") -> "PolicySet":
+    def from_pst(node: "cedarpy.pst.PolicySet", *, release_gil: bool = ...) -> "PolicySet":
         """Build a ``PolicySet`` from the typed nodes ``policies_to_pst`` returns.
 
         The inverse of ``PolicySet.to_pst``, so a policy set can be read as
         nodes, rewritten, and handed back to the engine. Raises ``TypeError``
         if given anything other than a ``cedarpy.pst`` node, and ``ValueError``
         if the nodes do not form a valid policy set, including expression
-        nesting deeper than 100 levels.
+        nesting deeper than 100 levels. ``release_gil=True`` releases the GIL
+        while Cedar builds the set; reading the nodes still holds it.
         """
         ...
 
@@ -190,13 +197,16 @@ class Entities:
     """
 
     @staticmethod
-    def from_json_str(s: str, schema: Union[str, "Schema", None] = ...) -> "Entities":
+    def from_json_str(
+        s: str, schema: Union[str, "Schema", None] = ..., *, release_gil: bool = ...
+    ) -> "Entities":
         """Parse an ``Entities`` handle from a Cedar JSON entities document.
 
         ``schema`` (optional) is Cedar schema text or JSON, or a pre-parsed
         ``Schema`` handle; when supplied, the entities are validated against it.
         Raises ``ValueError`` if the entities (or schema) cannot be parsed, or
-        the entities violate ``schema``.
+        the entities violate ``schema``. ``release_gil=True`` releases the GIL
+        while Cedar parses.
         """
         ...
 
@@ -243,13 +253,19 @@ class Schema:
     """
 
     @staticmethod
-    def from_str(s: str) -> "Schema":
-        """Parse a ``Schema`` from Cedar human-readable schema syntax. Raises ``ValueError`` on parse errors."""
+    def from_str(s: str, *, release_gil: bool = ...) -> "Schema":
+        """Parse a ``Schema`` from Cedar human-readable schema syntax. Raises ``ValueError`` on parse errors.
+
+        ``release_gil=True`` releases the GIL while Cedar parses and compiles.
+        """
         ...
 
     @staticmethod
-    def from_json_str(s: str) -> "Schema":
-        """Parse a ``Schema`` from the Cedar JSON schema format. Raises ``ValueError`` on parse errors."""
+    def from_json_str(s: str, *, release_gil: bool = ...) -> "Schema":
+        """Parse a ``Schema`` from the Cedar JSON schema format. Raises ``ValueError`` on parse errors.
+
+        ``release_gil=True`` releases the GIL while Cedar parses and compiles.
+        """
         ...
 
     def __str__(self) -> str: ...
@@ -298,4 +314,4 @@ def policies_from_json_str(s: str) -> str: ...
 def policies_to_pst(s: str) -> "cedarpy.pst.PolicySet": ...
 
 
-def validate_policies(policies: str, schema: Union[str, "Schema"]) -> str: ...
+def validate_policies(policies: str, schema: Union[str, "Schema"], *, release_gil: bool = ...) -> str: ...

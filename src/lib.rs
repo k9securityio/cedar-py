@@ -11,6 +11,13 @@ use cedar_policy::pst;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+/// Run `f` with the GIL released when the caller passed `release_gil=True`,
+/// and with it held otherwise. Both paths take the same `Send` closure, so the
+/// compiler rejects a closure that touches a Python object on either path.
+fn maybe_detach<T: Send>(py: Python<'_>, release_gil: bool, f: impl FnOnce() -> T + Send) -> T {
+    if release_gil { py.detach(f) } else { f() }
+}
+
 /// Echo (return) the input string
 #[pyfunction]
 #[pyo3(signature = (s))]
@@ -495,26 +502,44 @@ impl PyPolicySet {
     /// Unlike passing policy text to `is_authorized`, parse errors are raised
     /// eagerly here rather than folded into an authorization result.
     ///
+    /// :param release_gil: keyword-only, default `False`. When `True`, the GIL
+    ///     is released while Cedar parses, so other Python threads run during
+    ///     the call. If another thread is busy, the call typically waits about
+    ///     `sys.getswitchinterval()` (5 ms by default), sometimes longer, to
+    ///     resume. Reading the arguments and building the result still hold the
+    ///     GIL. On free-threaded builds the call detaches from the interpreter,
+    ///     so garbage collection and other stop-the-world events do not wait on
+    ///     it.
     /// :raises ValueError: if the policies cannot be parsed.
     #[staticmethod]
-    fn from_str(s: &str) -> PyResult<Self> {
-        match PolicySet::from_str(s) {
+    #[pyo3(signature = (s, *, release_gil = false))]
+    fn from_str(py: Python<'_>, s: &str, release_gil: bool) -> PyResult<Self> {
+        maybe_detach(py, release_gil, || match PolicySet::from_str(s) {
             Ok(inner) => Ok(PyPolicySet { inner }),
             // `{:#}` renders the full, span-annotated set of parse errors,
             // matching the detail of the string-authorization parse path.
             Err(e) => Err(pyo3::exceptions::PyValueError::new_err(format!("{:#}", e))),
-        }
+        })
     }
 
     /// Parse a `PolicySet` from the Cedar JSON (EST) policy format.
     ///
+    /// :param release_gil: keyword-only, default `False`. When `True`, the GIL
+    ///     is released while Cedar parses, so other Python threads run during
+    ///     the call. If another thread is busy, the call typically waits about
+    ///     `sys.getswitchinterval()` (5 ms by default), sometimes longer, to
+    ///     resume. Reading the arguments and building the result still hold the
+    ///     GIL. On free-threaded builds the call detaches from the interpreter,
+    ///     so garbage collection and other stop-the-world events do not wait on
+    ///     it.
     /// :raises ValueError: if the JSON policies cannot be parsed.
     #[staticmethod]
-    fn from_json_str(s: &str) -> PyResult<Self> {
-        match PolicySet::from_json_str(s) {
+    #[pyo3(signature = (s, *, release_gil = false))]
+    fn from_json_str(py: Python<'_>, s: &str, release_gil: bool) -> PyResult<Self> {
+        maybe_detach(py, release_gil, || match PolicySet::from_json_str(s) {
             Ok(inner) => Ok(PyPolicySet { inner }),
             Err(e) => Err(pyo3::exceptions::PyValueError::new_err(format!("{:#}", e))),
-        }
+        })
     }
 
     /// Return this policy set as the typed nodes from `cedarpy.pst`.
@@ -541,16 +566,25 @@ impl PyPolicySet {
     /// The inverse of `PolicySet.to_pst`, so a policy set can be read as
     /// nodes, rewritten, and handed back to the engine.
     ///
+    /// :param release_gil: keyword-only, default `False`. When `True`, the GIL
+    ///     is released while Cedar builds the set, so other Python threads run
+    ///     during that part of the call. Reading the `cedarpy.pst` nodes still
+    ///     holds the GIL. If another thread is busy, the call typically waits
+    ///     about `sys.getswitchinterval()` (5 ms by default), sometimes longer,
+    ///     to resume. On free-threaded builds the call detaches from the
+    ///     interpreter, so garbage collection and other stop-the-world events
+    ///     do not wait on it.
     /// :raises TypeError: if given something other than a `cedarpy.pst` node.
     /// :raises ValueError: if the nodes do not form a valid policy set,
     ///     including expression nesting deeper than 100 levels.
     #[staticmethod]
-    fn from_pst(node: &Bound<'_, PyAny>) -> PyResult<Self> {
+    #[pyo3(signature = (node, *, release_gil = false))]
+    fn from_pst(py: Python<'_>, node: &Bound<'_, PyAny>, release_gil: bool) -> PyResult<Self> {
         let pst_set = read_policy_set(node)?;
-        match PolicySet::from_pst(pst_set) {
+        maybe_detach(py, release_gil, || match PolicySet::from_pst(pst_set) {
             Ok(inner) => Ok(PyPolicySet { inner }),
             Err(e) => Err(pyo3::exceptions::PyValueError::new_err(format!("{:#}", e))),
-        }
+        })
     }
 
     /// Return a NEW `PolicySet` handle: this (compiled) set plus the policies
@@ -927,17 +961,28 @@ impl PyEntities {
     /// construction time. Parse errors are raised eagerly here rather than
     /// folded into an authorization result.
     ///
+    /// :param release_gil: keyword-only, default `False`. When `True`, the GIL
+    ///     is released while Cedar parses the entities (and a `schema` given as
+    ///     text), so other Python threads run during the call. If another
+    ///     thread is busy, the call typically waits about
+    ///     `sys.getswitchinterval()` (5 ms by default), sometimes longer, to
+    ///     resume. Reading the arguments and building the result still hold the
+    ///     GIL. On free-threaded builds the call detaches from the interpreter,
+    ///     so garbage collection and other stop-the-world events do not wait on
+    ///     it.
     /// :raises ValueError: if the entities (or schema) cannot be parsed, or the
     ///     entities do not conform to `schema`.
     #[staticmethod]
-    #[pyo3(signature = (s, schema = None))]
-    fn from_json_str(s: &str, schema: Option<SchemaArg>) -> PyResult<Self> {
-        let mut slot: Option<Schema> = None;
-        let schema_ref = resolve_schema_arg_eager(&schema, &mut slot)?;
-        match Entities::from_json_str(s, schema_ref) {
-            Ok(inner) => Ok(PyEntities { inner }),
-            Err(e) => Err(pyo3::exceptions::PyValueError::new_err(format!("{:#}", e))),
-        }
+    #[pyo3(signature = (s, schema = None, *, release_gil = false))]
+    fn from_json_str(py: Python<'_>, s: &str, schema: Option<SchemaArg>, release_gil: bool) -> PyResult<Self> {
+        maybe_detach(py, release_gil, || {
+            let mut slot: Option<Schema> = None;
+            let schema_ref = resolve_schema_arg_eager(&schema, &mut slot)?;
+            match Entities::from_json_str(s, schema_ref) {
+                Ok(inner) => Ok(PyEntities { inner }),
+                Err(e) => Err(pyo3::exceptions::PyValueError::new_err(format!("{:#}", e))),
+            }
+        })
     }
 
     /// Return a NEW `Entities` handle: this base set plus the entities parsed
@@ -1032,28 +1077,46 @@ impl PySchema {
 impl PySchema {
     /// Parse a `Schema` from Cedar human-readable schema syntax.
     ///
+    /// :param release_gil: keyword-only, default `False`. When `True`, the GIL
+    ///     is released while Cedar parses and compiles the schema, so other
+    ///     Python threads run during the call. If another thread is busy, the
+    ///     call typically waits about `sys.getswitchinterval()` (5 ms by
+    ///     default), sometimes longer, to resume. Reading the arguments and
+    ///     building the result still hold the GIL. On free-threaded builds the
+    ///     call detaches from the interpreter, so garbage collection and other
+    ///     stop-the-world events do not wait on it.
     /// :raises ValueError: if the schema cannot be parsed.
     #[staticmethod]
-    fn from_str(s: &str) -> PyResult<Self> {
+    #[pyo3(signature = (s, *, release_gil = false))]
+    fn from_str(py: Python<'_>, s: &str, release_gil: bool) -> PyResult<Self> {
         // Parse to a fragment first (rather than `Schema::from_str`) so the
         // handle can render itself; `Schema`'s own constructors go through the
         // same fragment parse internally. Schema warnings are dropped, as
         // `Schema::from_str` drops them.
-        match SchemaFragment::from_cedarschema_str(s) {
+        maybe_detach(py, release_gil, || match SchemaFragment::from_cedarschema_str(s) {
             Ok((fragment, _warnings)) => Self::from_fragment(fragment),
             Err(e) => Err(pyo3::exceptions::PyValueError::new_err(format!("{:#}", e))),
-        }
+        })
     }
 
     /// Parse a `Schema` from the Cedar JSON schema format.
     ///
+    /// :param release_gil: keyword-only, default `False`. When `True`, the GIL
+    ///     is released while Cedar parses and compiles the schema, so other
+    ///     Python threads run during the call. If another thread is busy, the
+    ///     call typically waits about `sys.getswitchinterval()` (5 ms by
+    ///     default), sometimes longer, to resume. Reading the arguments and
+    ///     building the result still hold the GIL. On free-threaded builds the
+    ///     call detaches from the interpreter, so garbage collection and other
+    ///     stop-the-world events do not wait on it.
     /// :raises ValueError: if the JSON schema cannot be parsed.
     #[staticmethod]
-    fn from_json_str(s: &str) -> PyResult<Self> {
-        match SchemaFragment::from_json_str(s) {
+    #[pyo3(signature = (s, *, release_gil = false))]
+    fn from_json_str(py: Python<'_>, s: &str, release_gil: bool) -> PyResult<Self> {
+        maybe_detach(py, release_gil, || match SchemaFragment::from_json_str(s) {
             Ok(fragment) => Self::from_fragment(fragment),
             Err(e) => Err(pyo3::exceptions::PyValueError::new_err(format!("{:#}", e))),
-        }
+        })
     }
 
     /// The schema rendered to Cedar schema syntax (suitable for
@@ -1726,11 +1789,18 @@ fn lookup_id_annotation(policy_set: &PolicySet, pid: &PolicyId) -> Option<String
 }
 
 /// Validate Cedar policies against a schema and return a JSON result.
+/// `release_gil=True` runs the validation with the GIL released.
 #[pyfunction]
-#[pyo3(signature = (policies, schema))]
-fn validate_policies(policies: String, schema: SchemaArg) -> String {
+#[pyo3(signature = (policies, schema, *, release_gil = false))]
+fn validate_policies(py: Python<'_>, policies: String, schema: SchemaArg, release_gil: bool) -> String {
+    maybe_detach(py, release_gil, || validate(&policies, &schema))
+}
+
+/// The body of `validate_policies`. It touches no Python objects, so it can run
+/// with the GIL released.
+fn validate(policies: &str, schema: &SchemaArg) -> String {
     // Parse policies
-    let policy_set = match PolicySet::from_str(&policies) {
+    let policy_set = match PolicySet::from_str(policies) {
         Ok(pset) => pset,
         Err(parse_errors) => {
             let result = ValidationResultSer {
