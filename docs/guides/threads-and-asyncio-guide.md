@@ -99,7 +99,7 @@ It reports the median per-call duration and the environment it ran in.
 
 A multi-tenant API service runs one asyncio event loop per process and authorizes with Cedar.
 The schema in this test is the service's built-in catalog: 124 actions and 2,030 action × principal type × resource type combinations, 142 KB as Cedar JSON.
-Its 49 built-in policies are all two-slot templates: `permit(principal in ?principal, action in [...], resource in ?resource)`.
+The service's 49 built-in policies are all two-slot templates: `permit(principal in ?principal, action in [...], resource in ?resource)`.
 It caches validation results by policy and schema digest.
 Validation still runs inside the server when a policy is published and after a cedarpy upgrade changes the schema digest.
 Validating all 49 takes about 3 seconds on the machine above, about 60 ms per policy.
