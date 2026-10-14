@@ -1,0 +1,59 @@
+# Weekly Dependabot alert triage with k9 Security's Reachable Risk action.
+# The agent scores each open alert, publishes a report to the job summary
+# and the `dependency-triage-report` artifact, and opens a fix PR for an
+# actionable finding only after `test-command` passes on the bumped branch.
+# It never merges or dismisses anything.
+#
+# Hand-maintained like CI.yml: every `uses:` ref is pinned to a commit SHA
+# with the version tag in a trailing comment, and the lint-workflows
+# (zizmor) job in CI.yml audits this file too. Bump pins per the cooldown
+# policy in CLAUDE.md ("Version-selection policy").
+name: dependency-alert-triage
+
+on:
+  schedule:
+    - cron: "0 14 * * 2" # weekly, Tuesday 14:00 UTC
+  workflow_dispatch:
+
+# Fix branches and PRs are pushed with the GH_TRIAGE_TOKEN PAT, not the
+# Actions token, so no write permission is needed here.
+permissions:
+  contents: read # checkout of this repo (manifests, submodules)
+  copilot-requests: write # authenticates Copilot CLI via the Actions token
+
+# Never let two triage runs overlap (a manual dispatch during the cron run
+# would double-score and double-file); queue instead of cancel so a running
+# triage always finishes and reports.
+concurrency:
+  group: dependency-alert-triage
+  cancel-in-progress: false
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      # Same interpreter as CI's unit tests. The action checks out the repo
+      # itself, so no checkout step here.
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: 3.13
+      - uses: k9securityio/reachable-risk-triage-action@07b6743c2b19bd640a29080b2f51ea1bb869e457  # v1.0.1
+        with:
+          k9-client-id: ${{ secrets.K9_CLIENT_ID }}
+          k9-client-secret: ${{ secrets.K9_CLIENT_SECRET }}
+          github-token: ${{ secrets.GH_TRIAGE_TOKEN }}
+          agent: copilot
+          model: claude-sonnet-5
+          # deps-command builds cedarpy into .venv, so the agent can inspect
+          # both installed trees: Python packages in .venv and Rust crate
+          # sources in ~/.cargo/registry. The action's checkout skips
+          # submodules; tests/unit/test_validate.py reads fixtures from
+          # third_party/cedar. The action runs each command in a fresh
+          # shell, so test-command re-activates .venv.
+          deps-command: >-
+            git submodule update --init --depth 1 third_party/cedar &&
+            python -m venv .venv && . .venv/bin/activate &&
+            pip install -r requirements.txt -r requirements.dev.txt &&
+            maturin develop
+          test-command: ". .venv/bin/activate && pytest"
