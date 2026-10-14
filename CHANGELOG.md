@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [4.12.2] - 2026-10-14
+
 ### Added
 
 - With the new keyword-only `release_gil=True`, other Python threads run while Cedar validates policies or builds a handle, so `asyncio.to_thread` keeps an event loop responsive during those calls ([#120](https://github.com/k9securityio/cedar-py/issues/120)). The default, `False`, holds the GIL for the whole call, as before. These entry points take it:
@@ -144,7 +146,8 @@ Dependency update release. No functional or API changes — Cedar Policy engine 
 
 - Performance regression test suite built on `pytest-benchmark` ([#39](https://github.com/k9securityio/cedar-py/pull/39))
 
-[Unreleased]: https://github.com/k9securityio/cedar-py/compare/v4.12.1...HEAD
+[Unreleased]: https://github.com/k9securityio/cedar-py/compare/v4.12.2...HEAD
+[4.12.2]: https://github.com/k9securityio/cedar-py/compare/v4.12.1...v4.12.2
 [4.12.1]: https://github.com/k9securityio/cedar-py/compare/v4.12.0...v4.12.1
 [4.12.0]: https://github.com/k9securityio/cedar-py/compare/v4.8.7...v4.12.0
 [4.8.7]: https://github.com/k9securityio/cedar-py/compare/v4.8.6...v4.8.7
