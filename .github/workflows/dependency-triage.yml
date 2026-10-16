@@ -14,6 +14,9 @@ on:
   schedule:
     - cron: "0 14 * * 2" # weekly, Tuesday 14:00 UTC
   workflow_dispatch:
+  # TEMPORARY: pre-merge test of the triage run. Remove before merging.
+  push:
+    branches: [chore/reachable-risk-triage]
 
 # Fix branches and PRs are pushed with the GH_TRIAGE_TOKEN PAT, not the
 # Actions token, so no write permission is needed here.
