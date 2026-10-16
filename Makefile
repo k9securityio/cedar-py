@@ -1,3 +1,7 @@
+# Recipes use bash features (`source`). Without this, make runs them with
+# /bin/sh, which is dash on Ubuntu, and `make venv-dev` fails there.
+SHELL := /bin/bash
+
 VCS_REF := $(shell git rev-parse --short HEAD)
 
 .PHONY: venv-dev

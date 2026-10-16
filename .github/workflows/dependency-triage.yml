@@ -1,0 +1,68 @@
+# Weekly Dependabot alert triage with k9 Security's Reachable Risk action.
+# The agent scores each open alert, publishes a report to the job summary
+# and the `dependency-triage-report` artifact, and opens a fix PR for an
+# actionable finding only after `test-command` passes on the bumped branch.
+# It never merges or dismisses anything.
+#
+# Hand-maintained like CI.yml: every `uses:` ref is pinned to a commit SHA
+# with the version tag in a trailing comment, and the lint-workflows
+# (zizmor) job in CI.yml audits this file too. Bump pins per the cooldown
+# policy in CLAUDE.md ("Version-selection policy").
+name: dependency-alert-triage
+
+on:
+  schedule:
+    - cron: "0 14 * * 2" # weekly, Tuesday 14:00 UTC
+  workflow_dispatch:
+
+# Fix branches and PRs are pushed with the GH_TRIAGE_TOKEN PAT, not the
+# Actions token, so no write permission is needed here.
+permissions:
+  contents: read # checkout of this repo (manifests, submodules)
+  copilot-requests: write # authenticates Copilot CLI via the Actions token
+
+# Never let two triage runs overlap (a manual dispatch during the cron run
+# would double-score and double-file); queue instead of cancel so a running
+# triage always finishes and reports.
+concurrency:
+  group: dependency-alert-triage
+  cancel-in-progress: false
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      # Same interpreter as CI's unit tests. The action checks out the repo
+      # itself, so no checkout step here.
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: 3.13
+      # v1.0.2 was adopted one day after release, an explicit exception to
+      # the 7-day cooldown (first-party action, verified by its release).
+      # Under v1.0.1, Copilot CLI 1.0.80 blocked the k9 MCP server on the
+      # org-billed path (`1 MCP server was blocked by policy: 'k9'`), so
+      # nothing could be scored.
+      - uses: k9securityio/reachable-risk-triage-action@d40f4e01651ab8274a2cecbb66e0f43fba9bb839  # v1.0.2
+        with:
+          k9-client-id: ${{ secrets.K9_CLIENT_ID }}
+          k9-client-secret: ${{ secrets.K9_CLIENT_SECRET }}
+          github-token: ${{ secrets.GH_TRIAGE_TOKEN }}
+          agent: copilot
+          model: claude-sonnet-5
+          # deps-command installs both trees the agent inspects: Python
+          # packages in venv-dev (the developer venv) and Rust crate sources
+          # in target/vendor (gitignored). Both are the `dependency_sources`
+          # in .k9security/risk-context.yaml, which must name paths inside
+          # the repo, so `cargo vendor` rather than ~/.cargo/registry.
+          # The action's checkout skips submodules;
+          # tests/unit/test_validate.py reads fixtures from third_party/cedar.
+          # The Makefile's `submodules` target would also clone the large
+          # integration-test corpus, which the unit tests don't use. The
+          # action runs each command in a fresh shell, so test-command
+          # re-activates venv-dev; `make quick` rebuilds cedarpy, then runs
+          # pytest.
+          deps-command: >-
+            git submodule update --init --depth 1 third_party/cedar &&
+            make venv-dev && cargo vendor --quiet target/vendor > /dev/null
+          test-command: ". venv-dev/bin/activate && make quick"

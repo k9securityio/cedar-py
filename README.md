@@ -614,6 +614,10 @@ pip install --force-reinstall /path/to/cedar-py/target/wheels/ccedarpy-*.whl
 ```
 
 
+## Dependency alert triage
+
+Every week, cedar-py triages its open Dependabot alerts with k9 Security's [Reachable Risk](https://www.k9security.io/lp/reachable-risk-8/) GitHub Action. The action scores each alert by whether cedar-py's code can reach the vulnerable dependency. It opens a fix PR only after the test suite passes on the upgraded dependency. The workflow is [`.github/workflows/dependency-triage.yml`](.github/workflows/dependency-triage.yml).
+
 ## Contributing
 
 This project is in its early stages and contributions are welcome. Please check the project's GitHub [issues](https://github.com/k9securityio/cedar-py/issues) for work we've already identified.
