@@ -1,0 +1,199 @@
+# Risk context for cedar-py, read by k9 Reachable Risk scoring
+# (.github/workflows/dependency-triage.yml).
+#
+# cedar-py is a LIBRARY. It has no deployment of its own: the shipped wheel
+# runs inside the applications that import it. The `runtime` context below
+# therefore describes a representative consumer, chosen by the maintainer,
+# not a service this project operates.
+#
+# Cargo.lock IS LISTED IN BOTH CONTEXTS, deliberately. Dependabot reports
+# every Cargo.lock alert with scope `runtime`, so `dependency_scope` cannot
+# split it, yet the lock holds three kinds of crate (`cargo tree`, 4.12.2):
+#   - 77 compiled into the shipped extension (cedar-policy, pyo3, serde, ...)
+#   - ~50 that only run at build time: build scripts and their deps
+#     (lalrpop, sha3/keccak, pyo3-build-config, cc, ...)
+#   - ~30 locked but never compiled for any target (optional features:
+#     time, jiff, wasm-bindgen, schemars, ...)
+# Each alert is bound to both contexts, and scoring decides per context
+# whether the crate's code is loaded there. `cargo tree -e normal` (shipped)
+# versus `cargo tree -e normal,build` (shipped plus build scripts) is the
+# evidence.
+schema_version: "1.1"
+
+project:
+  name: cedar-py
+  summary: >-
+    `cedarpy`, a Python package (PyPI) that wraps the Rust cedar-policy
+    authorization engine via PyO3. Applications call it to parse, validate
+    and format Cedar policies and to make authorization decisions.
+  open_source: true
+
+reviewed:
+  date: "2026-10-16"
+  by: Stephen Kuenzli <skuenzli@k9security.io>
+  commit: 675886e2
+
+execution_contexts:
+  - id: runtime
+    default: true
+    applies_to: >-
+      Code that executes inside a consuming application: the compiled native
+      extension (cedarpy._internal, built from /src and the crates it links
+      from Cargo.lock) and the pure-Python `cedarpy` package. cedarpy has no
+      runtime Python dependencies (requirements.txt is empty). Cargo.lock is
+      shared with the `build` context; see the header.
+    paths:
+      include:
+        - /Cargo.toml
+        - /Cargo.lock
+        - /requirements.txt
+        - /src/**
+        - /cedarpy/**
+      exclude:
+        - /third_party/**
+    # Populated by the triage workflow's deps-command (`cargo vendor
+    # target/vendor`); /target is gitignored.
+    dependency_sources:
+      - /target/vendor
+    asset_context:
+      asset_criticality: tier_1
+      network_exposure: public_auth
+      data_classification: confidential
+      lifecycle: production
+    deployment: |
+      Representative consumer (maintainer's choice): an internet-facing,
+      multi-tenant application. Users authenticate, and the application calls
+      cedarpy on the request path to decide access to customers' data. A wrong
+      Allow exposes confidential customer data; a crash or hang in the
+      authorization call denies service to that application.
+
+      The consumer follows the Cedar best practices: the application derives
+      the principal from its authentication layer, loads entities and their
+      parents from its own data stores, normalizes identifiers before calling
+      cedarpy, and validates customer-authored policies against its own schema
+      before storing them. Customers' authorized administrators author Cedar
+      policies scoped to their own tenant's resources. So cedarpy's parser,
+      validator, formatter, PST conversion and evaluator all process
+      attacker-authored policy text, and the evaluator processes
+      end-user-influenced request, context and attribute values.
+
+  - id: build
+    applies_to: >-
+      Build, test and release tooling: maturin and the Python dev tools
+      (requirements.dev.txt, pyproject.toml's dev extra and build-system),
+      Rust build scripts and their crates (Cargo.lock, shared with `runtime`),
+      the unit and integration tests, and the GitHub Actions in CI and the
+      release job. None of it ships in the wheel.
+    paths:
+      include:
+        - /Cargo.toml
+        - /Cargo.lock
+        - /pyproject.toml
+        - /requirements.dev.txt
+        - /Makefile
+        - /tests/**
+        - /.github/workflows/**
+      exclude:
+        - /third_party/**
+    # venv-dev is built by `make venv-dev` on the triage runner (Python 3.13).
+    dependency_sources:
+      - /target/vendor
+      - /venv-dev/lib/python3.13/site-packages
+    frameworks:
+      - name: maturin
+        roles: [build]
+      - name: pytest
+        roles: [test]
+    asset_context:
+      asset_criticality: tier_2
+      network_exposure: internal
+      data_classification: internal
+      lifecycle: dev
+    deployment: |
+      GitHub-hosted CI runners (network egress, no inbound listener) and
+      developer machines. Inputs are the project's own source, tests and
+      fixtures; no end-user input reaches this context.
+
+      CI runs on `pull_request`, including pull requests from outside
+      contributors' forks, with a read-only token and no secrets. The release
+      job runs only on a tag, behind the `pypi-release` environment's manual
+      approval, and publishes the wheels to PyPI via OIDC trusted publishing.
+      Build-time crates and maturin execute in that job, so a compromised
+      build dependency could alter a published wheel. The weekly triage job
+      holds GH_TRIAGE_TOKEN (contents and pull-request write on this repo).
+
+trust_model:
+  untrusted_actors:
+    - id: tenant-policy-author
+      description: >-
+        An authenticated customer administrator in the consuming application,
+        authorized to manage their own tenant's permissions.
+      controls:
+        - Cedar policy text in their tenant, free-form or template-linked,
+          which the application validates against its schema before storing.
+          Parsed, validated, formatted and evaluated by cedarpy.
+        - Which principals and resources fill template slots, within their
+          tenant.
+    - id: end-user
+      description: >-
+        An authenticated user of a customer tenant in the consuming
+        application.
+      controls:
+        - Which action and resource they request; the application normalizes
+          the identifiers.
+        - Request context values (request parameters, headers).
+        - Attribute values on entities they author (names, tags,
+          descriptions), which reach policy evaluation.
+  trusted_actors:
+    - id: application-developers
+      description: >-
+        The consuming application's developers and operators. They author the
+        schema and platform-level policies and scope each tenant's policy
+        store.
+      rationale: >-
+        They configure the application by design; a vulnerability reachable
+        only through their inputs is not attacker-controlled.
+    - id: application-auth-and-data-layer
+      description: >-
+        The application's authentication layer and data stores, which supply
+        the principal's identity, entity UIDs and the parent hierarchy.
+      rationale: >-
+        Per the Cedar best practices the application builds these from its own
+        records, not from client-supplied entity documents.
+    - id: cedar-py-maintainers
+      description: Maintainers who merge to main and approve releases.
+      rationale: >-
+        They own the build and release path; outside contributions land only
+        through reviewed pull requests.
+  out_of_scope_actors:
+    - id: unauthenticated-internet-party
+      description: >-
+        In the representative consumer, every request is authenticated before
+        it reaches an authorization call, so an unauthenticated party supplies
+        no cedarpy input.
+
+accepted_risks:
+  # Confirmed by Stephen Kuenzli, 2026-10-16.
+  - id: caller-bounds-input-size
+    cwe: CWE-770
+    capability: >-
+      A caller can pass policies, templates, entities, schemas and requests of
+      any size to cedarpy, which spends CPU time and memory in proportion to
+      that size. cedarpy imposes no input-size or time limit of its own.
+    actor: >-
+      tenant-policy-author and end-user, through the consuming application
+    scope: >-
+      Resource use that grows linearly (or near-linearly) with input size
+      only. Does NOT cover stack exhaustion from deeply nested input
+      (cedarpy bounds PST conversion at MAX_EXPR_DEPTH = 100 because overflow
+      aborts the process), super-linear or exponential blowups in parsing,
+      validation or evaluation, panics, crashes, or memory corruption. Those
+      are scored on their merits.
+    evidence: >-
+      No size or time checks on the public entry points in src/lib.rs; the
+      only input bound is MAX_EXPR_DEPTH (src/lib.rs). The consuming
+      application is responsible for limiting input size.
+    rationale: >-
+      cedarpy is a library; the application knows its own size budgets and
+      enforces them before calling cedarpy.
+    bounds: impact_only
