@@ -45,15 +45,16 @@ jobs:
           github-token: ${{ secrets.GH_TRIAGE_TOKEN }}
           agent: copilot
           model: claude-sonnet-5
-          # deps-command builds cedarpy into .venv, so the agent can inspect
-          # both installed trees: Python packages in .venv and Rust crate
-          # sources in ~/.cargo/registry. The action's checkout skips
-          # submodules; tests/unit/test_validate.py reads fixtures from
-          # third_party/cedar. The action runs each command in a fresh
-          # shell, so test-command re-activates .venv.
+          # deps-command installs both trees the agent inspects: Python
+          # packages in venv-dev (the developer venv) and Rust crate sources
+          # in ~/.cargo/registry. The action's checkout skips submodules;
+          # tests/unit/test_validate.py reads fixtures from third_party/cedar.
+          # The Makefile's `submodules` target would also clone the large
+          # integration-test corpus, which the unit tests don't use. The
+          # action runs each command in a fresh shell, so test-command
+          # re-activates venv-dev; `make quick` rebuilds cedarpy, then runs
+          # pytest.
           deps-command: >-
             git submodule update --init --depth 1 third_party/cedar &&
-            python -m venv .venv && . .venv/bin/activate &&
-            pip install -r requirements.txt -r requirements.dev.txt &&
-            maturin develop
-          test-command: ". .venv/bin/activate && pytest"
+            make venv-dev && cargo fetch
+          test-command: ". venv-dev/bin/activate && make quick"
