@@ -20,5 +20,9 @@
 # Dependency + automation policy (Dependabot config).
 /.github/dependabot.yml   @skuenzli
 
+# Reachable Risk context — steers dependency-alert triage verdicts,
+# including accepted risks. Changes here change how alerts are scored.
+/.k9security/              @skuenzli
+
 # This file itself — changing code ownership requires the owner's review.
 /.github/CODEOWNERS        @skuenzli
