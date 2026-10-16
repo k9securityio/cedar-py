@@ -41,7 +41,12 @@ jobs:
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
         with:
           python-version: 3.13
-      - uses: k9securityio/reachable-risk-triage-action@07b6743c2b19bd640a29080b2f51ea1bb869e457  # v1.0.1
+      # v1.0.2 was adopted one day after release, an explicit exception to
+      # the 7-day cooldown (first-party action, verified by its release).
+      # Under v1.0.1, Copilot CLI 1.0.80 blocked the k9 MCP server on the
+      # org-billed path (`1 MCP server was blocked by policy: 'k9'`), so
+      # nothing could be scored.
+      - uses: k9securityio/reachable-risk-triage-action@d40f4e01651ab8274a2cecbb66e0f43fba9bb839  # v1.0.2
         with:
           k9-client-id: ${{ secrets.K9_CLIENT_ID }}
           k9-client-secret: ${{ secrets.K9_CLIENT_SECRET }}
