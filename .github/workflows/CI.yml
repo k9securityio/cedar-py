@@ -36,11 +36,19 @@ jobs:
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
         with:
           python-version: 3.13
+      # Build an explicit interpreter list, not `--find-interpreter`. The
+      # manylinux build images are unpinned and gain interpreters over time;
+      # the aarch64 cross image added PyPy 3.12 (2026-11), which pyo3 0.29.2
+      # cannot compile for, and that broke the build. Add a new interpreter
+      # here deliberately, once pyo3 supports it.
       - name: Build wheels
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b  # v1.51.0
         with:
           target: ${{ matrix.platform.target }}
-          args: --release --out dist --find-interpreter
+          args: >-
+            --release --out dist
+            -i python3.10 python3.11 python3.12 python3.13 python3.14 python3.15
+            python3.14t python3.15t pypy3.11
           manylinux: auto
       - name: Upload wheels
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
@@ -152,7 +160,7 @@ jobs:
     strategy:
       matrix:
         platform:
-          - runner: macos-14
+          - runner: macos-15
             target: aarch64
           - runner: macos-15-intel
             target: x86_64
