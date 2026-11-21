@@ -10,7 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- Use `Schema.entity_types()` and `Schema.actions()` to inspect a parsed schema. Pass an action UID to `Schema.resources_for_action(action)` to look up its resource types.
+- Use `Schema.entity_types()` and `Schema.actions()` to inspect a parsed schema. Pass an action UID to `Schema.resources_for_action(action)` to look up its resource types. ([#125](https://github.com/k9securityio/cedar-py/pull/125)). Thanks [@h0rv](https://github.com/h0rv)!
 
 ### Changed
 
