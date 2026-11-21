@@ -6,7 +6,7 @@ use anyhow::{Context as _, Error, Result};
 use cedar_policy::*;
 use cedar_policy_formatter::{Config, policies_str_to_pretty};
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyString, PyTuple};
+use pyo3::types::{PyDict, PyFrozenSet, PyFrozenSetBuilder, PyString, PyTuple};
 use cedar_policy::pst;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -1060,6 +1060,22 @@ struct PySchema {
     fragment: SchemaFragment,
 }
 
+fn schema_entity_type<'py>(class: &Bound<'py, PyAny>, ty: &EntityTypeName) -> PyResult<Bound<'py, PyAny>> {
+    let namespace = PyTuple::new(class.py(), ty.namespace_components().collect::<Vec<_>>())?;
+    class.call1((ty.basename(), namespace))
+}
+
+fn schema_entity_types<'py, 'a>(
+    class: &Bound<'py, PyAny>,
+    types: impl Iterator<Item = &'a EntityTypeName>,
+) -> PyResult<Bound<'py, PyFrozenSet>> {
+    let mut result = PyFrozenSetBuilder::new(class.py())?;
+    for ty in types {
+        result.add(schema_entity_type(class, ty)?)?;
+    }
+    Ok(result.finalize())
+}
+
 impl PySchema {
     /// Compile `fragment` into the validated `Schema` and build the handle,
     /// keeping the fragment for `__str__`. Compilation errors (e.g. an
@@ -1117,6 +1133,51 @@ impl PySchema {
             Ok(fragment) => Self::from_fragment(fragment),
             Err(e) => Err(pyo3::exceptions::PyValueError::new_err(format!("{:#}", e))),
         })
+    }
+
+    /// Return the schema's entity types as a frozenset of `cedarpy.pst.EntityType` values.
+    fn entity_types<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyFrozenSet>> {
+        let class = py.import("cedarpy.pst")?.getattr("EntityType")?;
+        schema_entity_types(&class, self.inner.entity_types())
+    }
+
+    /// Return the schema's actions as a frozenset of `cedarpy.pst.EntityUid` values.
+    fn actions<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyFrozenSet>> {
+        let pst = py.import("cedarpy.pst")?;
+        let entity_type = pst.getattr("EntityType")?;
+        let entity_uid = pst.getattr("EntityUid")?;
+        let mut result = PyFrozenSetBuilder::new(py)?;
+        for action in self.inner.actions() {
+            let ty = schema_entity_type(&entity_type, action.type_name())?;
+            result.add(entity_uid.call1((ty, action.id().unescaped()))?)?;
+        }
+        Ok(result.finalize())
+    }
+
+    /// Return the resource types for a `cedarpy.pst.EntityUid` as a frozenset.
+    /// Return `None` for an unknown action and an empty frozenset for one with no resource types.
+    fn resources_for_action<'py>(
+        &self,
+        py: Python<'py>,
+        action: &Bound<'py, PyAny>,
+    ) -> PyResult<Option<Bound<'py, PyFrozenSet>>> {
+        let pst = py.import("cedarpy.pst")?;
+        if !action.is_instance(&pst.getattr("EntityUid")?)? {
+            return Err(read_error("EntityUid", &node_kind(action)?));
+        }
+        let entity_type = pst.getattr("EntityType")?;
+        let ty = action.getattr("type")?;
+        if !ty.is_instance(&entity_type)? {
+            return Err(read_error("EntityType", &node_kind(&ty)?));
+        }
+        // Cedar 4.12 converts a PST type to an EntityTypeName via its AST type.
+        // This preserves the name components without rendering and parsing Cedar text.
+        let ty = cedar_policy_core::ast::EntityType::from(read_entity_type_fields(&ty)?);
+        let id: String = action.getattr("id")?.extract()?;
+        let uid = EntityUid::from_type_name_and_id(ty.into(), EntityId::new(id));
+        self.inner.resources_for_action(&uid)
+            .map(|types| schema_entity_types(&entity_type, types))
+            .transpose()
     }
 
     /// The schema rendered to Cedar schema syntax (suitable for
@@ -2111,6 +2172,10 @@ fn read_entity_type(obj: &Bound<'_, PyAny>) -> PyResult<pst::EntityType> {
     if kind != "EntityType" {
         return Err(read_error("EntityType", &kind));
     }
+    read_entity_type_fields(obj)
+}
+
+fn read_entity_type_fields(obj: &Bound<'_, PyAny>) -> PyResult<pst::EntityType> {
     let basename: String = obj.getattr("basename")?.extract()?;
     let namespace: Vec<String> = obj.getattr("namespace")?.extract()?;
     let name = if namespace.is_empty() {

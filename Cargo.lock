@@ -187,6 +187,7 @@ version = "4.12.2"
 dependencies = [
  "anyhow",
  "cedar-policy",
+ "cedar-policy-core",
  "cedar-policy-formatter",
  "pyo3",
  "serde",
