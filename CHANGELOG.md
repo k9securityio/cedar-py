@@ -10,7 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- `is_authorized`, `is_authorized_batch`, and `is_authorized_partial` accept `cedarpy.pst.EntityUid` values for the principal, action, and resource.
+- `is_authorized`, `is_authorized_batch`, and `is_authorized_partial` accept `cedarpy.pst.EntityUid` values for the principal, action, and resource. ([#126](https://github.com/k9securityio/cedar-py/pull/126)). Thanks [@h0rv](https://github.com/h0rv)!
 
 ### Changed
 
