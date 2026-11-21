@@ -106,6 +106,8 @@ def is_authorized_partial(
 
 ## How unknowns work
 
+Pass a known principal, action, or resource as a Cedar string or a `cedarpy.pst.EntityUid`. With the typed form, pass the ID as it is, without adding Cedar quotes or escapes.
+
 A request field becomes unknown in two ways:
 
 1. **Omit it** from the request dict entirely.

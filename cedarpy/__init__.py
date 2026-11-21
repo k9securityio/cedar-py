@@ -240,11 +240,9 @@ def is_authorized(request: dict,
     """Evaluate whether the request is authorized given the parameters.
 
     :param request is a Cedar-style request object containing a principal, action, resource, and (optional) context.
-    Each of ``principal``, ``action``, ``resource`` may be either a Cedar surface-syntax string
-    (e.g. ``'User::"alice"'``) or a structured dict with ``type`` and ``id`` keys
-    (e.g. ``{"type": "User", "id": "alice"}``). The dict form sidesteps Cedar's surface-syntax
-    constraints and is required for entity ids containing characters Cedar's parser rejects as
-    "needs to be normalized" (e.g. embedded newlines). It mirrors cedar-java's ``JsonEUID`` form.
+    Each UID may be a ``cedarpy.pst.EntityUid``, a Cedar string (e.g. ``'User::"alice"'``),
+    or a dict (e.g. ``{"type": "User", "id": "alice"}``). The typed and dict forms
+    preserve the raw id, including embedded newlines.
     ``context`` may be a dict (preferred) or a string.
     :param policies the Cedar policies, as either a str containing all the policies in the PolicySet
     or a pre-parsed ``PolicySet`` handle (``PolicySet.from_str(...)``). Reusing a handle across calls
@@ -276,10 +274,7 @@ def is_authorized_batch(requests: List[dict],
     independently and results in an AuthzResult per request.
 
     :param requests is list of Cedar-style request objects containing a principal, action, resource, and (optional) context.
-    Each of ``principal``, ``action``, ``resource`` may be either a Cedar surface-syntax string
-    (e.g. ``'User::"alice"'``) or a structured dict with ``type`` and ``id`` keys
-    (e.g. ``{"type": "User", "id": "alice"}``). See ``is_authorized`` for details. ``context`` may
-    be a dict (preferred) or a string.
+    Each UID accepts the same forms as ``is_authorized``. ``context`` may be a dict or a string.
     :param policies the Cedar policies, as either a str containing all the policies in the PolicySet
     or a pre-parsed ``PolicySet`` handle (``PolicySet.from_str(...)``). Reusing a handle across calls
     avoids re-parsing the policies on every call; see the ``PolicySet`` class for details.
@@ -496,7 +491,7 @@ def is_authorized_partial(request: dict,
         values is not a guarantee that those values are well-typed.
 
     :param request is a Cedar-style request object containing a principal, action, resource, and (optional) context;
-    context may be a dict (preferred) or a string.
+    a known UID may be a Cedar string or a ``cedarpy.pst.EntityUid``. Context may be a dict or a string.
     Unlike is_authorized (which defaults an absent context to empty),
     an absent or None context here is treated as unknown and will residualize;
     pass context={} for an explicitly empty context.

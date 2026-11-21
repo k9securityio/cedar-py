@@ -73,6 +73,10 @@ assert authz_result['allowed']
 ```
 The [`AuthzResult`](cedarpy/__init__.py) class also provides diagnostics and metrics for the access evaluation request. 
 
+In single, batch, and partial requests, you can pass a `cedarpy.pst.EntityUid` for the
+principal, action, or resource. For example, `pst.EntityUid(pst.EntityType("User", ("App",)), user_id)`
+identifies an `App::User` and preserves `user_id` without quoting or escaping it.
+
 See the [unit tests](tests/unit) for more examples of use and expected behavior.
 
 ### Authorize a batch of requests
