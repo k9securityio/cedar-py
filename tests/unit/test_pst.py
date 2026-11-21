@@ -494,6 +494,54 @@ class TestPolicySetRoundTrip(unittest.TestCase):
             EnginePolicySet.from_pst(broken)
 
 
+class TestPolicySetEffectFilter(unittest.TestCase):
+    def test_keeps_matching_bodies_and_links_without_changing_the_handle(self):
+        handle = cedarpy.PolicySet.from_str(
+            '@id("forbid") permit(principal == User::"p", action, resource);'
+            '@id("permit") forbid(principal, action, resource is Doc);'
+            'permit(principal == ?principal, action, resource);'
+            'forbid(principal, action, resource == ?resource);'
+            'forbid(principal == ?principal, action, resource);'
+        ).with_linked("policy2", "p", {"?principal": 'User::"p"'}).with_linked(
+            "policy3", "f", {"?resource": {"type": "App::Doc", "id": 'a"\nb'}}
+        )
+        original = handle.to_pst()
+        for effect, static_id, templates, link_id in (
+            ("permit", "policy0", ("policy2",), "p"),
+            ("forbid", "policy1", ("policy3", "policy4"), "f"),
+        ):
+            with self.subTest(effect=effect):
+                selected = handle.to_pst(effect=effect)
+                self.assertEqual(selected.static_policies, {static_id: original.static_policies[static_id]})
+                self.assertEqual(selected.templates, {k: original.templates[k] for k in templates})
+                self.assertEqual(selected.template_links, tuple(l for l in original.template_links if l.new_id == link_id))
+                self.assertEqual(cedarpy.PolicySet.from_pst(selected).to_pst(), selected)
+        self.assertEqual(handle.to_pst(effect=None), original)
+
+    def test_unrepresentable_opposite_effect_is_not_converted(self):
+        for principal in ('principal', 'principal == ?principal'):
+            with self.subTest(principal=principal):
+                handle = cedarpy.PolicySet.from_str(
+                    'forbid(principal, action, resource);'
+                    f'permit({principal}, action, resource) when {{ unknown("x") }};'
+                )
+                self.assertEqual(set(handle.to_pst(effect="forbid").static_policies), {"policy0"})
+                with self.assertRaisesRegex(ValueError, "policy1.*Unknown"):
+                    handle.to_pst(effect="permit")
+                with self.assertRaisesRegex(ValueError, "Unknown"):
+                    handle.to_pst()
+
+    def test_no_matches_and_invalid_effect(self):
+        handle = cedarpy.PolicySet.from_str('permit(principal, action, resource);')
+        self.assertEqual(handle.to_pst(effect="forbid"), PolicySet({}, {}, ()))
+        with self.assertRaisesRegex(ValueError, "effect"):
+            handle.to_pst(effect="allow")
+        with self.assertRaises(TypeError):
+            handle.to_pst(effect=1)
+        with self.assertRaises(TypeError):
+            handle.to_pst("permit")
+
+
 class TestExpressionDepthLimit(unittest.TestCase):
     """Expression nesting is capped at 100 levels in both directions.
 
@@ -526,6 +574,12 @@ class TestExpressionDepthLimit(unittest.TestCase):
     def test_nesting_past_the_limit_raises(self):
         with self.assertRaisesRegex(ValueError, "nesting exceeds the supported limit of 100"):
             policies_to_pst(self._nested_policy(99))
+
+    def test_effect_filter_skips_deep_opposite_policy(self):
+        handle = cedarpy.PolicySet.from_str(self._nested_policy(99) + 'forbid(principal, action, resource);')
+        self.assertEqual(set(handle.to_pst(effect="forbid").static_policies), {"policy1"})
+        with self.assertRaisesRegex(ValueError, "nesting exceeds"):
+            handle.to_pst(effect="permit")
 
     def test_from_pst_accepts_nesting_under_the_limit(self):
         cedarpy.PolicySet.from_pst(self._deep_nodes(80))

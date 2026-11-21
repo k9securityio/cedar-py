@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `PolicySet.to_pst(effect="permit")` and `PolicySet.to_pst(effect="forbid")` convert only matching policies and templates, including their links. ([#127](https://github.com/k9securityio/cedar-py/pull/127)). Thanks [@h0rv](https://github.com/h0rv)!
+
 ### Changed
 
 - Linux wheels are built for an explicit interpreter list: CPython 3.10 to 3.15, free-threaded 3.14t and 3.15t, and PyPy 3.11. The build previously used every interpreter in the manylinux image, which broke when the aarch64 image added PyPy 3.12. PyPy 3.12 wheels are not built because pyo3 0.29.2 does not compile for it.

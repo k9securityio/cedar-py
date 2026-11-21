@@ -423,6 +423,42 @@ fn build_slot_values<'py>(
     build_mapping(c, items)
 }
 
+// Filter before converting any bodies. Convert each selected body separately
+// so a native PST error can report its id. A link only needs its bindings.
+fn pst_for_effect(set: &PolicySet, effect: Effect) -> PyResult<pst::PolicySet> {
+    let mut selected = pst::PolicySet {
+        templates: Default::default(),
+        policies: Default::default(),
+        template_links: Vec::new(),
+    };
+    for template in set.templates().filter(|t| t.effect() == effect) {
+        let id = template.id();
+        let body = template.to_pst().map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("template `{id}`: {e}"))
+        })?;
+        selected.templates.insert(id.clone().into(), body);
+    }
+    for policy in set.policies().filter(|p| p.effect() == effect) {
+        let id = policy.id();
+        if let (Some(template_id), Some(values)) = (policy.template_id(), policy.template_links()) {
+            selected.template_links.push(pst::TemplateLink {
+                template_id: template_id.clone().into(),
+                new_id: id.clone().into(),
+                values: values.into_iter().map(|(slot, uid)| (slot.into(), uid.into())).collect(),
+            });
+        } else {
+            let body = policy.to_pst().map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(format!("policy `{id}`: {e}"))
+            })?;
+            let pst::Policy::Static(body) = body else {
+                return Err(pyo3::exceptions::PyValueError::new_err(format!("expected static policy `{id}`")));
+            };
+            selected.policies.insert(id.clone().into(), body);
+        }
+    }
+    Ok(selected)
+}
+
 fn build_policy_set<'py>(c: &PstClasses<'py>, policy_set: &pst::PolicySet) -> PyResult<Py<PyAny>> {
     let mut templates = Vec::with_capacity(policy_set.templates.len());
     for (id, template) in policy_set.templates.iter() {
@@ -546,17 +582,23 @@ impl PyPolicySet {
     ///
     /// `policies_to_pst(text)` is `PolicySet.from_str(text).to_pst()`.
     ///
+    /// Pass `effect="permit"` or `effect="forbid"` to convert only matching
+    /// policies and templates, including their links. `None` converts the whole set.
+    ///
     /// The node set tracks the Cedar engine (see the `cedarpy.pst` module
     /// docs): syntax newer than the modelled node types raises `ValueError`
     /// until a cedarpy release models it.
     ///
     /// :raises ValueError: if the set cannot be represented as PST nodes,
     ///     including expression nesting deeper than 100 levels.
-    fn to_pst(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        let pst = self
-            .inner
-            .to_pst()
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("{:#}", e)))?;
+    #[pyo3(signature = (*, effect = None))]
+    fn to_pst(&self, py: Python<'_>, effect: Option<&str>) -> PyResult<Py<PyAny>> {
+        let pst = match effect {
+            None => self.inner.to_pst().map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("{e:#}")))?,
+            Some("permit") => pst_for_effect(&self.inner, Effect::Permit)?,
+            Some("forbid") => pst_for_effect(&self.inner, Effect::Forbid)?,
+            Some(_) => return Err(pyo3::exceptions::PyValueError::new_err("effect must be 'permit', 'forbid', or None")),
+        };
         let classes = PstClasses::load(py)?;
         build_policy_set(&classes, &pst)
     }

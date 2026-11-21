@@ -485,6 +485,8 @@ match clause.expr:
         print("matched")
 ```
 
+Use `policy_set.to_pst(effect="forbid")` to inspect only forbids in a parsed `PolicySet`.
+
 `cedarpy.pst` tracks the Cedar Policy engine. New `cedarpy.pst` node types or `Literal` members are introduced when upgrading the `cedar-policy` engine brings Cedar Policy syntax changes. Unmodelled syntax raises `ValueError` until then.
 
 See the [Policy Syntax Tree Guide](docs/guides/policy-syntax-tree-guide.md) for the type guarantees, finding the entities a policy names with `entity_uids`, and rewriting policy sets through `from_pst`.

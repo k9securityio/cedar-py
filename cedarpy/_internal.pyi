@@ -62,8 +62,11 @@ class PolicySet:
         """
         ...
 
-    def to_pst(self) -> "cedarpy.pst.PolicySet":
+    def to_pst(self, *, effect: Optional[cedarpy.pst.Effect] = ...) -> "cedarpy.pst.PolicySet":
         """Return this policy set as the typed nodes from ``cedarpy.pst``.
+
+        Pass ``effect="permit"`` or ``effect="forbid"`` to convert only matching
+        policies and templates, including their links. ``None`` converts the whole set.
 
         ``policies_to_pst(text)`` is ``PolicySet.from_str(text).to_pst()``.
         The node set tracks the Cedar engine (see the ``cedarpy.pst`` module

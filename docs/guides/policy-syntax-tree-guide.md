@@ -26,7 +26,9 @@ Expression nesting is limited to 100 levels; deeper policy text or node trees
 raise `ValueError`. Raising this limit later is backwards compatible, so code
 should treat it as a floor, not an exact ceiling.
 
-Static policies and unlinked templates only. A residual from
+`policy_set.to_pst(effect="forbid")` converts only forbids and keeps their IDs and template links. An unsupported expression in a permit does not affect the result. An unsupported expression in a selected forbid still raises `ValueError`. Use `effect="permit"` to select permits, or omit `effect` to inspect the whole set.
+
+A residual from
 `is_authorized_partial` cannot be represented this way, because PST rejects any
 clause holding an unresolved `unknown(...)` node and every non-trivial residual
 has one.
