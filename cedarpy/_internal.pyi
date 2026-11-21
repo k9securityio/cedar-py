@@ -294,7 +294,7 @@ def is_authorized_batch(
 
 
 def is_authorized_partial(
-    request: Dict[str, Optional[str]],
+    request: Dict[str, Union[str, cedarpy.pst.EntityUid, None]],
     policies: Union[str, PolicySet],
     entities: Union[str, Entities],
     schema: Union[str, "Schema", None] = ...,

@@ -1555,10 +1555,22 @@ fn euid_input_from_value(
     }
 }
 
-/// Extract a principal/action/resource value from a Python request
-/// dict. Accepts either a string (Cedar surface syntax, e.g.
-/// `User::"alice"`) or a dict with `type` and `id` keys (the
-/// structured form, parsed via `EntityUid::from_json`).
+/// Only request fields (not template slot values) also accept `cedarpy.pst.EntityUid`.
+fn typed_request_uid(value: &Bound<'_, PyAny>) -> PyResult<Option<EntityUidInput>> {
+    let pst = value.py().import("cedarpy.pst")?;
+    if !value.is_instance(&pst.getattr("EntityUid")?)? {
+        return Ok(None);
+    }
+    let ty = value.getattr("type")?;
+    if !ty.is_instance(&pst.getattr("EntityType")?)? {
+        return Err(read_error("EntityType", &node_kind(&ty)?));
+    }
+    let name = read_entity_type_fields(&ty)?;
+    let id: String = value.getattr("id")?.extract()?;
+    Ok(Some(EntityUidInput::Json(json!({"type": name.to_string(), "id": id}))))
+}
+
+/// Extract a required UID. Leave the existing string and dict paths unchanged.
 fn extract_euid_field(
     request: &Bound<'_, PyDict>,
     field: &str,
@@ -1566,6 +1578,11 @@ fn extract_euid_field(
     let value = request
         .get_item(field)?
         .ok_or_else(|| pyo3::exceptions::PyKeyError::new_err(field.to_string()))?;
+    if !value.is_instance_of::<PyString>() && !value.is_instance_of::<PyDict>() {
+        if let Some(uid) = typed_request_uid(&value)? {
+            return Ok(uid);
+        }
+    }
     euid_input_from_value(&value, || format!("request[{field}]"))
 }
 
@@ -1891,6 +1908,20 @@ struct PartialAuthzResponse {
     metrics: HashMap<String, u128>,
 }
 
+// Classic partial evaluation accepts Cedar strings or typed UIDs. A missing
+// field or None leaves that part of the request unknown.
+fn partial_uid_input(request: &Bound<'_, PyDict>, field: &str) -> PyResult<Option<EntityUidInput>> {
+    let Some(value) = request.get_item(field)?.filter(|v| !v.is_none()) else {
+        return Ok(None);
+    };
+    if !value.is_instance_of::<PyString>() {
+        if let Some(uid) = typed_request_uid(&value)? {
+            return Ok(Some(uid));
+        }
+    }
+    Ok(Some(EntityUidInput::Cedar(value.extract()?)))
+}
+
 /// Partially evaluate an authorization request with unknowns.
 ///
 /// Built on the `cedar-policy` crate's `partial-eval` feature, which Cedar
@@ -1899,12 +1930,20 @@ struct PartialAuthzResponse {
 #[pyfunction]
 #[pyo3(signature = (request, policies, entities, schema = None, verbose = false))]
 fn is_authorized_partial(
-    request: HashMap<String, Option<String>>,
+    request: &Bound<'_, PyDict>,
     policies: PoliciesArg,
     entities: EntitiesArg,
     schema: Option<SchemaArg>,
     verbose: Option<bool>,
-) -> String {
+) -> PyResult<String> {
+    let principal = partial_uid_input(request, "principal")?;
+    let action = partial_uid_input(request, "action")?;
+    let resource = partial_uid_input(request, "resource")?;
+    let optional_string = |key| -> PyResult<Option<String>> {
+        request.get_item(key)?.filter(|v| !v.is_none()).map(|v| v.extract()).transpose()
+    };
+    let context = optional_string("context")?;
+    let correlation_id = optional_string("correlation_id")?;
     let verbose = verbose.unwrap_or(false);
     let mut errs: Vec<Error> = vec![];
 
@@ -1927,65 +1966,47 @@ fn is_authorized_partial(
     let t_load_entities_duration = t_load_entities.elapsed();
 
     if !errs.is_empty() {
-        return make_authz_result_for_errors(&errs);
+        return Ok(make_authz_result_for_errors(&errs));
     }
 
     let t_build_request = Instant::now();
-    let principal_str = request.get("principal").and_then(|v| v.as_deref());
-    let action_str = request.get("action").and_then(|v| v.as_deref());
-    let resource_str = request.get("resource").and_then(|v| v.as_deref());
-    let context_str = request.get("context").and_then(|v| v.as_deref());
-    let correlation_id = request.get("correlation_id").and_then(|v| v.clone());
-
     let mut builder = Request::builder();
-
-    if let Some(p) = principal_str {
-        match p.parse::<EntityUid>() {
-            Ok(uid) => { builder = builder.principal(uid); }
-            Err(e) => {
-                errs.push(Error::msg(format!("Failed to parse principal as entity Uid: {}", e)));
-                return make_authz_result_for_errors(&errs);
-            }
+    if let Some(principal) = principal {
+        match principal.parse("principal") {
+            Ok(uid) => builder = builder.principal(uid),
+            Err(e) => return Ok(make_authz_result_for_errors(&vec![e])),
+        }
+    }
+    let action_uid = match action.map(|a| a.parse("action")).transpose() {
+        Ok(uid) => uid,
+        Err(e) => return Ok(make_authz_result_for_errors(&vec![e])),
+    };
+    if let Some(resource) = resource {
+        match resource.parse("resource") {
+            Ok(uid) => builder = builder.resource(uid),
+            Err(e) => return Ok(make_authz_result_for_errors(&vec![e])),
         }
     }
 
-    if let Some(a) = action_str {
-        match a.parse::<EntityUid>() {
-            Ok(uid) => { builder = builder.action(uid); }
-            Err(e) => {
-                errs.push(Error::msg(format!("Failed to parse action as entity Uid: {}", e)));
-                return make_authz_result_for_errors(&errs);
-            }
-        }
-    }
-
-    if let Some(r) = resource_str {
-        match r.parse::<EntityUid>() {
-            Ok(uid) => { builder = builder.resource(uid); }
-            Err(e) => {
-                errs.push(Error::msg(format!("Failed to parse resource as entity Uid: {}", e)));
-                return make_authz_result_for_errors(&errs);
-            }
-        }
-    }
-
-    if let Some(ctx_json) = context_str {
-        let action_uid: Option<EntityUid> = action_str.and_then(|a| a.parse().ok());
-        match Context::from_json_str(ctx_json, schema.and_then(|s| action_uid.as_ref().map(|a| (s, a)))) {
+    if let Some(ctx_json) = &context {
+        match Context::from_json_str(ctx_json, schema.zip(action_uid.as_ref())) {
             Ok(ctx) => { builder = builder.context(ctx); }
             Err(e) => {
                 errs.push(Error::msg(format!("Failed to parse context: {}", e)));
-                return make_authz_result_for_errors(&errs);
+                return Ok(make_authz_result_for_errors(&errs));
             }
         }
     }
 
+    if let Some(uid) = action_uid {
+        builder = builder.action(uid);
+    }
     let cedar_request = match schema {
         Some(s) => match builder.schema(s).build() {
             Ok(r) => r,
             Err(e) => {
                 errs.push(Error::msg(format!("Request validation failed: {}", e)));
-                return make_authz_result_for_errors(&errs);
+                return Ok(make_authz_result_for_errors(&errs));
             }
         },
         None => builder.build(),
@@ -2067,7 +2088,7 @@ fn is_authorized_partial(
         metrics,
     };
 
-    serde_json::to_string(&response).unwrap()
+    Ok(serde_json::to_string(&response).unwrap())
 }
 
 /// A Python module implemented in Rust.
@@ -2111,6 +2132,10 @@ fn read_entity_type(obj: &Bound<'_, PyAny>) -> PyResult<pst::EntityType> {
     if kind != "EntityType" {
         return Err(read_error("EntityType", &kind));
     }
+    read_entity_type_fields(obj)
+}
+
+fn read_entity_type_fields(obj: &Bound<'_, PyAny>) -> PyResult<pst::EntityType> {
     let basename: String = obj.getattr("basename")?.extract()?;
     let namespace: Vec<String> = obj.getattr("namespace")?.extract()?;
     let name = if namespace.is_empty() {
