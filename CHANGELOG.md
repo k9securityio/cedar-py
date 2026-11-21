@@ -10,7 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- `PolicySet.to_pst(effect="permit")` and `PolicySet.to_pst(effect="forbid")` convert only matching policies and templates, including their links.
+- `PolicySet.to_pst(effect="permit")` and `PolicySet.to_pst(effect="forbid")` convert only matching policies and templates, including their links. ([#127](https://github.com/k9securityio/cedar-py/pull/127)). Thanks [@h0rv](https://github.com/h0rv)!
 
 ### Changed
 

@@ -485,9 +485,7 @@ match clause.expr:
         print("matched")
 ```
 
-On a parsed `PolicySet`, use `policy_set.to_pst(effect="forbid")` to inspect only forbids.
-The result keeps their original IDs and template links. Permits need not be representable as PST nodes.
-Use `effect="permit"` for permits, or omit `effect` for the whole set.
+Use `policy_set.to_pst(effect="forbid")` to inspect only forbids in a parsed `PolicySet`.
 
 `cedarpy.pst` tracks the Cedar Policy engine. New `cedarpy.pst` node types or `Literal` members are introduced when upgrading the `cedar-policy` engine brings Cedar Policy syntax changes. Unmodelled syntax raises `ValueError` until then.
 
