@@ -15,6 +15,7 @@ from cedarpy import (
     is_authorized,
     is_authorized_batch,
     is_authorized_partial,
+    pst,
     validate_policies,
 )
 
@@ -88,6 +89,48 @@ class SchemaConstructionTestCase(unittest.TestCase):
     def test_repr_reports_entity_type_and_action_counts(self) -> None:
         s = Schema.from_str(SCHEMA_CEDAR)
         self.assertEqual("Schema(<2 entity types, 2 actions>)", repr(s))
+
+
+class SchemaInspectionTestCase(unittest.TestCase):
+    def test_inspect_parsed_schema_in_either_format(self) -> None:
+        user = pst.EntityType("User")
+        photo = pst.EntityType("Photo")
+        for schema in (Schema.from_str(SCHEMA_CEDAR), Schema.from_json_str(SCHEMA_JSON)):
+            types = schema.entity_types()
+            self.assertIsInstance(types, frozenset)
+            self.assertEqual({user, photo}, types)
+            actions = schema.actions()
+            self.assertIsInstance(actions, frozenset)
+            self.assertEqual({pst.EntityUid(pst.EntityType("Action"), id_) for id_ in ("view", "edit")}, actions)
+            for action in actions:
+                resources = schema.resources_for_action(action)
+                self.assertIsInstance(resources, frozenset)
+                self.assertEqual({photo}, resources)
+
+    def test_namespace_components_and_raw_action_id(self) -> None:
+        action_id = 'view::"雪"\\\n\x00'
+        schema = Schema.from_json_str(json.dumps({
+            "App::Media": {
+                "entityTypes": {"Photo": {}},
+                "actions": {action_id: {"appliesTo": {
+                    "principalTypes": ["Photo"], "resourceTypes": ["Photo", "Other::Photo"],
+                }}},
+            },
+            "Other": {"entityTypes": {"Photo": {}}, "actions": {action_id: {}}},
+        }))
+        photos = {pst.EntityType("Photo", ("App", "Media")), pst.EntityType("Photo", ("Other",))}
+        action = pst.EntityUid(pst.EntityType("Action", ("App", "Media")), action_id)
+        group = pst.EntityUid(pst.EntityType("Action", ("Other",)), action_id)
+        self.assertEqual(photos, schema.entity_types())
+        self.assertEqual({action, group}, schema.actions())
+        self.assertEqual(photos, schema.resources_for_action(action))
+        self.assertEqual(frozenset(), schema.resources_for_action(group))
+        self.assertIsNone(schema.resources_for_action(pst.EntityUid(pst.EntityType("Action"), action_id)))
+
+    def test_lookup_rejects_cedar_text(self) -> None:
+        schema = Schema.from_str(SCHEMA_CEDAR)
+        with self.assertRaises(TypeError):
+            schema.resources_for_action('Action::"view"')
 
 
 class SchemaStrTestCase(unittest.TestCase):

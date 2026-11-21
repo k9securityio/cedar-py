@@ -1,7 +1,7 @@
 """Type stubs for cedarpy's Rust extension. Prefer the public wrappers in
 ``cedarpy`` (e.g. ``cedarpy.is_authorized``); do not import ``_internal`` directly.
 """
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, FrozenSet, List, Optional, Union
 
 import cedarpy.pst
 
@@ -266,6 +266,18 @@ class Schema:
 
         ``release_gil=True`` releases the GIL while Cedar parses and compiles.
         """
+        ...
+
+    def entity_types(self) -> FrozenSet[cedarpy.pst.EntityType]:
+        """Return the entity types defined in this schema."""
+        ...
+
+    def actions(self) -> FrozenSet[cedarpy.pst.EntityUid]:
+        """Return the actions defined in this schema."""
+        ...
+
+    def resources_for_action(self, action: cedarpy.pst.EntityUid) -> Optional[FrozenSet[cedarpy.pst.EntityType]]:
+        """Return the action's resource types, or None if the action is not in the schema."""
         ...
 
     def __str__(self) -> str: ...

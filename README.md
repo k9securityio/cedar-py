@@ -201,6 +201,17 @@ When a `Schema` handle is used,
 the authorization response sets `metrics["schema_pre_parsed"]` to `1`
 (vs. `0` when a string is parsed on the fly).
 
+Use the same handle to inspect the schema without parsing it again:
+
+```python
+entity_types = schema.entity_types()  # frozenset of cedarpy.pst.EntityType
+for action in schema.actions():        # frozenset of cedarpy.pst.EntityUid
+    resource_types = schema.resources_for_action(action)
+```
+
+`resources_for_action` returns a `frozenset` of entity types. An empty `frozenset`
+means the action has no resource types. `None` means the action is not in the schema.
+
 ### Calling cedarpy from threads and asyncio
 
 By default, a cedarpy call holds the GIL until it returns, so no other Python thread runs during it.
