@@ -11,8 +11,8 @@ from cedarpy.pst import (
     ActionEq, ActionIn, BinaryOp, BoolLit, Char, EntityLit, EntityType,
     EntityUid, Expr, FrozenMap, GetAttr, HasAttr, IfThenElse, Is, Like,
     LongLit, PolicySet, Record, ScopeAny, ScopeEq, ScopeIs, ScopeIsIn, Set,
-    Slot, StringLit, Template, TemplateLink, UnaryOp, Unless, Var, When,
-    Wildcard, entity_uids,
+    Slot, StringLit, Template, TemplateLink, UnaryOp, Unless, Var, VariadicOp,
+    When, Wildcard, entity_uids,
 )
 
 
@@ -95,14 +95,42 @@ class TestExprShapes(unittest.TestCase):
         result = policies_to_pst('permit(principal, action, resource) when { resource has owner };')
         self.assertEqual(_expr(result), HasAttr(base=Var("resource"), attrs=("owner",)))
 
-    def test_has_nested_path_lowers_to_two_clauses(self):
-        # `resource has a.b` lowers to `resource has a && (resource.a) has b`,
-        # not one HasAttr with two attrs, confirmed against real parser output.
+    def test_has_nested_path_is_one_node(self):
+        # Since cedar-policy 4.13 (cedar#2560), `resource has a.b` stays one
+        # HasAttr holding the whole path. Earlier engines lowered it to
+        # `resource has a && resource.a has b`.
         result = policies_to_pst('permit(principal, action, resource) when { resource has address.street };')
-        top = _expr(result)
-        self.assertEqual(top.left, HasAttr(base=Var("resource"), attrs=("address",)))
-        self.assertEqual(top.right.attrs, ("street",))
-        self.assertIsInstance(top.right.base, GetAttr)
+        self.assertEqual(
+            _expr(result),
+            HasAttr(base=Var("resource"), attrs=("address", "street")),
+        )
+
+    def test_is_in_range_with_one_range_is_a_binary_op(self):
+        result = policies_to_pst(
+            'permit(principal, action, resource) '
+            'when { context.ip.isInRange(ip("10.0.0.0/8")) };'
+        )
+        expr = _expr(result)
+        self.assertIsInstance(expr, BinaryOp)
+        self.assertEqual(expr.op, "is_in_range")
+
+    def test_is_in_range_with_several_ranges_is_a_variadic_op(self):
+        result = policies_to_pst(
+            'permit(principal, action, resource) '
+            'when { context.ip.isInRange(ip("10.0.0.0/8"), ip("192.168.0.0/16")) };'
+        )
+        expr = _expr(result)
+        self.assertEqual(
+            expr,
+            VariadicOp(
+                op="is_in_range",
+                left=GetAttr(base=Var("context"), attr="ip"),
+                rights=(
+                    UnaryOp(op="ip", arg=StringLit("10.0.0.0/8")),
+                    UnaryOp(op="ip", arg=StringLit("192.168.0.0/16")),
+                ),
+            ),
+        )
 
     def test_like(self):
         result = policies_to_pst('permit(principal, action, resource) when { resource.name like "a*b" };')
@@ -300,6 +328,11 @@ class TestNonEmptyInvariants(unittest.TestCase):
         with self.assertRaises(ValueError):
             HasAttr(base=Var("resource"), attrs=())
 
+    def test_variadic_op_rejects_empty_rights(self):
+        # Rust models this field as NonEmpty<Arc<Expr>>.
+        with self.assertRaises(ValueError):
+            VariadicOp(op="is_in_range", left=Var("context"), rights=())
+
 
 class TestEntityUidsWalk(unittest.TestCase):
     def test_collects_uids_from_scope_and_conditions(self):
@@ -432,6 +465,34 @@ class TestPolicySetRoundTrip(unittest.TestCase):
             {"uid": {"type": "Doc", "id": "d1"}, "attrs": {"public": True}, "parents": []}
         ])
         self.assertEqual(is_authorized(request, rebuilt, entities).decision, Decision.Allow)
+
+    def test_a_variadic_op_survives_rendering_and_authorizes(self):
+        """A `VariadicOp` built from nodes renders to Cedar text and evaluates."""
+        from cedarpy import Decision, PolicySet as EnginePolicySet, is_authorized
+
+        nodes = policies_to_pst(
+            'permit(principal, action, resource) '
+            'when { context.ip.isInRange(ip("10.0.0.0/8"), ip("192.168.0.0/16")) };'
+        )
+        rebuilt = EnginePolicySet.from_pst(nodes)
+        # Re-parse the rendered text so the comparison exercises the
+        # node -> engine conversion, not the PST cached by `from_pst`.
+        self.assertEqual(policies_to_pst(str(rebuilt)), nodes)
+        for address, expected in (
+            ("192.168.1.1", Decision.Allow),
+            ("10.1.2.3", Decision.Allow),
+            ("172.16.0.1", Decision.Deny),
+        ):
+            with self.subTest(address=address):
+                request = {
+                    "principal": 'User::"alice"',
+                    "action": 'Action::"view"',
+                    "resource": 'Doc::"d1"',
+                    "context": {"ip": {"__extn": {"fn": "ip", "arg": address}}},
+                }
+                self.assertEqual(
+                    is_authorized(request, rebuilt, "[]").decision, expected
+                )
 
     def test_template_links_survive_a_round_trip(self):
         from cedarpy import PolicySet as EnginePolicySet

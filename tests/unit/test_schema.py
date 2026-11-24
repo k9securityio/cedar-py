@@ -115,6 +115,46 @@ class SchemaStrTestCase(unittest.TestCase):
             self.assertEqual(from_original.decision, from_reparsed.decision)
 
 
+class PartialSchemaTestCase(unittest.TestCase):
+    """A schema holding `external` declarations (cedar-policy 4.14+) is
+    partial: it builds a handle and authorizes, but cannot validate."""
+
+    PARTIAL = """
+        external entity Org;
+        entity User in [Org];
+        action view appliesTo { principal: User, resource: User };
+    """
+
+    def test_from_str_accepts_external_declaration(self) -> None:
+        schema = Schema.from_str(self.PARTIAL)
+        self.assertEqual("Schema(<2 entity types, 1 actions>)", repr(schema))
+
+    def test_str_keeps_the_external_declaration(self) -> None:
+        rendered = str(Schema.from_str(self.PARTIAL))
+        self.assertIn("external entity Org;", rendered)
+        self.assertEqual(rendered, str(Schema.from_str(rendered)))
+
+    def test_is_authorized_accepts_a_partial_schema(self) -> None:
+        request = {
+            "principal": 'User::"alice"',
+            "action": 'Action::"view"',
+            "resource": 'User::"bob"',
+            "context": {},
+        }
+        result = is_authorized(
+            request, "permit(principal, action, resource);", "[]",
+            schema=Schema.from_str(self.PARTIAL),
+        )
+        self.assertEqual(Decision.Allow, result.decision)
+
+    def test_validate_rejects_a_partial_schema(self) -> None:
+        result = validate_policies(
+            "permit(principal, action, resource);", Schema.from_str(self.PARTIAL),
+        )
+        self.assertFalse(result.validation_passed)
+        self.assertIn("schema is incomplete", result.errors[0].error)
+
+
 class SchemaAuthzEquivalenceTestCase(unittest.TestCase):
     """A Schema handle must produce identical authorization results to a string."""
 

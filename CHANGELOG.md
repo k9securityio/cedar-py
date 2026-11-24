@@ -8,8 +8,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `cedarpy.pst.VariadicOp` represents an `isInRange` call with two or more ranges, such as `context.ip.isInRange(ip("10.0.0.0/8"), ip("192.168.0.0/16"))`. Its `rights` field holds the ranges and must not be empty. The engine stabilized this form in 4.15. Before this release `policies_to_pst` raised `ValueError` for it. A call with a single range is still a `BinaryOp` with `op="is_in_range"` ([#128](https://github.com/k9securityio/cedar-py/issues/128)).
+
 ### Changed
 
+- The embedded Cedar engine is now [cedar-policy 4.15.0](https://github.com/cedar-policy/cedar/releases/tag/v4.15.0) (was 4.12.0; Cedar language 4.5 → 4.7). No existing cedarpy signature changes. Verified against the upstream v4.15.0 integration corpus (43,881 cases, including 48 policies that use multi-range `isInRange`). These engine changes are visible through cedarpy ([#128](https://github.com/k9securityio/cedar-py/issues/128)):
+  - `validate_policies` now passes a policy whose action does not apply to its principal or resource types. Cedar reports this as a warning since 4.13 (it was an error), and cedarpy reports only errors.
+  - A chained `has` (`principal has a.b.c`) is now one node in both representations. `policies_to_json_str` emits a single `has` whose `attr` is an array, and `policies_to_pst` returns one `HasAttr` whose `attrs` holds the whole path. Both previously lowered it to a conjunction of single-attribute checks. Evaluation is unchanged.
+  - Schemas accept the `external` keyword for an entity type or action declared elsewhere. `Schema.from_str` builds such a partial schema. `validate_policies` reports an error against one, naming the undefined declaration.
+  - `format_policies` writes an attribute that is a valid identifier without quotes: `principal["name"]` becomes `principal.name`. `policies_from_json_str` no longer wraps attribute accesses and operands in redundant parentheses.
+  - `is_authorized` is faster: upstream measures ~1.8× on its benchmark and ~3× on a 1,000-policy set. Schema parsing is ~2–6× faster.
 - Linux wheels are built for an explicit interpreter list: CPython 3.10 to 3.15, free-threaded 3.14t and 3.15t, and PyPy 3.11. The build previously used every interpreter in the manylinux image, which broke when the aarch64 image added PyPy 3.12. PyPy 3.12 wheels are not built because pyo3 0.29.2 does not compile for it.
 
 ## [4.12.2] - 2026-10-14

@@ -124,8 +124,10 @@ class GilReleaseTestCase(unittest.TestCase):
     def setUpClass(cls) -> None:
         policies = _policies(8000)
         policies_json = _policies_json(8000)
-        schema_cedar = _dense_schema_cedar(25)
-        schema_json = _dense_schema_json(40)
+        # cedar-policy 4.15 compiles schemas several times faster than 4.12,
+        # so these sizes keep both calls well past the 40 ms floor.
+        schema_cedar = _dense_schema_cedar(150)
+        schema_json = _dense_schema_json(150)
         template_schema = Schema.from_json_str(_template_schema_json())
         entities_json = json.dumps(
             [{"uid": {"type": "User", "id": f"u{i}"}, "attrs": {"x": i},
