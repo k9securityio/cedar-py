@@ -200,9 +200,11 @@ def test_corpus_policies_convert_to_pst(corpus_dir: Path) -> None:
     convert must survive the round trip unchanged.
     """
     policy_files = sorted(corpus_dir.glob("*.cedar"))
-    # Guards against the corpus silently shrinking (7,600 files as of the
-    # v4.12.0 corpus), which the per-failure assertions below cannot see.
-    assert len(policy_files) > 7000, f"only {len(policy_files)} .cedar files under {corpus_dir}"
+    # Guards against the corpus silently shrinking, which the per-failure
+    # assertions below cannot see. Upstream regenerates the corpus from fuzzer
+    # runs on each release, so its size moves: 7,600 files at v4.12.0, 5,485
+    # at v4.15.0.
+    assert len(policy_files) > 5000, f"only {len(policy_files)} .cedar files under {corpus_dir}"
 
     expected_rejection = re.compile(r"expects \d+ argument\(s\), got \d+")
     unrepresentable: list[str] = []

@@ -57,7 +57,7 @@
     "UnaryOp": null,
     "Unknown": null,
     "Var": null,
-    "VariadicOp": "variadic-is-in-range"
+    "VariadicOp": null
   },
   "Literal": {
     "Bool": null,

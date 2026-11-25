@@ -32,7 +32,8 @@ __all__ = [
     "PolicySet", "PrincipalOrResourceConstraint", "PstNode", "Record",
     "ScopeAny", "ScopeEq", "ScopeIn", "ScopeIs", "ScopeIsIn", "Set", "Slot",
     "SlotName", "StringLit", "Template", "TemplateLink", "UnaryOp",
-    "UnaryOpName", "Unless", "Var", "VarName", "When", "Wildcard",
+    "UnaryOpName", "Unless", "Var", "VariadicOp", "VariadicOpName", "VarName",
+    "When", "Wildcard",
 ]
 
 _K = TypeVar("_K", bound=str)
@@ -144,6 +145,8 @@ BinaryOpName = Literal[
     "decimal_greater_eq",
 ]
 
+VariadicOpName = Literal["is_in_range"]
+
 
 @dataclass(frozen=True, slots=True)
 class UnaryOp:
@@ -156,6 +159,24 @@ class BinaryOp:
     op: BinaryOpName
     left: Expr
     right: Expr
+
+
+@dataclass(frozen=True, slots=True)
+class VariadicOp:
+    """An operator call with two or more arguments after the receiver.
+
+    `ip("10.0.0.1").isInRange(ip("10.0.0.0/8"), ip("192.168.0.0/16"))` is a
+    `VariadicOp`. With a single range argument the same call is a `BinaryOp`
+    with `op="is_in_range"`, so a `match` on range checks needs both arms.
+    """
+
+    op: VariadicOpName
+    left: Expr
+    rights: tuple[Expr, ...]
+
+    def __post_init__(self) -> None:
+        if not self.rights:
+            raise ValueError("VariadicOp.rights must hold at least one expression")
 
 
 @dataclass(frozen=True, slots=True)
@@ -219,7 +240,7 @@ class Record:
 
 Expr = (
     Var | Slot | BoolLit | LongLit | StringLit | EntityLit | UnaryOp | BinaryOp
-    | GetAttr | HasAttr | Like | Is | IfThenElse | Set | Record
+    | VariadicOp | GetAttr | HasAttr | Like | Is | IfThenElse | Set | Record
 )
 
 

@@ -55,8 +55,12 @@ match clause.expr:
 Each closed set Cedar defines is closed in the Python type, so a type checker
 can prove a `match` over one is exhaustive:
 
-* `UnaryOp.op` and `BinaryOp.op` are `Literal` aliases of the operator names
-  (`UnaryOpName`, `BinaryOpName`).
+* `UnaryOp.op`, `BinaryOp.op`, and `VariadicOp.op` are `Literal` aliases of
+  the operator names (`UnaryOpName`, `BinaryOpName`, `VariadicOpName`).
+* `isInRange` has two shapes. With one range argument it is a `BinaryOp`
+  with `op="is_in_range"`. With two or more it is a `VariadicOp` whose
+  `rights` tuple holds the ranges. A `match` over range checks needs both
+  arms.
 * `Template.effect` is `Literal["permit", "forbid"]`, and `Var.name` and
   `Slot.name` are constrained the same way.
 * Cedar's `Bool` and `Long` literals are separate `BoolLit` and `LongLit`

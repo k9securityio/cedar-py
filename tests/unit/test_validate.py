@@ -255,6 +255,42 @@ class ValidatePoliciesWithCedarSchemaTestCase(unittest.TestCase):
         self.assertTrue(result.validation_passed, f"Validation failed: {[str(e) for e in result.errors]}")
 
 
+class ValidatePoliciesEngineBehaviorTestCase(unittest.TestCase):
+    """Validation outcomes set by the Cedar engine, pinned so an engine bump
+    that changes them fails here rather than silently."""
+
+    SCHEMA = """
+        entity User;
+        entity Photo;
+        entity Album;
+        action view appliesTo { principal: User, resource: Photo };
+    """
+
+    def test_action_not_applicable_to_resource_type_passes(self):
+        # `view` does not apply to `Album`, so this policy can never apply.
+        # Since cedar-policy 4.13 the validator reports that as a
+        # warning (InvalidActionApplication), not an error. cedarpy surfaces
+        # only errors, so validation passes.
+        policy = 'permit(principal, action == Action::"view", resource is Album);'
+        result = validate_policies(policy, self.SCHEMA)
+        self.assertTrue(result.validation_passed, [str(e) for e in result.errors])
+        self.assertEqual([], result.errors)
+
+    def test_partial_schema_fails_validation(self):
+        # A schema with an `external` declaration is partial; the validator
+        # refuses it rather than validating against undefined types.
+        schema = """
+            external entity Org;
+            entity User in [Org];
+            action view appliesTo { principal: User, resource: User };
+        """
+        result = validate_policies('permit(principal, action, resource);', schema)
+        self.assertFalse(result.validation_passed)
+        self.assertEqual(1, len(result.errors))
+        self.assertIn("schema is incomplete", result.errors[0].error)
+        self.assertIn("`Org` is declared `external`", result.errors[0].error)
+
+
 class ValidatePoliciesMultiplePoliciesTestCase(unittest.TestCase):
     """Tests for validating multiple policies at once."""
 

@@ -76,6 +76,7 @@ struct PstClasses<'py> {
     entity_lit: Bound<'py, PyAny>,
     unary_op: Bound<'py, PyAny>,
     binary_op: Bound<'py, PyAny>,
+    variadic_op: Bound<'py, PyAny>,
     get_attr: Bound<'py, PyAny>,
     has_attr: Bound<'py, PyAny>,
     char: Bound<'py, PyAny>,
@@ -115,6 +116,7 @@ impl<'py> PstClasses<'py> {
             entity_lit: get("EntityLit")?,
             unary_op: get("UnaryOp")?,
             binary_op: get("BinaryOp")?,
+            variadic_op: get("VariadicOp")?,
             get_attr: get("GetAttr")?,
             has_attr: get("HasAttr")?,
             char: get("Char")?,
@@ -301,6 +303,15 @@ fn build_expr_at<'py>(c: &PstClasses<'py>, expr: &pst::Expr, depth: usize) -> Py
             let name = binary_op_name(*op)?;
             Ok(c.binary_op.call1((name, build_expr_at(c, left, depth + 1)?, build_expr_at(c, right, depth + 1)?))?.unbind())
         }
+        pst::Expr::VariadicOp { op, left, rights } => {
+            let name = variadic_op_name(*op)?;
+            let mut items = Vec::with_capacity(rights.len());
+            for e in rights.iter() {
+                items.push(build_expr_at(c, e, depth + 1)?);
+            }
+            let rights = PyTuple::new(c.variadic_op.py(), items)?;
+            Ok(c.variadic_op.call1((name, build_expr_at(c, left, depth + 1)?, rights))?.unbind())
+        }
         pst::Expr::GetAttr { expr: base, attr } => {
             Ok(c.get_attr.call1((build_expr_at(c, base, depth + 1)?, attr.to_string()))?.unbind())
         }
@@ -369,6 +380,13 @@ fn binary_op_name(op: pst::BinaryOp) -> PyResult<&'static str> {
         DecimalLessThan => Ok("decimal_less_than"), DecimalLessEq => Ok("decimal_less_eq"),
         DecimalGreater => Ok("decimal_greater"), DecimalGreaterEq => Ok("decimal_greater_eq"),
         other => Err(pst_error("BinaryOp variant", other)),
+    }
+}
+
+fn variadic_op_name(op: pst::VariadicOp) -> PyResult<&'static str> {
+    match op {
+        pst::VariadicOp::IsInRange => Ok("is_in_range"),
+        other => Err(pst_error("VariadicOp variant", other)),
     }
 }
 
@@ -2202,6 +2220,15 @@ fn read_binary_op(name: &str) -> PyResult<pst::BinaryOp> {
     }
 }
 
+fn read_variadic_op(name: &str) -> PyResult<pst::VariadicOp> {
+    match name {
+        "is_in_range" => Ok(pst::VariadicOp::IsInRange),
+        other => Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "cedarpy: unknown variadic op {other:?}"
+        ))),
+    }
+}
+
 fn read_pattern(obj: &Bound<'_, PyAny>) -> PyResult<Vec<pst::PatternElem>> {
     let mut elems = Vec::new();
     for elem in obj.try_iter()? {
@@ -2266,6 +2293,22 @@ fn read_expr_at(obj: &Bound<'_, PyAny>, depth: usize) -> PyResult<pst::Expr> {
             left: arc(obj.getattr("left")?)?,
             right: arc(obj.getattr("right")?)?,
         }),
+        "VariadicOp" => {
+            let mut rights = Vec::new();
+            for e in obj.getattr("rights")?.try_iter()? {
+                rights.push(Arc::new(read_expr_at(&e?, depth + 1)?));
+            }
+            let rights = pst::NonEmpty::from_vec(rights).ok_or_else(|| {
+                pyo3::exceptions::PyValueError::new_err(
+                    "cedarpy: VariadicOp.rights must hold at least one expression",
+                )
+            })?;
+            Ok(pst::Expr::VariadicOp {
+                op: read_variadic_op(&obj.getattr("op")?.extract::<String>()?)?,
+                left: arc(obj.getattr("left")?)?,
+                rights,
+            })
+        }
         "GetAttr" => Ok(pst::Expr::GetAttr {
             expr: arc(obj.getattr("base")?)?,
             attr: obj.getattr("attr")?.extract::<String>()?.into(),
