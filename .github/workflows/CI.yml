@@ -123,6 +123,30 @@ jobs:
         platform:
           - runner: windows-latest
             target: x64
+            arch: x64
+            # free-threaded first: the last entry becomes the default
+            # python, which the pytest step uses
+            python-version: |
+              3.14t
+              3.15t
+              3.10
+              3.11
+              3.12
+              3.13
+              3.14
+              3.15
+          # no 3.10 build of CPython exists for Windows ARM64
+          - runner: windows-11-arm
+            target: aarch64
+            arch: arm64
+            python-version: |
+              3.14t
+              3.15t
+              3.11
+              3.12
+              3.13
+              3.14
+              3.15
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
@@ -130,13 +154,33 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
         with:
-          python-version: 3.13
-          architecture: ${{ matrix.platform.target }}
+          python-version: ${{ matrix.platform.python-version }}
+          architecture: ${{ matrix.platform.arch }}
+      # Pass explicit paths, not `--find-interpreter`: on Windows the
+      # free-threaded install hides the GIL build of the same version
+      # (3.14t replaces 3.14), so 3.14 and 3.15 were never built.
+      - name: Find interpreters
+        id: interpreters
+        shell: bash
+        env:
+          VERSIONS: ${{ matrix.platform.python-version }}
+          ARCH: ${{ matrix.platform.arch }}
+        run: |
+          set -e
+          cache=$(cygpath -u "$RUNNER_TOOL_CACHE")
+          paths=""
+          for v in $VERSIONS; do
+            dir="$ARCH"; base="$v"
+            case "$v" in *t) dir="$ARCH-freethreaded"; base="${v%t}";; esac
+            py=$(ls -d "$cache/Python/$base".*/"$dir"/python.exe | sort -V | tail -1)
+            paths="$paths $(cygpath -w "$py")"
+          done
+          echo "paths=$paths" >> "$GITHUB_OUTPUT"
       - name: Build wheels
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b  # v1.51.0
         with:
           target: ${{ matrix.platform.target }}
-          args: --release --out dist --find-interpreter
+          args: --release --out dist --interpreter ${{ steps.interpreters.outputs.paths }}
       - name: Upload wheels
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
