@@ -165,6 +165,10 @@ class PolicySet:
     def __repr__(self) -> str: ...
 
 
+class PartialEntities:
+    def __init__(self, json_string: str) -> None: ...
+
+
 class Entities:
     """An opaque, reusable handle wrapping a parsed Cedar entity set.
 
@@ -312,6 +316,47 @@ def policies_from_json_str(s: str) -> str: ...
 
 
 def policies_to_pst(s: str) -> "cedarpy.pst.PolicySet": ...
+
+
+def tpe_authorize(
+    principal: str | dict,
+    action: str | dict,
+    resource: str | dict,
+    policies: str | "PolicySet",
+    entities: str | "Entities" | "PartialEntities",
+    schema: str | "Schema",
+    context: str | None = ...,
+    verbose: bool | None = ...,
+) -> "cedarpy.TpeAuthzResult":
+    """Evaluate a request whose principal or resource is known only by type.
+
+    Cedar's experimental ``tpe`` feature may change in any release.
+    ``residual_policy_set`` holds all reduced policies, not the originals.
+    ``residual_policies`` holds only undecided policies as ``cedarpy.pst`` nodes.
+    ``context`` is JSON text, or ``None`` for an unknown context. Raises ``ValueError`` on input Cedar cannot resolve.
+    """
+    ...
+
+
+def tpe_reauthorize(
+    request: dict,
+    principal: str | dict,
+    action: str | dict,
+    resource: str | dict,
+    policies: str | "PolicySet",
+    entities: str | "Entities" | "PartialEntities",
+    schema: str | "Schema",
+    context: str | None = ...,
+    concrete_entities: str | "Entities" | None = ...,
+    verbose: bool | None = ...,
+) -> str:
+    """Re-run TPE on the partial inputs, then authorize a concrete request.
+
+    This uses the same experimental Cedar feature as ``tpe_authorize``.
+    Returns the authorization response as JSON text. Raises ``ValueError`` if
+    the concrete request or entities contradict the partial ones.
+    """
+    ...
 
 
 def validate_policies(policies: str, schema: Union[str, "Schema"], *, release_gil: bool = ...) -> str: ...

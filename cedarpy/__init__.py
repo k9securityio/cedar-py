@@ -1,7 +1,8 @@
 import json
-from copy import copy
+from copy import copy, deepcopy
+from dataclasses import dataclass, field, replace
 from enum import Enum
-from typing import Union, List, Optional, Any
+from typing import Union, List, Optional, Any, Mapping
 
 from cedarpy import _internal
 from cedarpy import pst
@@ -101,6 +102,111 @@ class Decision(Enum):
     Allow = 'Allow'
     Deny = 'Deny'
     NoDecision = 'NoDecision'
+
+
+@dataclass(frozen=True)
+class PartialEntities:
+    """An entity document in which some entity data is unknown.
+
+    A concrete entity set says every entity's attributes, parents, and tags are
+    known. TPE also accepts a document where an entity exists but one of those
+    is absent, meaning unknown, so policies reading it stay residual. Each of
+    ``attrs``, ``parents``, and ``tags`` must be wholly present or wholly
+    absent per entity, and a parent entity cannot itself have unknown parents.
+
+    Pass the result as ``tpe_authorize(..., entities=PartialEntities.from_json(...))``.
+    """
+    _partial_entities_json: str
+
+    @staticmethod
+    def from_json(entities: str | list[dict] | dict) -> "PartialEntities":
+        """Build from a partial entity document, as JSON text or Python data."""
+        if isinstance(entities, str):
+            return PartialEntities(entities)
+        return PartialEntities(json.dumps(entities))
+
+
+@dataclass(frozen=True)
+class _TpeInputs:
+    """The inputs one ``tpe_authorize`` call ran with.
+
+    ``TpeAuthzResult.reauthorize`` reads them, so a caller does not have to
+    pass them again."""
+    principal: str | dict | pst.EntityType
+    action: str | dict
+    resource: str | dict | pst.EntityType
+    policies: str | PolicySet
+    entities: str | list[dict] | Entities | PartialEntities
+    schema: str | dict | Schema
+    context: dict | None
+
+
+@dataclass(frozen=True)
+class TpeClassification:
+    """The policy ids of one effect, grouped by what TPE resolved them to."""
+    residual_ids: tuple[str, ...]
+    true_ids: tuple[str, ...]
+    false_ids: tuple[str, ...]
+    error_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class TpeAuthzResult:
+    """The outcome of one ``tpe_authorize`` call.
+
+    ``decision`` is ``Decision.Allow`` or ``Decision.Deny`` when the unknowns
+    cannot change the outcome, and ``None`` when they can. ``permits`` and
+    ``forbids`` classify the policy ids of each effect separately.
+    """
+    decision: Decision | None
+    reason: tuple[str, ...]
+    permits: TpeClassification
+    forbids: TpeClassification
+    residual_policies: Mapping[str, pst.Template]
+    """The undecided policies, as typed ``cedarpy.pst`` nodes.
+
+    ``pst.entity_uids`` finds literal entity references in these policies.
+    It does not report all entity data a concrete request may need."""
+    residual_policy_set: PolicySet
+    """Every residual as a reusable ``PolicySet`` handle.
+
+    Includes policies that evaluated to true, false, or an error. All policies
+    are reduced and have unconstrained scopes. Passing this handle directly to
+    ``is_authorized`` skips the consistency checks that ``reauthorize`` performs."""
+    metrics: Mapping[str, int]
+    _request_inputs: _TpeInputs | None = field(default=None, repr=False, compare=False)
+
+    def reauthorize(self,
+                    request: dict,
+                    entities: str | list[dict] | Entities | None = None,
+                    verbose: bool = False) -> "AuthzResult":
+        """Re-run TPE with the saved partial inputs, then authorize a concrete request.
+
+        :param request: A concrete request in the form ``is_authorized`` accepts.
+        :param entities: Concrete entities. Defaults to the original entities
+            unless they were ``PartialEntities``, in which case this is required.
+        :raises ValueError: if the concrete inputs contradict the partial ones.
+        :returns: An ``AuthzResult``.
+        """
+        if self._request_inputs is None:
+            raise ValueError(
+                "this TpeAuthzResult was not produced by tpe_authorize, so it does not "
+                "carry the inputs to reauthorize against; call tpe_reauthorize(...) with "
+                "them explicitly"
+            )
+        i = self._request_inputs
+        return tpe_reauthorize(
+            request=request,
+            principal=i.principal,
+            action=i.action,
+            resource=i.resource,
+            policies=i.policies,
+            entities=i.entities,
+            schema=i.schema,
+            context=i.context,
+            concrete_entities=entities,
+            verbose=verbose,
+        )
 
 
 class _DiagnosticsBase:
@@ -541,6 +647,139 @@ def is_authorized_partial(request: dict,
         request_local, policies, internal_entities, schema, verbose)
     result_dict = json.loads(result_str)
     return PartialAuthzResult(result_dict)
+
+
+_TpeEntities = str | list[dict] | Entities | PartialEntities
+_TpePartialEuid = str | dict | pst.EntityType
+
+
+def _normalize_tpe_euid(value: str | dict | pst.EntityType) -> str | dict:
+    """A `pst.EntityType` names a type whose id is unknown. Pass it on in the
+    dict form Rust reads, which carries `type` and an optional `id`."""
+    if isinstance(value, pst.EntityType):
+        return {"type": str(value)}
+    return value
+
+
+def _internal_entities(entities: str | list[dict] | Entities) -> str | _internal.Entities:
+    """Narrow the public entities forms to what the extension accepts.
+
+    That is either JSON text, or the Rust-backed handle unwrapped from the
+    public one."""
+    if isinstance(entities, list):
+        return json.dumps(entities)
+    if isinstance(entities, Entities):
+        return entities._inner
+    return entities
+
+
+def _internal_schema_required(schema: str | dict | Schema) -> str | Schema:
+    """The TPE path requires a schema, so its narrowing cannot yield None."""
+    if isinstance(schema, dict):
+        return json.dumps(schema)
+    return schema
+
+
+def _normalize_tpe_entities(entities: _TpeEntities) -> str | _internal.Entities | _internal.PartialEntities:
+    if isinstance(entities, PartialEntities):
+        return _internal.PartialEntities(entities._partial_entities_json)
+    return _internal_entities(entities)
+
+
+def tpe_authorize(principal: _TpePartialEuid,
+                  action: str | dict,
+                  resource: _TpePartialEuid,
+                  policies: str | PolicySet,
+                  entities: _TpeEntities,
+                  schema: str | dict | Schema,
+                  context: dict | None = None,
+                  verbose: bool = False) -> TpeAuthzResult:
+    """Evaluate a request whose principal or resource is known only by type.
+
+    Experimental: Cedar's ``tpe`` feature is outside its semver guarantee and
+    may change in any release, including minor releases.
+
+    :param principal: A concrete uid (Cedar string or dict with ``type`` and
+        ``id``), or a type (bare string, ``pst.EntityType``, or dict with only ``type``).
+    :param action: A concrete uid.
+    :param resource: Same forms as ``principal``.
+    :param policies: Policy text or a ``PolicySet`` handle.
+    :param entities: Concrete entities as JSON text, a list, or an ``Entities``
+        handle. Use ``PartialEntities`` for unknown attributes, parents, or tags.
+    :param schema: Required schema as text, JSON dict, or a ``Schema`` handle.
+    :param context: ``None`` means unknown; ``{}`` means known and empty.
+    :param verbose: Enable verbose logging.
+    :raises ValueError: on input Cedar cannot resolve.
+    :returns: A ``TpeAuthzResult`` with typed residuals for undecided policies.
+    """
+    # Reauthorization must use this call's inputs, even if the caller later
+    # changes a uid, a nested context value, or an entity document.
+    principal = principal.copy() if isinstance(principal, dict) else principal
+    resource = resource.copy() if isinstance(resource, dict) else resource
+    action = action.copy() if isinstance(action, dict) else action
+    entities = json.dumps(entities) if isinstance(entities, list) else entities
+    schema = _internal_schema_required(schema)
+    context = deepcopy(context)
+    result = _internal.tpe_authorize(
+        _normalize_tpe_euid(principal),
+        _normalize_tpe_euid(action),
+        _normalize_tpe_euid(resource),
+        policies,
+        _normalize_tpe_entities(entities),
+        schema,
+        None if context is None else json.dumps(context),
+        verbose,
+    )
+    return replace(result, _request_inputs=_TpeInputs(
+        principal=principal, action=action, resource=resource, policies=policies,
+        entities=entities, schema=schema, context=context,
+    ))
+
+
+def tpe_reauthorize(request: dict,
+                    principal: _TpePartialEuid,
+                    action: str | dict,
+                    resource: _TpePartialEuid,
+                    policies: str | PolicySet,
+                    entities: _TpeEntities,
+                    schema: str | dict | Schema,
+                    context: dict | None = None,
+                    concrete_entities: str | list[dict] | Entities | None = None,
+                    verbose: bool = False) -> AuthzResult:
+    """Re-run TPE on the supplied partial inputs, then authorize a concrete request.
+
+    Pass the original ``tpe_authorize`` arguments from ``principal`` through
+    ``context``. Cedar checks the concrete inputs against the partial ones
+    before evaluating the reduced policies.
+
+    :param request: A concrete request in the form ``is_authorized`` accepts.
+    :param concrete_entities: Defaults to ``entities`` if concrete. Required
+        when ``entities`` is a ``PartialEntities`` document.
+    :raises ValueError: on inconsistent or unresolvable input.
+    :returns: An ``AuthzResult``.
+    """
+    request_local = request
+    if "context" in request_local:
+        context_value = request_local["context"]
+        request_local = copy(request_local)
+        if isinstance(context_value, dict):
+            request_local["context"] = json.dumps(context_value)
+        elif context_value is None:
+            del request_local["context"]
+
+    result_str = _internal.tpe_reauthorize(
+        request_local,
+        _normalize_tpe_euid(principal),
+        _normalize_tpe_euid(action),
+        _normalize_tpe_euid(resource),
+        policies,
+        _normalize_tpe_entities(entities),
+        _internal_schema_required(schema),
+        None if context is None else json.dumps(context),
+        None if concrete_entities is None else _internal_entities(concrete_entities),
+        verbose,
+    )
+    return AuthzResult(json.loads(result_str))
 
 
 def validate_policies(policies: str,

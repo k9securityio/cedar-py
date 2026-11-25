@@ -10,6 +10,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `tpe_authorize` evaluates policies with a principal or resource known only by type. Use `PartialEntities` for partially known entity data and `TpeAuthzResult.reauthorize` to check a concrete request. See the [Type-Aware Partial Evaluation Guide](docs/guides/type-aware-partial-evaluation-guide.md) ([#109](https://github.com/k9securityio/cedar-py/pull/109)).
+
 - `cedarpy.pst.VariadicOp` represents an `isInRange` call with two or more ranges, such as `context.ip.isInRange(ip("10.0.0.0/8"), ip("192.168.0.0/16"))`. Its `rights` field holds the ranges and must not be empty. The engine stabilized this form in 4.15. Before this release `policies_to_pst` raised `ValueError` for it. A call with a single range is still a `BinaryOp` with `op="is_in_range"` ([#128](https://github.com/k9securityio/cedar-py/issues/128)).
 
 ### Changed
